@@ -1,35 +1,18 @@
-export interface CompileResource {
-  path: string;
-  content?: string;
-  file?: string;
-  main?: boolean;
-  encoding?: string;
-}
-
-const SIDECAR_URL = "http://localhost:3001";
+import { invoke } from "@tauri-apps/api/core";
 
 export async function compileLatex(
   projectDir: string,
   mainFile: string = "document.tex",
+  compiler?: string,
 ): Promise<Uint8Array> {
-  const response = await fetch(`${SIDECAR_URL}/builds/sync`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ projectDir, mainFile }),
+  // compile_latex returns raw PDF bytes via Tauri IPC Response
+  const buffer = await invoke<ArrayBuffer>("compile_latex", {
+    projectDir,
+    mainFile,
+    compiler: compiler ?? null,
   });
 
-  if (!response.ok) {
-    const data = await response.json();
-    const message = data.details
-      ? `${data.error}\n\n${data.details}`
-      : data.error || "Compilation failed";
-    throw new Error(message);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return new Uint8Array(arrayBuffer);
+  return new Uint8Array(buffer);
 }
 
 export interface SynctexResult {
@@ -45,37 +28,13 @@ export async function synctexEdit(
   y: number,
 ): Promise<SynctexResult | null> {
   try {
-    const response = await fetch(`${SIDECAR_URL}/synctex/edit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectDir, page, x, y }),
+    return await invoke<SynctexResult>("synctex_edit", {
+      projectDir,
+      page,
+      x,
+      y,
     });
-    if (!response.ok) return null;
-    return response.json();
   } catch {
     return null;
   }
-}
-
-export async function compileLatexWithResources(
-  resources: CompileResource[],
-): Promise<Uint8Array> {
-  const response = await fetch(`${SIDECAR_URL}/builds/sync`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ compiler: "pdflatex", resources }),
-  });
-
-  if (!response.ok) {
-    const data = await response.json();
-    const message = data.details
-      ? `${data.error}\n\n${data.details}`
-      : data.error || "Compilation failed";
-    throw new Error(message);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return new Uint8Array(arrayBuffer);
 }

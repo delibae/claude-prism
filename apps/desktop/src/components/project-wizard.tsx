@@ -1,22 +1,19 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { mkdir, writeTextFile } from "@tauri-apps/plugin-fs";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { documentDir } from "@tauri-apps/api/path";
 import {
   ArrowLeftIcon,
-  ArrowRightIcon,
-  FileTextIcon,
-  UserIcon,
-  LayoutIcon,
-  BookOpenIcon,
-  MailIcon,
-  MonitorIcon,
-  BookIcon,
-  FileIcon,
   FolderOpenIcon,
   PaperclipIcon,
   XIcon,
   SparklesIcon,
-  GraduationCapIcon,
+  UploadIcon,
+  ChevronDownIcon,
+  FileTextIcon,
+  MapPinIcon,
+  Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,395 +22,103 @@ import { useProjectStore } from "@/stores/project-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { exists, join } from "@/lib/tauri/fs";
+import { getTemplateById, getTemplateSkeleton, BIB_TEMPLATE } from "@/lib/template-registry";
+import { TemplateGallery } from "@/components/template-gallery";
 
-// ─── Template Definitions ───
+// ─── Helpers ───
 
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  documentClass: string;
-  mainFileName: string;
-  content: string;
+function randomProjectName(): string {
+  const adjectives = ["swift", "bright", "calm", "bold", "keen", "warm", "pure", "vast", "deep", "fair"];
+  const nouns = ["paper", "draft", "thesis", "note", "study", "essay", "report", "brief", "folio", "opus"];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const id = Math.random().toString(36).slice(2, 6);
+  return `${adj}-${noun}-${id}`;
 }
-
-const TEMPLATES: Template[] = [
-  {
-    id: "paper",
-    name: "Research Paper",
-    description: "Academic paper with abstract, sections, references",
-    icon: <FileTextIcon className="size-6" />,
-    documentClass: "article",
-    mainFileName: "main.tex",
-    content: `\\documentclass[12pt]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{amsmath,amssymb}
-\\usepackage{graphicx}
-\\usepackage[margin=1in]{geometry}
-\\usepackage{hyperref}
-\\usepackage{booktabs}
-\\usepackage{natbib}
-
-\\title{Title}
-\\author{Author Name}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\begin{abstract}
-Your abstract here.
-\\end{abstract}
-
-\\section{Introduction}
-
-\\section{Related Work}
-
-\\section{Method}
-
-\\section{Results}
-
-\\section{Conclusion}
-
-\\bibliographystyle{plainnat}
-\\bibliography{references}
-
-\\end{document}
-`,
-  },
-  {
-    id: "cv",
-    name: "CV / Resume",
-    description: "Professional curriculum vitae",
-    icon: <UserIcon className="size-6" />,
-    documentClass: "article",
-    mainFileName: "main.tex",
-    content: `\\documentclass[11pt,a4paper]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[margin=0.8in]{geometry}
-\\usepackage{hyperref}
-\\usepackage{enumitem}
-\\usepackage{titlesec}
-
-\\titleformat{\\section}{\\large\\bfseries}{}{0em}{}[\\titlerule]
-\\titlespacing{\\section}{0pt}{12pt}{6pt}
-
-\\pagestyle{empty}
-
-\\begin{document}
-
-\\begin{center}
-  {\\LARGE\\bfseries Your Name}\\\\[4pt]
-  your.email@example.com \\quad | \\quad City, Country
-\\end{center}
-
-\\section{Education}
-
-\\section{Experience}
-
-\\section{Skills}
-
-\\section{Publications}
-
-\\end{document}
-`,
-  },
-  {
-    id: "poster",
-    name: "Poster",
-    description: "Conference or research poster",
-    icon: <LayoutIcon className="size-6" />,
-    documentClass: "a0poster",
-    mainFileName: "main.tex",
-    content: `\\documentclass[a1paper,portrait]{a0poster}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{amsmath,amssymb}
-\\usepackage{graphicx}
-\\usepackage{multicol}
-\\usepackage[margin=2cm]{geometry}
-\\usepackage{xcolor}
-
-\\begin{document}
-
-\\begin{center}
-  {\\VERYHuge\\bfseries Poster Title}\\\\[1cm]
-  {\\LARGE Author Name \\quad Institution}
-\\end{center}
-
-\\vspace{1cm}
-
-\\begin{multicols}{2}
-
-\\section*{Introduction}
-
-\\section*{Methods}
-
-\\section*{Results}
-
-\\section*{Conclusions}
-
-\\section*{References}
-
-\\end{multicols}
-
-\\end{document}
-`,
-  },
-  {
-    id: "thesis",
-    name: "Thesis",
-    description: "Dissertation or thesis with chapters",
-    icon: <GraduationCapIcon className="size-6" />,
-    documentClass: "report",
-    mainFileName: "main.tex",
-    content: `\\documentclass[12pt,a4paper]{report}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{amsmath,amssymb}
-\\usepackage{graphicx}
-\\usepackage[margin=1in]{geometry}
-\\usepackage{hyperref}
-\\usepackage{booktabs}
-\\usepackage{natbib}
-\\usepackage{setspace}
-
-\\onehalfspacing
-
-\\title{Thesis Title}
-\\author{Author Name}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\begin{abstract}
-Your abstract here.
-\\end{abstract}
-
-\\tableofcontents
-
-\\chapter{Introduction}
-
-\\chapter{Literature Review}
-
-\\chapter{Methodology}
-
-\\chapter{Results}
-
-\\chapter{Discussion}
-
-\\chapter{Conclusion}
-
-\\bibliographystyle{plainnat}
-\\bibliography{references}
-
-\\end{document}
-`,
-  },
-  {
-    id: "presentation",
-    name: "Presentation",
-    description: "Beamer slides for talks and lectures",
-    icon: <MonitorIcon className="size-6" />,
-    documentClass: "beamer",
-    mainFileName: "main.tex",
-    content: `\\documentclass{beamer}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{amsmath,amssymb}
-\\usepackage{graphicx}
-
-\\usetheme{Madrid}
-
-\\title{Presentation Title}
-\\author{Author Name}
-\\institute{Institution}
-\\date{\\today}
-
-\\begin{document}
-
-\\begin{frame}
-  \\titlepage
-\\end{frame}
-
-\\begin{frame}{Outline}
-  \\tableofcontents
-\\end{frame}
-
-\\section{Introduction}
-\\begin{frame}{Introduction}
-  Content here.
-\\end{frame}
-
-\\section{Main Content}
-\\begin{frame}{Main Content}
-  Content here.
-\\end{frame}
-
-\\section{Conclusion}
-\\begin{frame}{Conclusion}
-  Content here.
-\\end{frame}
-
-\\end{document}
-`,
-  },
-  {
-    id: "letter",
-    name: "Letter",
-    description: "Formal or cover letter",
-    icon: <MailIcon className="size-6" />,
-    documentClass: "letter",
-    mainFileName: "main.tex",
-    content: `\\documentclass[12pt]{letter}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[margin=1in]{geometry}
-\\usepackage{hyperref}
-
-\\signature{Your Name}
-\\address{Your Address \\\\ City, Country}
-
-\\begin{document}
-
-\\begin{letter}{Recipient Name \\\\ Recipient Address \\\\ City, Country}
-
-\\opening{Dear Recipient,}
-
-Your letter content here.
-
-\\closing{Sincerely,}
-
-\\end{letter}
-
-\\end{document}
-`,
-  },
-  {
-    id: "book",
-    name: "Book",
-    description: "Multi-chapter book or manuscript",
-    icon: <BookIcon className="size-6" />,
-    documentClass: "book",
-    mainFileName: "main.tex",
-    content: `\\documentclass[12pt,a4paper]{book}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{amsmath,amssymb}
-\\usepackage{graphicx}
-\\usepackage[margin=1in]{geometry}
-\\usepackage{hyperref}
-
-\\title{Book Title}
-\\author{Author Name}
-\\date{\\today}
-
-\\begin{document}
-
-\\frontmatter
-\\maketitle
-\\tableofcontents
-
-\\mainmatter
-
-\\chapter{First Chapter}
-
-\\chapter{Second Chapter}
-
-\\backmatter
-
-\\end{document}
-`,
-  },
-  {
-    id: "blank",
-    name: "Blank",
-    description: "Minimal template to start from scratch",
-    icon: <FileIcon className="size-6" />,
-    documentClass: "article",
-    mainFileName: "main.tex",
-    content: `\\documentclass[12pt]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-
-\\begin{document}
-
-% Start writing here.
-
-\\end{document}
-`,
-  },
-];
-
-const BIB_TEMPLATE = `% Add your references here
-% Example:
-% @article{key,
-%   author  = {Author Name},
-%   title   = {Article Title},
-%   journal = {Journal Name},
-%   year    = {2024},
-% }
-`;
 
 // ─── Wizard Component ───
 
+export type CreationMode = "template" | "scratch";
+
 interface ProjectWizardProps {
+  mode: CreationMode;
   onBack: () => void;
 }
 
-export function ProjectWizard({ onBack }: ProjectWizardProps) {
-  const [step, setStep] = useState<1 | 2>(1);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+export function ProjectWizard({ mode, onBack }: ProjectWizardProps) {
+  // ── Template mode: just show the gallery ──
+  // The TemplatePreview modal inside the gallery handles details + creation.
+  if (mode === "template") {
+    return (
+      <div className="flex h-full flex-col bg-background">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pt-[var(--titlebar-height)] h-[calc(48px+var(--titlebar-height))]">
+          <Button variant="ghost" size="icon" className="size-7 rounded-lg" onClick={onBack}>
+            <ArrowLeftIcon className="size-4" />
+          </Button>
+          <span className="font-semibold text-sm">Choose a Template</span>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <TemplateGallery />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Scratch mode: inline details form ──
+  return <ScratchForm onBack={onBack} />;
+}
+
+// ─── Scratch mode form (no template preview) ───
+
+function ScratchForm({ onBack }: { onBack: () => void }) {
   const [purpose, setPurpose] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [projectFolder, setProjectFolder] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("");
+  const [projectName, setProjectName] = useState(randomProjectName);
   const [isCreating, setIsCreating] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [refFilesOpen, setRefFilesOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const addRecentProject = useProjectStore((s) => s.addRecentProject);
+  const lastProjectFolder = useProjectStore((s) => s.lastProjectFolder);
+  const setLastProjectFolder = useProjectStore((s) => s.setLastProjectFolder);
   const openProject = useDocumentStore((s) => s.openProject);
 
-  const template = TEMPLATES.find((t) => t.id === selectedTemplate);
+  const template = getTemplateById("blank")!;
 
-  const handleSelectTemplate = (id: string) => {
-    setSelectedTemplate(id);
-    setStep(2);
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => textareaRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (projectFolder) return;
+    if (lastProjectFolder) {
+      setProjectFolder(lastProjectFolder);
+    } else {
+      documentDir().then((dir) => setProjectFolder(dir)).catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChooseFolder = useCallback(async () => {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Choose Location for New Project",
-    });
+    const selected = await open({ directory: true, multiple: false, title: "Choose Location for New Project" });
     if (selected) {
       setProjectFolder(selected);
-      if (!projectName) {
-        setProjectName(selected.split("/").pop() || "my-project");
-      }
+      setLastProjectFolder(selected);
     }
-  }, [projectName]);
+  }, [setLastProjectFolder]);
 
   const handleAddAttachments = useCallback(async () => {
     const selected = await open({
       multiple: true,
       title: "Add Reference Files",
-      filters: [
-        {
-          name: "Documents & Images",
-          extensions: [
-            "pdf", "tex", "bib", "txt", "md",
-            "png", "jpg", "jpeg", "gif", "svg",
-            "csv", "tsv", "json",
-          ],
-        },
-      ],
+      filters: [{
+        name: "Documents & Images",
+        extensions: ["pdf", "tex", "bib", "txt", "md", "png", "jpg", "jpeg", "gif", "svg", "csv", "tsv", "json"],
+      }],
     });
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
@@ -425,24 +130,49 @@ export function ProjectWizard({ onBack }: ProjectWizardProps) {
     setAttachments((prev) => prev.filter((p) => p !== path));
   };
 
+  // Drag-drop
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (cancelled) return;
+        const { type } = event.payload;
+        if (type === "enter") {
+          setIsDragOver(true);
+          setRefFilesOpen(true);
+        } else if (type === "drop") {
+          setIsDragOver(false);
+          const paths = (event.payload as { paths: string[] }).paths;
+          if (paths?.length > 0) {
+            setAttachments((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+          }
+        } else if (type === "leave") {
+          setIsDragOver(false);
+        }
+      })
+      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .catch(() => {});
+
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
+
   const handleCreate = async () => {
     if (!template || !projectFolder || !projectName.trim()) return;
     setIsCreating(true);
 
     try {
-      // Create project directory
       const projectPath = await join(projectFolder, projectName.trim());
       await mkdir(projectPath, { recursive: true }).catch(() => {});
 
-      // Write main.tex
       const mainTexPath = await join(projectPath, template.mainFileName);
       const mainExists = await exists(mainTexPath);
       if (!mainExists) {
-        await writeTextFile(mainTexPath, template.content);
+        await writeTextFile(mainTexPath, getTemplateSkeleton(template));
       }
 
-      // Write references.bib for templates that use bibliography
-      if (["paper", "thesis"].includes(template.id)) {
+      if (template.hasBibliography) {
         const bibPath = await join(projectPath, "references.bib");
         const bibExists = await exists(bibPath);
         if (!bibExists) {
@@ -450,33 +180,44 @@ export function ProjectWizard({ onBack }: ProjectWizardProps) {
         }
       }
 
-      // Import attachments into project
       if (attachments.length > 0) {
         const attachmentsDir = await join(projectPath, "attachments");
         await mkdir(attachmentsDir, { recursive: true }).catch(() => {});
       }
 
-      // Build the initial prompt for Claude
       if (purpose.trim()) {
         const attachmentNames = attachments.map((p) => p.split("/").pop()).filter(Boolean);
-        let prompt = `I just created a new ${template.name} project using a ${template.documentClass} template.\n\n`;
-        prompt += `Here is what I want to create:\n${purpose.trim()}\n\n`;
-        if (attachmentNames.length > 0) {
-          prompt += `I've included these reference files in the attachments/ folder: ${attachmentNames.join(", ")}\n`;
-          prompt += `Please review them and incorporate relevant information.\n\n`;
-        }
-        prompt += `Please customize the template to match my requirements. Update the content, title, author, and structure as needed. Make it a complete, well-structured document ready for me to refine.`;
+        const attachmentSection = attachmentNames.length > 0
+          ? `\n### Reference Files\n${attachmentNames.map((n) => `- \`${n}\``).join("\n")}\n\nPlease review them and incorporate relevant information.\n`
+          : "";
 
-        // Set as pending so it fires after workspace initializes
+        const prompt = [
+          `## New ${template.name} Project`,
+          "",
+          `| | |`,
+          `|---|---|`,
+          `| **Template** | \`${template.documentClass}\` |`,
+          `| **File** | \`${template.mainFileName}\` |`,
+          "",
+          `> The file currently contains only the LaTeX preamble (packages, styling, custom commands) with an empty document body.`,
+          "",
+          `### What I want to create`,
+          "",
+          purpose.trim(),
+          attachmentSection,
+          `### Instructions`,
+          "",
+          `Please generate the full document content based on my description. Keep the existing preamble and fill in the document body (between \`\\begin{document}\` and \`\\end{document}\`) with appropriate title, author, sections, and content. Make it a complete, well-structured **${template.name.toLowerCase()}** ready for me to refine.`,
+        ].join("\n");
+
         useClaudeChatStore.getState().newSession();
         useClaudeChatStore.getState().setPendingInitialPrompt(prompt);
       }
 
-      // Open the project
+      setLastProjectFolder(projectFolder);
       addRecentProject(projectPath);
       await openProject(projectPath);
 
-      // Import attachments after project is open
       if (attachments.length > 0) {
         await useDocumentStore.getState().importFiles(attachments, "attachments");
       }
@@ -491,121 +232,176 @@ export function ProjectWizard({ onBack }: ProjectWizardProps) {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {/* Header — padded top for macOS overlay titlebar */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 pt-[var(--titlebar-height)] h-[calc(48px+var(--titlebar-height))]">
-        <Button variant="ghost" size="icon" className="size-7" onClick={step === 1 ? onBack : () => setStep(1)}>
+      {/* Header */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pt-[var(--titlebar-height)] h-[calc(48px+var(--titlebar-height))]">
+        <Button variant="ghost" size="icon" className="size-7 rounded-lg" onClick={onBack}>
           <ArrowLeftIcon className="size-4" />
         </Button>
-        <div className="flex items-center gap-2">
-          <SparklesIcon className="size-4 text-muted-foreground" />
-          <span className="font-medium text-sm">
-            {step === 1 ? "Choose a Template" : "Project Details"}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 ml-auto">
-          <div className={`size-2 rounded-full ${step >= 1 ? "bg-foreground" : "bg-muted-foreground/30"}`} />
-          <div className={`size-2 rounded-full ${step >= 2 ? "bg-foreground" : "bg-muted-foreground/30"}`} />
-        </div>
+        <span className="font-semibold text-sm">New Document</span>
       </div>
 
-      {/* Content */}
+      {/* Form */}
       <div className="flex-1 overflow-y-auto">
-        {step === 1 ? (
-          <TemplateGrid onSelect={handleSelectTemplate} selected={selectedTemplate} />
-        ) : (
-          <div className="mx-auto max-w-lg space-y-6 p-6">
-            {/* Selected template indicator */}
-            {template && (
+        <div className="mx-auto w-full max-w-[520px] space-y-4 px-6 py-10">
+          {/* Purpose */}
+          <div className="space-y-2.5">
+            <div>
+              <label className="font-semibold text-sm">What are you writing?</label>
+              <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
+                Describe your document and Claude will generate tailored content.
+              </p>
+            </div>
+            <Textarea
+              ref={textareaRef}
+              placeholder="e.g., A research paper on transformer architectures for protein structure prediction, targeting NeurIPS 2025..."
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              rows={4}
+              className="resize-none rounded-xl border-border/60 bg-card/30 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus-visible:bg-card/50"
+            />
+          </div>
+
+          {/* Collapsible sections */}
+          <div className="rounded-xl border border-border/60 bg-card/30 divide-y divide-border/40 overflow-hidden">
+            {/* Reference files */}
+            <div>
               <button
-                onClick={() => setStep(1)}
-                className="flex w-full items-center gap-3 rounded-lg border border-border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
+                onClick={() => setRefFilesOpen(!refFilesOpen)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30"
               >
-                <div className="flex size-10 items-center justify-center rounded-md bg-background text-muted-foreground">
-                  {template.icon}
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/50">
+                  <FileTextIcon className="size-3.5 text-muted-foreground" />
                 </div>
-                <div className="flex-1">
-                  <div className="font-medium text-sm">{template.name}</div>
-                  <div className="text-muted-foreground text-xs">{template.description}</div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium">Reference files</span>
+                  {attachments.length > 0 && (
+                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">
+                      {attachments.length}
+                    </span>
+                  )}
                 </div>
-                <span className="text-muted-foreground text-xs">Change</span>
-              </button>
-            )}
-
-            {/* Purpose */}
-            <div className="space-y-2">
-              <label className="font-medium text-sm">What are you writing?</label>
-              <Textarea
-                placeholder="e.g., A research paper on transformer architectures for protein structure prediction, targeting NeurIPS 2025..."
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                rows={4}
-                className="resize-none"
-              />
-              <p className="text-muted-foreground text-xs">
-                Claude will use this to customize your template with relevant content and structure.
-              </p>
-            </div>
-
-            {/* Attachments */}
-            <div className="space-y-2">
-              <label className="font-medium text-sm">Reference files (optional)</label>
-              <div className="space-y-1.5">
-                {attachments.map((path) => (
-                  <div
-                    key={path}
-                    className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-1.5 text-sm"
-                  >
-                    <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate text-xs">{path.split("/").pop()}</span>
-                    <button
-                      onClick={() => handleRemoveAttachment(path)}
-                      className="shrink-0 text-muted-foreground hover:text-foreground"
-                    >
-                      <XIcon className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleAddAttachments}>
-                  <PaperclipIcon className="size-3.5" />
-                  Add files
-                </Button>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                PDFs, images, .bib, .tex, or data files to include as references.
-              </p>
-            </div>
-
-            {/* Project location */}
-            <div className="space-y-2">
-              <label className="font-medium text-sm">Project location</label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Project name"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  className="flex-1"
+                <ChevronDownIcon
+                  className={`size-4 text-muted-foreground/60 transition-transform duration-200 ${refFilesOpen ? "rotate-180" : ""}`}
                 />
-                <Button variant="outline" className="shrink-0 gap-1.5" onClick={handleChooseFolder}>
-                  <FolderOpenIcon className="size-4" />
-                  {projectFolder ? "Change" : "Choose folder"}
-                </Button>
-              </div>
-              {projectFolder && (
-                <p className="truncate text-muted-foreground text-xs">
-                  {projectFolder}/{projectName.trim() || "..."}
-                </p>
+              </button>
+              {refFilesOpen && (
+                <div className="px-4 pb-4 space-y-3">
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {attachments.map((path) => (
+                        <div
+                          key={path}
+                          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 pl-2.5 pr-1.5 py-1 text-xs transition-colors hover:bg-muted/60"
+                        >
+                          <PaperclipIcon className="size-3 shrink-0 text-muted-foreground/70" />
+                          <span className="max-w-[140px] truncate text-foreground/80">{path.split("/").pop()}</span>
+                          <button
+                            onClick={() => handleRemoveAttachment(path)}
+                            className="flex size-4 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <XIcon className="size-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div
+                    className={`flex flex-col items-center gap-2 rounded-lg border border-dashed p-4 transition-all ${
+                      isDragOver
+                        ? "border-primary bg-primary/5 scale-[1.01]"
+                        : "border-border/60 hover:border-border hover:bg-muted/20"
+                    }`}
+                  >
+                    {isDragOver ? (
+                      <>
+                        <UploadIcon className="size-5 text-primary" />
+                        <span className="text-xs font-medium text-primary">Drop to add</span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadIcon className="size-5 text-muted-foreground/40" />
+                        <div className="text-center">
+                          <span className="text-xs text-muted-foreground/70">Drag & drop or </span>
+                          <button
+                            onClick={handleAddAttachments}
+                            className="text-xs font-medium text-foreground/70 underline underline-offset-2 decoration-border hover:text-foreground hover:decoration-foreground/50 transition-colors"
+                          >
+                            browse files
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground/40">
+                          PDF, TEX, BIB, images, or data files
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* Create button */}
+            {/* Project location */}
+            <div>
+              <button
+                onClick={() => setLocationOpen(!locationOpen)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30"
+              >
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/50">
+                  <MapPinIcon className="size-3.5 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium">Project location</span>
+                </div>
+                {!locationOpen && projectFolder && projectName.trim() && (
+                  <span className="min-w-0 max-w-[180px] truncate rounded-md bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-muted-foreground/60">
+                    .../{projectFolder.split("/").pop()}/{projectName.trim()}
+                  </span>
+                )}
+                <ChevronDownIcon
+                  className={`size-4 text-muted-foreground/60 transition-transform duration-200 ${locationOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {locationOpen && (
+                <div className="px-4 pb-4 space-y-2.5">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Project name"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      className="flex-1 rounded-lg border-border/60 bg-background/50"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5 rounded-lg border-border/60"
+                      onClick={handleChooseFolder}
+                    >
+                      <FolderOpenIcon className="size-3.5" />
+                      {projectFolder ? "Change" : "Choose"}
+                    </Button>
+                  </div>
+                  {projectFolder && (
+                    <p className="truncate rounded-md bg-muted/30 px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground/60">
+                      {projectFolder}/{projectName.trim() || "..."}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Create button */}
+          <div className="pt-1">
             <Button
-              className="w-full gap-2"
+              className="w-full gap-2 rounded-xl font-semibold shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
               size="lg"
               disabled={!canCreate || isCreating}
               onClick={handleCreate}
             >
               {isCreating ? (
-                "Creating..."
+                <>
+                  <Loader2Icon className="size-4 animate-spin" />
+                  Creating project...
+                </>
               ) : purpose.trim() ? (
                 <>
                   <SparklesIcon className="size-4" />
@@ -616,46 +412,7 @@ export function ProjectWizard({ onBack }: ProjectWizardProps) {
               )}
             </Button>
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Template Grid ───
-
-function TemplateGrid({
-  onSelect,
-  selected,
-}: {
-  onSelect: (id: string) => void;
-  selected: string | null;
-}) {
-  return (
-    <div className="mx-auto max-w-2xl p-6">
-      <p className="mb-6 text-center text-muted-foreground text-sm">
-        Pick a starting template. Claude will customize it based on your needs.
-      </p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {TEMPLATES.map((tmpl) => (
-          <button
-            key={tmpl.id}
-            onClick={() => onSelect(tmpl.id)}
-            className={`flex flex-col items-center gap-2.5 rounded-xl border p-5 text-center transition-all hover:border-foreground/30 hover:bg-muted/50 ${
-              selected === tmpl.id
-                ? "border-foreground bg-muted/50"
-                : "border-border"
-            }`}
-          >
-            <div className="text-muted-foreground">{tmpl.icon}</div>
-            <div>
-              <div className="font-medium text-sm">{tmpl.name}</div>
-              <div className="mt-0.5 text-muted-foreground text-xs leading-tight">
-                {tmpl.description}
-              </div>
-            </div>
-          </button>
-        ))}
+        </div>
       </div>
     </div>
   );

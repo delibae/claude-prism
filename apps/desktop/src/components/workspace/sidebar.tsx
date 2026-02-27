@@ -9,6 +9,7 @@ import {
   Trash2Icon,
   PencilIcon,
   UploadIcon,
+  RefreshCwIcon,
   SunIcon,
   MoonIcon,
   MonitorIcon,
@@ -200,6 +201,7 @@ export function Sidebar() {
   const moveFile = useDocumentStore((s) => s.moveFile);
   const moveFolder = useDocumentStore((s) => s.moveFolder);
   const closeProject = useDocumentStore((s) => s.closeProject);
+  const refreshFiles = useDocumentStore((s) => s.refreshFiles);
   const projectRoot = useDocumentStore((s) => s.projectRoot);
   const folders = useDocumentStore((s) => s.folders);
   const { theme, setTheme } = useTheme();
@@ -231,7 +233,6 @@ export function Sidebar() {
           if (!filesArea || !el || !filesArea.contains(el)) {
             // Not over the sidebar file tree
             if (nativeDropTargetRef.current !== null) {
-              console.log("[native-drop] left sidebar area");
               nativeDropTargetRef.current = null;
               setNativeDragOver(null);
             }
@@ -241,14 +242,6 @@ export function Sidebar() {
           // Walk up from the hovered element to find the closest drop-folder target
           const folderEl = el.closest("[data-drop-folder]") as HTMLElement | null;
           const folder = folderEl?.dataset.dropFolder ?? "__root__";
-          if (folder !== nativeDropTargetRef.current) {
-            console.log("[native-drop] hover target changed:", {
-              from: nativeDropTargetRef.current,
-              to: folder,
-              position: { logicalX, logicalY },
-              element: el.tagName,
-            });
-          }
           nativeDropTargetRef.current = folder;
           setNativeDragOver(folder);
         } else if (type === "drop") {
@@ -260,15 +253,7 @@ export function Sidebar() {
           const el = document.elementFromPoint(logicalX, logicalY);
           const filesArea = sidebarFilesRef.current;
 
-          console.log("[native-drop] drop event:", {
-            paths,
-            position: { logicalX, logicalY },
-            overSidebar: !!(filesArea && el && filesArea.contains(el)),
-            targetFolder: nativeDropTargetRef.current,
-          });
-
           if (!filesArea || !el || !filesArea.contains(el)) {
-            console.log("[native-drop] drop outside sidebar files area, ignoring");
             setNativeDragOver(null);
             nativeDropTargetRef.current = null;
             return;
@@ -278,15 +263,12 @@ export function Sidebar() {
             ? undefined
             : (nativeDropTargetRef.current ?? undefined);
 
-          console.log("[native-drop] importing files:", { paths, targetFolder });
-
           // Mark as handled so chat-composer doesn't also process it
           (window as any).__sidebarHandledDrop = true;
           setTimeout(() => { (window as any).__sidebarHandledDrop = false; }, 200);
 
           try {
             await importFiles(paths, targetFolder);
-            console.log("[native-drop] import success");
           } catch (err) {
             console.error("[native-drop] import failed:", err);
           }
@@ -294,7 +276,6 @@ export function Sidebar() {
           setNativeDragOver(null);
           nativeDropTargetRef.current = null;
         } else if (type === "leave") {
-          console.log("[native-drop] drag left window");
           setNativeDragOver(null);
           nativeDropTargetRef.current = null;
         }
@@ -321,15 +302,13 @@ export function Sidebar() {
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { type, name } = event.active.data.current as { type: "file" | "folder"; name: string };
-    console.log("[dnd] dragStart:", { id: event.active.id, type, name });
     setActiveDrag({ id: event.active.id as string, type, name });
   }, []);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    console.log("[dnd] dragEnd:", { activeId: event.active.id, overId: event.over?.id ?? null });
     setActiveDrag(null);
     const { active, over } = event;
-    if (!over) { console.log("[dnd] no drop target"); return; }
+    if (!over) return;
 
     const draggedPath = active.id as string;
     const draggedType = (active.data.current as { type: string }).type;
@@ -340,18 +319,16 @@ export function Sidebar() {
     const draggedParent = draggedPath.includes("/")
       ? draggedPath.substring(0, draggedPath.lastIndexOf("/"))
       : null;
-    if (targetFolder === draggedParent) { console.log("[dnd] same parent, skip"); return; }
+    if (targetFolder === draggedParent) return;
 
     // Don't move folder into itself or descendant
     if (draggedType === "folder" && targetFolder) {
-      if (targetFolder === draggedPath || targetFolder.startsWith(draggedPath + "/")) { console.log("[dnd] folder into self, skip"); return; }
+      if (targetFolder === draggedPath || targetFolder.startsWith(draggedPath + "/")) return;
     }
 
-    console.log("[dnd] moving:", { draggedPath, draggedType, targetFolder });
     try {
       if (draggedType === "file") await moveFile(draggedPath, targetFolder);
       else await moveFolder(draggedPath, targetFolder);
-      console.log("[dnd] move success");
     } catch (err) {
       console.error("[dnd] move failed:", err);
     }
@@ -439,7 +416,7 @@ export function Sidebar() {
       setNameError("A file or folder with this name already exists");
       return;
     }
-    const type = name.endsWith(".tex") || name.endsWith(".ltx") ? "tex" : "tex";
+    const type = name.endsWith(".tex") || name.endsWith(".ltx") || name.endsWith(".bib") || name.endsWith(".sty") || name.endsWith(".cls") ? "tex" : "image";
     createNewFile(name, type, addDialogFolder);
     setNewFileName("");
     setNameError("");
@@ -555,7 +532,16 @@ export function Sidebar() {
                 <FolderIcon className="size-3.5 text-muted-foreground" />
                 <span className="font-medium text-xs">Files</span>
               </div>
-              <div className="absolute right-3">
+              <div className="absolute right-3 flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-5"
+                  title="Refresh"
+                  onClick={() => refreshFiles()}
+                >
+                  <RefreshCwIcon className="size-3" />
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" className="size-5" title="Add">
@@ -580,7 +566,7 @@ export function Sidebar() {
                 </DropdownMenu>
               </div>
             </div>
-            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragOver={(e) => console.log("[dnd] dragOver:", e.over?.id ?? "none")}>
+            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <ContextMenu>
                 <ContextMenuTrigger asChild>
                   <DroppableRoot nativeDragOver={nativeDragOver === "__root__"}>
@@ -682,9 +668,9 @@ export function Sidebar() {
       </PanelGroup>
 
       {/* Footer */}
-      <div className="relative flex items-center justify-center border-sidebar-border border-t px-3 py-2 text-muted-foreground text-xs">
-        <span>ClaudePrism v{APP_VERSION}</span>
-        <div className="absolute right-3 flex items-center gap-1">
+      <div className="flex items-center justify-between border-sidebar-border border-t px-3 py-2 text-muted-foreground text-xs">
+        <span className="truncate">ClaudePrism v{APP_VERSION}</span>
+        <div className="flex shrink-0 items-center gap-1">
           <Button variant="ghost" size="icon" className="size-6" asChild>
             <a
               href="https://github.com/delibae/claude-prism"
@@ -816,7 +802,6 @@ export function Sidebar() {
 
 function DroppableRoot({ children, nativeDragOver }: { children: React.ReactNode; nativeDragOver?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: "__root__" });
-  if (isOver) console.log("[dnd] over: __root__");
   return (
     <div
       ref={setNodeRef}
@@ -833,7 +818,6 @@ function DroppableRoot({ children, nativeDragOver }: { children: React.ReactNode
 
 function DroppableFolder({ id, children, nativeDragOver }: { id: string; children: React.ReactNode; nativeDragOver?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  if (isOver) console.log("[dnd] over folder:", id);
   return (
     <div ref={setNodeRef} data-drop-folder={id} className={cn((isOver || nativeDragOver) && "bg-accent/30 rounded-md")}>
       {children}
@@ -1010,13 +994,10 @@ function DraggableItem({ id, type, name, children }: { id: string; type: "file" 
     Object.entries(listeners).map(([key, handler]) => [
       key,
       (e: React.PointerEvent) => {
-        console.log(`[dnd] ${key} on "${name}" (${type})`, { id, pointerType: e.pointerType, button: e.button });
         (handler as (e: React.PointerEvent) => void)(e);
       },
     ]),
   ) : {};
-
-  if (isDragging) console.log("[dnd] dragging:", id);
 
   return (
     <div

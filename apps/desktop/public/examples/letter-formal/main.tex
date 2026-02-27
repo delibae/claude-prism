@@ -1,0 +1,109 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{graphicx}
+
+\definecolor{headercolor}{HTML}{1B3A5C}
+\definecolor{accentcolor}{HTML}{2E86C1}
+\definecolor{rulecolor}{HTML}{BDC3C7}
+
+\hypersetup{
+  colorlinks=true,
+  urlcolor=accentcolor
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\small\color{rulecolor}Page \thepage\\ of \pageref{LastPage}}
+
+\setlength{\parskip}{10pt}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+% ──── Letterhead ────
+\begin{center}
+{\color{headercolor}\rule{\textwidth}{2pt}}\\[12pt]
+{\fontsize{20}{24}\selectfont\bfseries\color{headercolor} Quantum Computing Research Laboratory}\\[4pt]
+{\large Department of Physics --- Massachusetts Institute of Technology}\\[4pt]
+{\small 77 Massachusetts Avenue, Building 26-251, Cambridge, MA 02139}\\[2pt]
+{\small Tel: +1 (617) 253-4000 \quad|\quad Fax: +1 (617) 253-8000 \quad|\quad \href{mailto:qcrl@mit.edu}{qcrl@mit.edu}}\\[8pt]
+{\color{headercolor}\rule{\textwidth}{0.5pt}}
+\end{center}
+
+\vspace{1cm}
+
+% ──── Date and Reference ────
+\begin{flushright}
+\textbf{Date:} January 15, 2025\\
+\textbf{Ref:} QCRL/2025/REC-0047
+\end{flushright}
+
+\vspace{0.5cm}
+
+% ──── Recipient ────
+Prof.\\ Sarah M.\\ Thompson\\
+Chair, Department of Computer Science\\
+University of California, Berkeley\\
+Soda Hall, Room 593\\
+Berkeley, CA 94720
+
+\vspace{0.5cm}
+
+\textbf{Re: Letter of Recommendation for Dr.\\ James Liu -- Assistant Professor Position}
+
+\vspace{0.3cm}
+
+Dear Professor Thompson,
+
+I am writing to provide my strongest recommendation for Dr.\\ James Liu, who is applying for the tenure-track Assistant Professor position in Quantum Computing at the University of California, Berkeley. I have had the privilege of working closely with James for the past five years, first as his doctoral advisor at MIT and subsequently as a research collaborator, and I can state without reservation that he is among the most talented young researchers I have encountered in my thirty-year career.
+
+James joined my research group in 2018 after completing his undergraduate degree in Physics and Mathematics at Caltech, where he graduated first in his class. From the outset, it was clear that James possessed an unusual combination of deep mathematical intuition, strong programming skills, and creative thinking. His doctoral research focused on developing novel quantum error correction codes for fault-tolerant quantum computation, a topic of immense theoretical and practical importance.
+
+During his time in my lab, James made several groundbreaking contributions that have significantly advanced the field:
+
+\begin{enumerate}[leftmargin=2em, itemsep=4pt]
+\item \textbf{Topological Error Correction:} James developed a new family of topological quantum error correcting codes that achieve a 3$\times$ improvement in the error threshold compared to the standard surface code. This work, published in \textit{Nature Physics} (2021), has been cited over 200 times and has been experimentally validated by research groups at Google and IBM.
+
+\item \textbf{Efficient Decoding Algorithms:} He designed a near-linear-time decoding algorithm for his topological codes that runs in real-time on classical hardware, overcoming one of the major practical obstacles to fault-tolerant quantum computing. This work appeared in \textit{Physical Review Letters} (2022) and received the APS Outstanding Doctoral Thesis Award.
+
+\item \textbf{Noise-Adapted Codes:} Most recently, James pioneered an approach to constructing quantum error correcting codes that are optimized for the specific noise characteristics of a given quantum processor. This noise-aware approach, published in \textit{Science} (2024), represents a paradigm shift in how the community thinks about error correction.
+\end{enumerate}
+
+Beyond his technical accomplishments, James is an exceptional communicator and mentor. He has supervised three master's students and two undergraduate researchers, all of whom have gone on to pursue doctoral studies at leading institutions. His lectures in our graduate quantum information course consistently receive the highest evaluations, and he has a remarkable ability to make complex concepts accessible without sacrificing rigor.
+
+James's research program is both visionary and practical. He has articulated a compelling five-year plan that bridges the gap between theoretical error correction and the engineering reality of near-term quantum devices. His proposed work on hardware-efficient codes and real-time decoding architectures addresses critical challenges that must be solved for quantum computing to achieve its transformative potential. I believe this research agenda will attract significant funding and top graduate students.
+
+On a personal level, James is a person of exceptional integrity and collegiality. He is generous with his time, always willing to help colleagues, and has been instrumental in fostering a collaborative and inclusive research culture in our group. He actively participates in outreach activities, including organizing quantum computing workshops for underrepresented high school students in the Boston area.
+
+In summary, I give Dr.\\ James Liu my highest and most enthusiastic recommendation. He has the intellectual depth, technical skill, creative vision, and personal qualities to become a leading figure in quantum computing and an outstanding faculty member. I am confident that he would be an exceptional addition to your department, and I strongly urge you to give his application the most serious consideration.
+
+Please do not hesitate to contact me if you require any additional information. I am happy to discuss James's qualifications in further detail by phone or video call at your convenience.
+
+\vspace{0.8cm}
+
+Sincerely yours,
+
+\vspace{1.2cm}
+
+\textbf{Prof.\\ Richard A.\\ Yamamoto}\\
+William A.\\ Coolidge Professor of Physics\\
+Director, Quantum Computing Research Laboratory\\
+Massachusetts Institute of Technology\\
+\href{mailto:ryamamoto@mit.edu}{ryamamoto@mit.edu} \quad|\quad +1 (617) 253-4851
+
+\vspace{1cm}
+
+{\small\color{rulecolor}\textit{Enclosures: Curriculum Vitae of Dr.\\ James Liu; List of publications}}
+
+\end{document}

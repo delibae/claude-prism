@@ -9,8 +9,10 @@ interface RecentProject {
 
 interface ProjectState {
   recentProjects: RecentProject[];
+  lastProjectFolder: string | null;
   addRecentProject: (path: string) => void;
   removeRecentProject: (path: string) => void;
+  setLastProjectFolder: (path: string) => void;
 }
 
 const MAX_RECENT = 10;
@@ -19,6 +21,9 @@ export const useProjectStore = create<ProjectState>()(
   persist(
     (set) => ({
       recentProjects: [],
+      lastProjectFolder: null,
+
+      setLastProjectFolder: (path) => set({ lastProjectFolder: path }),
 
       addRecentProject: (path) => {
         const name = path.split("/").pop() || path;

@@ -1,10 +1,92 @@
 mod claude;
 mod history;
+mod latex;
+mod slash_commands;
 mod zotero;
 
-use std::process::Command;
-use std::sync::Mutex;
+use std::path::Path;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+// --- External editor detection & opening ---
+
+#[derive(serde::Serialize, Clone)]
+struct EditorInfo {
+    id: String,
+    name: String,
+}
+
+struct EditorDef {
+    id: &'static str,
+    name: &'static str,
+    cli: &'static str,
+}
+
+const KNOWN_EDITORS: &[EditorDef] = &[
+    EditorDef { id: "cursor", name: "Cursor", cli: "cursor" },
+    EditorDef { id: "vscode", name: "VS Code", cli: "code" },
+    EditorDef { id: "zed", name: "Zed", cli: "zed" },
+    EditorDef { id: "sublime", name: "Sublime Text", cli: "subl" },
+];
+
+#[cfg(target_os = "macos")]
+const MACOS_APP_PATHS: &[(&str, &str)] = &[
+    ("cursor", "/Applications/Cursor.app"),
+    ("vscode", "/Applications/Visual Studio Code.app"),
+    ("zed", "/Applications/Zed.app"),
+    ("sublime", "/Applications/Sublime Text.app"),
+];
+
+#[tauri::command]
+fn detect_editors() -> Vec<EditorInfo> {
+    KNOWN_EDITORS
+        .iter()
+        .filter(|e| is_editor_installed(e))
+        .map(|e| EditorInfo { id: e.id.to_string(), name: e.name.to_string() })
+        .collect()
+}
+
+fn is_editor_installed(editor: &EditorDef) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some((_, app_path)) = MACOS_APP_PATHS.iter().find(|(id, _)| *id == editor.id) {
+            return Path::new(app_path).exists();
+        }
+    }
+    // Fallback / Windows / Linux: check if CLI is on PATH
+    which::which(editor.cli).is_ok()
+}
+
+#[tauri::command]
+fn open_in_editor(
+    editor_id: String,
+    project_path: String,
+    file_path: Option<String>,
+    line: Option<u32>,
+) -> Result<(), String> {
+    let editor = KNOWN_EDITORS
+        .iter()
+        .find(|e| e.id == editor_id)
+        .ok_or_else(|| format!("Unknown editor: {}", editor_id))?;
+
+    let mut cmd = std::process::Command::new(editor.cli);
+
+    // Open the project folder
+    cmd.arg(&project_path);
+
+    // If a specific file is given, open it (with optional line number via -g)
+    if let Some(ref fp) = file_path {
+        let full_path = Path::new(&project_path).join(fp);
+        if let Some(ln) = line {
+            cmd.arg("-g");
+            cmd.arg(format!("{}:{}", full_path.display(), ln));
+        } else {
+            cmd.arg(full_path);
+        }
+    }
+
+    cmd.spawn().map_err(|e| format!("Failed to open {}: {}", editor.name, e))?;
+    Ok(())
+}
 
 #[cfg(target_os = "macos")]
 fn set_macos_app_icon() {
@@ -24,35 +106,6 @@ fn set_macos_app_icon() {
             }
         }
     }
-}
-
-struct SidecarState {
-    child: Option<std::process::Child>,
-}
-
-fn start_sidecar(sidecar_path: &str, port: u16) -> Option<std::process::Child> {
-    let child = Command::new("node")
-        .arg(sidecar_path)
-        .env("PORT", port.to_string())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    match child {
-        Ok(child) => {
-            println!("Sidecar started with PID: {}", child.id());
-            Some(child)
-        }
-        Err(e) => {
-            eprintln!("Failed to start sidecar: {}", e);
-            None
-        }
-    }
-}
-
-#[tauri::command]
-fn get_sidecar_url() -> String {
-    "http://localhost:3001".to_string()
 }
 
 #[tauri::command]
@@ -91,53 +144,31 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
-        .manage(Mutex::new(SidecarState { child: None }))
         .manage(claude::ClaudeProcessState::default())
+        .manage(latex::LatexCompilerState::default())
         .manage(zotero::ZoteroOAuthState::default())
-        .setup(|app| {
-            // Set macOS Dock icon (dev mode doesn't use bundle, so set it at runtime)
+        .setup(|_app| {
             #[cfg(target_os = "macos")]
             set_macos_app_icon();
-
-            // In dev mode, the sidecar is started separately (via pnpm dev:desktop)
-            // In production, start the sidecar from the bundled resources
-            let sidecar_path = if let Ok(path) = std::env::var("SIDECAR_PATH") {
-                Some(path)
-            } else if cfg!(not(debug_assertions)) {
-                let resource_dir = app
-                    .path()
-                    .resource_dir()
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                Some(
-                    resource_dir
-                        .join("sidecar")
-                        .join("index.js")
-                        .to_string_lossy()
-                        .to_string(),
-                )
-            } else {
-                // Dev mode: sidecar is managed by the dev script
-                println!("Dev mode: expecting sidecar on port 3001 (start with pnpm dev:desktop)");
-                None
-            };
-
-            if let Some(path) = sidecar_path {
-                let child = start_sidecar(&path, 3001);
-                let state = app.state::<Mutex<SidecarState>>();
-                let mut state = state.lock().unwrap();
-                state.child = child;
-            }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_sidecar_url,
             create_new_window,
+            detect_editors,
+            open_in_editor,
+            latex::compile_latex,
+            latex::synctex_edit,
+            claude::check_claude_status,
+            claude::install_claude_cli,
+            claude::login_claude,
             claude::execute_claude_code,
             claude::continue_claude_code,
             claude::resume_claude_code,
             claude::cancel_claude_execution,
             claude::run_shell_command,
+            claude::get_claude_fast_mode,
+            claude::set_claude_fast_mode,
             claude::list_claude_sessions,
             claude::load_session_history,
             zotero::zotero_start_oauth,
@@ -151,6 +182,10 @@ pub fn run() {
             history::history_restore,
             history::history_add_label,
             history::history_remove_label,
+            slash_commands::slash_commands_list,
+            slash_commands::slash_command_get,
+            slash_commands::slash_command_save,
+            slash_commands::slash_command_delete,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -172,14 +207,12 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::ExitRequested { .. } => {
-                // Kill sidecar on exit
-                let state = app_handle.state::<Mutex<SidecarState>>();
-                if let Ok(mut guard) = state.lock() {
-                    if let Some(ref mut child) = guard.child {
-                        let _ = child.kill();
-                        println!("Sidecar process killed");
-                    }
-                };
+                // Clean up LaTeX build temp directories
+                let latex_state = app_handle.state::<latex::LatexCompilerState>();
+                let state_clone = latex_state.inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    latex::cleanup_all_builds(&state_clone).await;
+                });
             }
             _ => {}
         }

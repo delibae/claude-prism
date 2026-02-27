@@ -169,7 +169,8 @@ export async function createFileOnDisk(
 ): Promise<string> {
   const fullPath = await join(rootPath, name);
   // Ensure parent directory exists
-  const parentDir = fullPath.substring(0, fullPath.lastIndexOf("/"));
+  const lastSep = Math.max(fullPath.lastIndexOf("/"), fullPath.lastIndexOf("\\"));
+  const parentDir = lastSep > 0 ? fullPath.substring(0, lastSep) : "";
   if (parentDir && !(await exists(parentDir))) {
     await mkdir(parentDir, { recursive: true });
   }
@@ -213,7 +214,7 @@ export async function copyFileToProject(
   const uniqueName = await getUniqueTargetName(rootPath, targetName);
   const fullPath = await join(rootPath, uniqueName);
   // Ensure parent directory exists (e.g., attachments/)
-  const lastSlash = fullPath.lastIndexOf("/");
+  const lastSlash = Math.max(fullPath.lastIndexOf("/"), fullPath.lastIndexOf("\\"));
   if (lastSlash > 0) {
     const parentDir = fullPath.substring(0, lastSlash);
     if (!(await exists(parentDir))) {

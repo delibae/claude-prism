@@ -30,9 +30,12 @@ export function ClaudeChatDrawer() {
   const heightRef = useRef(height);
   heightRef.current = height;
 
-  // Auto-open when streaming starts
+  const pendingAttachments = useClaudeChatStore((s) => s.pendingAttachments);
+
+  // Auto-open when streaming starts or a new attachment is added
   useEffect(() => {
-    if (isStreaming && !isOpen) {
+    const shouldOpen = isStreaming || pendingAttachments.length > 0;
+    if (shouldOpen && !isOpen) {
       setIsOpen(true);
       const parent = containerRef.current?.parentElement;
       const maxHeight = parent ? parent.clientHeight * 0.5 : 400;
@@ -42,7 +45,7 @@ export function ClaudeChatDrawer() {
         panelRef.current.style.height = `${maxHeight}px`;
       }
     }
-  }, [isStreaming, isOpen]);
+  }, [isStreaming, isOpen, pendingAttachments]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

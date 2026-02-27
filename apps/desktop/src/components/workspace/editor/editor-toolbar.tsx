@@ -1,7 +1,6 @@
-
-
-import { RefObject } from "react";
+import { RefObject, useCallback, useEffect, useState } from "react";
 import type { EditorView } from "@codemirror/view";
+import { invoke } from "@tauri-apps/api/core";
 import {
   BoldIcon,
   ItalicIcon,
@@ -15,9 +14,16 @@ import {
   MinusIcon,
   PlusIcon,
   BookMarkedIcon,
+  ExternalLinkIcon,
 } from "lucide-react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -26,6 +32,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDocumentStore } from "@/stores/document-store";
+
+interface EditorInfo {
+  id: string;
+  name: string;
+}
 
 const ZOOM_OPTIONS = [
   { value: "0.5", label: "50%" },
@@ -55,6 +66,34 @@ export function EditorToolbar({
     const activeFile = s.files.find((f) => f.id === s.activeFileId);
     return activeFile?.name ?? "document.tex";
   });
+  const activeFilePath = useDocumentStore((s) => {
+    const activeFile = s.files.find((f) => f.id === s.activeFileId);
+    return activeFile?.relativePath;
+  });
+  const projectRoot = useDocumentStore((s) => s.projectRoot);
+
+  const [editors, setEditors] = useState<EditorInfo[]>([]);
+
+  useEffect(() => {
+    invoke<EditorInfo[]>("detect_editors").then(setEditors).catch(() => {});
+  }, []);
+
+  const openInEditor = useCallback(
+    (editorId: string) => {
+      if (!projectRoot) return;
+      const view = editorView.current;
+      const line = view
+        ? view.state.doc.lineAt(view.state.selection.main.head).number
+        : undefined;
+      invoke("open_in_editor", {
+        editorId,
+        projectPath: projectRoot,
+        filePath: activeFilePath,
+        line,
+      }).catch((err) => console.error("open_in_editor failed:", err));
+    },
+    [projectRoot, activeFilePath, editorView],
+  );
 
   const insertText = (before: string, after: string = "") => {
     const view = editorView.current;
@@ -128,6 +167,38 @@ export function EditorToolbar({
               ))}
             </SelectContent>
           </Select>
+          {editors.length === 1 && (
+            <TooltipIconButton
+              tooltip={`Open in ${editors[0].name}`}
+              onClick={() => openInEditor(editors[0].id)}
+            >
+              <ExternalLinkIcon className="size-4" />
+            </TooltipIconButton>
+          )}
+          {editors.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-6 p-1"
+                  title="Open in Editor"
+                >
+                  <ExternalLinkIcon className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {editors.map((editor) => (
+                  <DropdownMenuItem
+                    key={editor.id}
+                    onClick={() => openInEditor(editor.id)}
+                  >
+                    {editor.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     );
@@ -198,6 +269,38 @@ export function EditorToolbar({
         <BookMarkedIcon className="size-4" />
       </TooltipIconButton>
       <div data-tauri-drag-region className="flex-1 self-stretch" />
+      {editors.length === 1 && (
+        <TooltipIconButton
+          tooltip={`Open in ${editors[0].name}`}
+          onClick={() => openInEditor(editors[0].id)}
+        >
+          <ExternalLinkIcon className="size-4" />
+        </TooltipIconButton>
+      )}
+      {editors.length > 1 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6 p-1"
+              title="Open in Editor"
+            >
+              <ExternalLinkIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {editors.map((editor) => (
+              <DropdownMenuItem
+                key={editor.id}
+                onClick={() => openInEditor(editor.id)}
+              >
+                {editor.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

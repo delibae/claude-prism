@@ -62,8 +62,7 @@ fn ensure_excludes(project_root: &str, repo: &Repository) {
     let excludes_path = Path::new(project_root)
         .join(".claudeprism")
         .join("history-exclude");
-    if !excludes_path.exists() {
-        let content = r#"# LaTeX build artifacts
+    let content = r#"# LaTeX build artifacts
 *.aux
 *.log
 *.out
@@ -93,8 +92,17 @@ Thumbs.db
 
 # ClaudePrism internal
 .claudeprism/
+.prism/
 "#;
+    if !excludes_path.exists() {
         let _ = fs::write(&excludes_path, content);
+    } else {
+        // Migrate: add .prism/ if missing from existing excludes file
+        if let Ok(existing) = fs::read_to_string(&excludes_path) {
+            if !existing.contains(".prism/") {
+                let _ = fs::write(&excludes_path, content);
+            }
+        }
     }
     // Configure the repo to use this excludes file
     if let Ok(mut config) = repo.config() {

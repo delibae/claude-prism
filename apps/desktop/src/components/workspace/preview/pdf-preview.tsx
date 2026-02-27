@@ -10,7 +10,10 @@ import {
   DownloadIcon,
   HistoryIcon,
   MousePointerClickIcon,
+  CrosshairIcon,
 } from "lucide-react";
+import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
+import { join } from "@tauri-apps/api/path";
 import { useDocumentStore } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
@@ -27,8 +30,7 @@ import { HistoryPanel } from "@/components/workspace/history-panel";
 import { compileLatex, synctexEdit } from "@/lib/latex-compiler";
 import { SelectionToolbar, type ToolbarAction } from "@/components/workspace/editor/selection-toolbar";
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
-import type { PdfTextSelection } from "./pdf-viewer";
+import type { PdfTextSelection, CaptureResult } from "./pdf-viewer";
 
 const ZOOM_OPTIONS = [
   { value: "0.5", label: "50%" },
@@ -70,6 +72,7 @@ export function PdfPreview() {
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [scale, setScale] = useState<number>(1.0);
+  const [captureMode, setCaptureMode] = useState(false);
   const hasInitialCompile = useRef(false);
   const initialized = useDocumentStore((s) => s.initialized);
 
@@ -98,47 +101,34 @@ export function PdfPreview() {
 
   const handleSynctexClick = useCallback(
     async (page: number, x: number, y: number) => {
-      if (!projectRoot) {
-        console.log("[synctex] no projectRoot");
-        return;
-      }
-      console.log("[synctex] calling synctexEdit:", { projectRoot, page, x: x.toFixed(1), y: y.toFixed(1) });
+      if (!projectRoot) return;
       const result = await synctexEdit(projectRoot, page, x, y);
-      console.log("[synctex] result:", result);
       if (!result) return;
 
-      // Find the file by relative path (try exact match, then normalized match)
       const normalize = (p: string) => p.replace(/\\/g, "/").replace(/^\.\//, "");
       const normalizedTarget = normalize(result.file);
       const targetFile = files.find(
         (f) => normalize(f.relativePath) === normalizedTarget,
       );
-      if (!targetFile) {
-        console.log("[synctex] file not found in project:", result.file, "available:", files.map(f => f.relativePath));
-        return;
-      }
+      if (!targetFile) return;
 
-      // Switch to the file if not already active
       const state = useDocumentStore.getState();
       const needsSwitch = state.activeFileId !== targetFile.id;
       if (needsSwitch) {
         setActiveFile(targetFile.id);
       }
 
-      // Compute character offset from line number (1-based → 0-based offset)
       const fileContent = targetFile.content ?? "";
       const fileLines = fileContent.split("\n");
       const targetLine = Math.max(1, Math.min(result.line, fileLines.length));
       let offset = 0;
       for (let i = 0; i < targetLine - 1; i++) {
-        offset += fileLines[i].length + 1; // +1 for \n
+        offset += fileLines[i].length + 1;
       }
-      // Column might be 0 or -1 from synctex; just go to line start in that case
       if (result.column > 0) {
         offset += Math.min(result.column, fileLines[targetLine - 1]?.length ?? 0);
       }
 
-      // Delay jump if file was switched so the editor has time to initialize
       if (needsSwitch) {
         setTimeout(() => requestJumpToPosition(offset), 100);
       } else {
@@ -173,15 +163,12 @@ export function PdfPreview() {
     return () => { cancelled = true; };
   }, [pdfSelection, projectRoot]);
 
-  // Build the context label: use synctex-resolved source if available, else PDF page
-  // Prefix with ~ to indicate approximate location (from PDF, not exact source)
   const pdfContextLabel = resolvedSource
     ? `~@${resolvedSource.file}:${resolvedSource.line}`
     : pdfSelection
       ? `~@PDF page ${pdfSelection.pageNumber}`
       : "";
 
-  // Navigate to source file:line (reuses handleSynctexClick logic)
   const navigateToSource = useCallback(() => {
     if (!resolvedSource) return;
     const normalize = (p: string) => p.replace(/\\/g, "/").replace(/^\.\//, "");
@@ -213,7 +200,6 @@ export function PdfPreview() {
     }
   }, [resolvedSource, files, setActiveFile, requestJumpToPosition]);
 
-  // Build annotated selectedText for Claude — note that this is from PDF output
   const buildPdfContext = useCallback((text: string) => {
     const locationNote = resolvedSource
       ? `near ${resolvedSource.file}:${resolvedSource.line}`
@@ -269,7 +255,6 @@ export function PdfPreview() {
     window.getSelection()?.removeAllRanges();
   }, []);
 
-  // Compute container-relative position for the toolbar
   const pdfToolbarPosition = (() => {
     if (!pdfSelection || !previewContainerRef.current) return null;
     const containerRect = previewContainerRef.current.getBoundingClientRect();
@@ -319,9 +304,7 @@ export function PdfPreview() {
     const filePath = await save({
       title: "Export PDF",
       defaultPath: defaultName,
-      filters: [
-        { name: "PDF", extensions: ["pdf"] },
-      ],
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
     });
     if (!filePath) return;
     await writeFile(filePath, new Uint8Array(pdfData));
@@ -348,20 +331,61 @@ export function PdfPreview() {
     }
   };
 
+  const handleCapture = async (result: CaptureResult) => {
+    setCaptureMode(false);
+    if (!projectRoot) return;
+
+    const fileName = `capture-p${result.pageNumber}-${Date.now()}.png`;
+    const relativePath = `attachments/${fileName}`;
+
+    try {
+      const attachmentsDir = await join(projectRoot, "attachments");
+      if (!(await exists(attachmentsDir))) {
+        await mkdir(attachmentsDir, { recursive: true });
+      }
+      const fullPath = await join(projectRoot, relativePath);
+
+      const base64 = result.dataUrl.split(",")[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      await writeFile(fullPath, bytes);
+
+      await useDocumentStore.getState().refreshFiles();
+
+      useClaudeChatStore.getState().addPendingAttachment({
+        label: `@${relativePath}`,
+        filePath: relativePath,
+        selectedText: `[Captured region from PDF page ${result.pageNumber}]`,
+        imageDataUrl: result.dataUrl,
+      });
+    } catch (err) {
+      console.error("[capture] failed to save:", err);
+    }
+  };
+
+  // Listen for global Capture & Ask shortcut (Cmd+X / Ctrl+X)
+  useEffect(() => {
+    const handleToggleCapture = () => {
+      if (pdfData) setCaptureMode((prev) => !prev);
+    };
+    window.addEventListener("toggle-capture-mode", handleToggleCapture);
+    return () => window.removeEventListener("toggle-capture-mode", handleToggleCapture);
+  }, [pdfData]);
+
   const renderContent = () => {
     if (compileError) {
-      // Parse individual errors from the compile output, dedup
       const errors = [...new Set(
         compileError
           .split(/\s*!\s*/)
           .map((s) => s.trim())
-          .filter((s) => s.length > 0 && s !== "Compilation failed")
+          .filter((s) => s.length > 0 && s !== "Compilation failed"),
       )];
 
       const handleFixWithChat = () => {
         const errorList = errors.map((e) => `- ${e}`).join("\n");
         useClaudeChatStore.getState().sendPrompt(
-          `[Compilation errors]\n${errorList}\n\nFix these LaTeX compilation errors.`
+          `[Compilation errors]\n${errorList}\n\nFix these LaTeX compilation errors.`,
         );
       };
 
@@ -440,6 +464,9 @@ export function PdfPreview() {
           onTextClick={handleTextClick}
           onSynctexClick={handleSynctexClick}
           onTextSelect={handleTextSelect}
+          captureMode={captureMode}
+          onCapture={handleCapture}
+          onCancelCapture={() => setCaptureMode(false)}
         />
       </Suspense>
     );
@@ -486,6 +513,17 @@ export function PdfPreview() {
                 <SelectContent>{ZOOM_OPTIONS.map((opt) => (<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>))}</SelectContent>
               </Select>
               <div className="mx-1 h-4 w-px bg-border" />
+              {/* Capture mode */}
+              <Button
+                variant={captureMode ? "default" : "ghost"}
+                size="sm"
+                className={`h-7 gap-1.5 px-2.5 text-xs ${captureMode ? "ring-2 ring-primary/30" : ""}`}
+                onClick={() => setCaptureMode(!captureMode)}
+              >
+                <CrosshairIcon className="size-3.5" />
+                Capture
+              </Button>
+              <div className="mx-1 h-4 w-px bg-border" />
               <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2.5 text-xs" onClick={handleExport} title="Export PDF">
                 <DownloadIcon className="size-3.5" />
                 Export
@@ -516,6 +554,25 @@ export function PdfPreview() {
           onAction={handlePdfToolbarAction}
           onDismiss={handlePdfToolbarDismiss}
         />
+      )}
+      {/* Capture mode floating banner */}
+      {captureMode && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+            <CrosshairIcon className="size-3.5 text-primary" />
+            <span className="text-xs text-foreground">
+              Drag to select a region
+            </span>
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              ESC
+            </kbd>
+            <span className="text-[10px] text-muted-foreground">or</span>
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+"}X
+            </kbd>
+            <span className="text-[10px] text-muted-foreground">to cancel</span>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -11,6 +11,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  worker: {
+    format: "es",
+  },
+  optimizeDeps: {
+    exclude: ["mupdf"],
+  },
   clearScreen: false,
   server: {
     port: 1420,
@@ -29,8 +35,7 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {
-    target:
-      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
+    target: "esnext",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },

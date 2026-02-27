@@ -1,23 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   FolderOpenIcon,
   FolderPlusIcon,
   ClockIcon,
   XIcon,
+  FileTextIcon,
+  SparklesIcon,
 } from "lucide-react";
 import { useProjectStore } from "@/stores/project-store";
 import { useDocumentStore } from "@/stores/document-store";
+import { useClaudeSetupStore } from "@/stores/claude-setup-store";
 import { Button } from "@/components/ui/button";
-import { ProjectWizard } from "./project-wizard";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ProjectWizard, type CreationMode } from "./project-wizard";
+import { ClaudeSetup } from "./claude-setup";
 
 export function ProjectPicker() {
-  const [showWizard, setShowWizard] = useState(false);
+  const [showModeDialog, setShowModeDialog] = useState(false);
+  const [wizardMode, setWizardMode] = useState<CreationMode | null>(null);
 
   const recentProjects = useProjectStore((s) => s.recentProjects);
   const addRecentProject = useProjectStore((s) => s.addRecentProject);
   const removeRecentProject = useProjectStore((s) => s.removeRecentProject);
   const openProject = useDocumentStore((s) => s.openProject);
+
+  const claudeStatus = useClaudeSetupStore((s) => s.status);
+  const checkClaudeStatus = useClaudeSetupStore((s) => s.checkStatus);
+  const isClaudeReady = claudeStatus === "ready";
+
+  useEffect(() => {
+    checkClaudeStatus();
+  }, [checkClaudeStatus]);
 
   const handleOpenFolder = async () => {
     const selected = await open({
@@ -36,8 +56,18 @@ export function ProjectPicker() {
     await openProject(path);
   };
 
-  if (showWizard) {
-    return <ProjectWizard onBack={() => setShowWizard(false)} />;
+  const handleSelectMode = (mode: CreationMode) => {
+    setShowModeDialog(false);
+    setWizardMode(mode);
+  };
+
+  if (wizardMode) {
+    return (
+      <ProjectWizard
+        mode={wizardMode}
+        onBack={() => setWizardMode(null)}
+      />
+    );
   }
 
   return (
@@ -51,12 +81,15 @@ export function ProjectPicker() {
           </p>
         </div>
 
-        <div className="flex w-full gap-3">
+        {!isClaudeReady && <ClaudeSetup />}
+
+        <div className={`flex w-full gap-3 ${!isClaudeReady ? "pointer-events-none opacity-50" : ""}`}>
           <Button
-            onClick={() => setShowWizard(true)}
+            onClick={() => setShowModeDialog(true)}
             size="lg"
             variant="outline"
             className="flex-1 gap-2"
+            disabled={!isClaudeReady}
           >
             <FolderPlusIcon className="size-5" />
             New Project
@@ -65,6 +98,7 @@ export function ProjectPicker() {
             onClick={handleOpenFolder}
             size="lg"
             className="flex-1 gap-2"
+            disabled={!isClaudeReady}
           >
             <FolderOpenIcon className="size-5" />
             Open Folder
@@ -111,6 +145,52 @@ export function ProjectPicker() {
           </div>
         )}
       </div>
+
+      {/* New Project mode selection dialog */}
+      <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
+        <DialogContent showCloseButton={false} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+            <DialogDescription>
+              How would you like to start?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => handleSelectMode("template")}
+              className="group flex flex-1 flex-col items-center gap-3 rounded-xl border border-foreground/10 p-5 text-center transition-all hover:border-foreground/20 hover:bg-muted/50"
+            >
+              <div className="flex size-12 items-center justify-center rounded-lg bg-muted/50 transition-colors group-hover:bg-muted">
+                <SparklesIcon className="size-6 text-muted-foreground transition-colors group-hover:text-foreground" />
+              </div>
+              <div>
+                <div className="font-semibold text-sm">Guided Setup</div>
+                <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+                  Pick a template and let AI help you get started
+                </p>
+              </div>
+              <span className="rounded-full bg-foreground/8 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Recommended
+              </span>
+            </button>
+
+            <button
+              onClick={() => handleSelectMode("scratch")}
+              className="group flex flex-1 flex-col items-center gap-3 rounded-xl border border-border p-5 text-center transition-all hover:border-foreground/20 hover:bg-muted/50"
+            >
+              <div className="flex size-12 items-center justify-center rounded-lg bg-muted/50 transition-colors group-hover:bg-muted">
+                <FileTextIcon className="size-6 text-muted-foreground transition-colors group-hover:text-foreground" />
+              </div>
+              <div>
+                <div className="font-semibold text-sm">Blank Document</div>
+                <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+                  Start with an empty LaTeX file
+                </p>
+              </div>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

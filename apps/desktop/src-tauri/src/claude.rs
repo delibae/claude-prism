@@ -20,57 +20,90 @@ impl Default for ClaudeProcessState {
 }
 
 /// Discover the claude binary on the system.
-/// Checks: which claude → NVM paths → standard paths → bare fallback.
+/// Checks: which/where claude → NVM paths → standard paths → bare fallback.
 fn find_claude_binary() -> Result<String, String> {
-    // 1. Try `which claude`
-    if let Ok(output) = std::process::Command::new("which")
-        .arg("claude")
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() && PathBuf::from(&path).exists() {
-                return Ok(path);
-            }
-        }
+    // 1. Try to find claude on PATH
+    if let Ok(path) = which::which("claude") {
+        return Ok(path.to_string_lossy().to_string());
     }
 
-    // 2. Check NVM directories
+    // 2. Check NVM directories (Unix) or npm global (Windows)
     if let Some(home) = dirs::home_dir() {
-        let nvm_dir = home.join(".nvm").join("versions").join("node");
-        if nvm_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
-                let mut candidates: Vec<PathBuf> = entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path().join("bin").join("claude"))
-                    .filter(|p| p.exists())
-                    .collect();
-                // Sort by version (directory name) descending to prefer latest
-                candidates.sort();
-                candidates.reverse();
-                if let Some(path) = candidates.first() {
-                    return Ok(path.to_string_lossy().to_string());
+        #[cfg(not(target_os = "windows"))]
+        {
+            let nvm_dir = home.join(".nvm").join("versions").join("node");
+            if nvm_dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
+                    let mut candidates: Vec<PathBuf> = entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path().join("bin").join("claude"))
+                        .filter(|p| p.exists())
+                        .collect();
+                    // Sort by version (directory name) descending to prefer latest
+                    candidates.sort();
+                    candidates.reverse();
+                    if let Some(path) = candidates.first() {
+                        return Ok(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // Check common Windows Node.js locations
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                let npm_global = PathBuf::from(&appdata).join("npm").join("claude.cmd");
+                if npm_global.exists() {
+                    return Ok(npm_global.to_string_lossy().to_string());
+                }
+            }
+            // NVM for Windows
+            if let Ok(nvm_home) = std::env::var("NVM_HOME") {
+                // nvm symlink lives under NVM_SYMLINK (default: C:\Program Files\nodejs)
+                if let Ok(nvm_symlink) = std::env::var("NVM_SYMLINK") {
+                    let p = PathBuf::from(&nvm_symlink).join("claude.cmd");
+                    if p.exists() {
+                        return Ok(p.to_string_lossy().to_string());
+                    }
+                }
+                // Also scan NVM_HOME/<version>
+                if let Ok(entries) = std::fs::read_dir(&nvm_home) {
+                    let mut candidates: Vec<PathBuf> = entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path().join("claude.cmd"))
+                        .filter(|p| p.exists())
+                        .collect();
+                    candidates.sort();
+                    candidates.reverse();
+                    if let Some(path) = candidates.first() {
+                        return Ok(path.to_string_lossy().to_string());
+                    }
                 }
             }
         }
     }
 
-    // 3. Check standard paths
-    let standard_paths = [
-        "/usr/local/bin/claude",
-        "/opt/homebrew/bin/claude",
-        "/usr/bin/claude",
-        "/bin/claude",
-    ];
-    for path in &standard_paths {
-        if PathBuf::from(path).exists() {
-            return Ok(path.to_string());
+    // 3. Check standard paths (Unix only)
+    #[cfg(not(target_os = "windows"))]
+    {
+        let standard_paths = [
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/claude",
+            "/usr/bin/claude",
+            "/bin/claude",
+        ];
+        for path in &standard_paths {
+            if PathBuf::from(path).exists() {
+                return Ok(path.to_string());
+            }
         }
     }
 
     // 4. Check user-specific paths
     if let Some(home) = dirs::home_dir() {
-        let user_paths = [
+        #[cfg(not(target_os = "windows"))]
+        let user_paths = vec![
             home.join(".claude").join("local").join("claude"),
             home.join(".local").join("bin").join("claude"),
             home.join(".npm-global").join("bin").join("claude"),
@@ -78,6 +111,12 @@ fn find_claude_binary() -> Result<String, String> {
             home.join(".bun").join("bin").join("claude"),
             home.join("bin").join("claude"),
         ];
+        #[cfg(target_os = "windows")]
+        let user_paths = vec![
+            home.join(".claude").join("local").join("claude.exe"),
+            home.join("AppData").join("Local").join("Programs").join("claude").join("claude.exe"),
+        ];
+
         for path in &user_paths {
             if path.exists() {
                 return Ok(path.to_string_lossy().to_string());
@@ -90,7 +129,7 @@ fn find_claude_binary() -> Result<String, String> {
 }
 
 /// Create a tokio Command with appropriate environment variables.
-fn create_command(program: &str, args: Vec<String>, cwd: &str) -> Command {
+fn create_command(program: &str, args: Vec<String>, cwd: &str, effort_level: Option<&str>) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(&args);
     cmd.current_dir(cwd);
@@ -99,50 +138,29 @@ fn create_command(program: &str, args: Vec<String>, cwd: &str) -> Command {
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    // Inherit essential environment variables
-    for (key, value) in std::env::vars() {
-        if key == "PATH"
-            || key == "HOME"
-            || key == "USER"
-            || key == "SHELL"
-            || key == "LANG"
-            || key == "LC_ALL"
-            || key.starts_with("LC_")
-            || key == "NODE_PATH"
-            || key == "NVM_DIR"
-            || key == "NVM_BIN"
-            || key == "HOMEBREW_PREFIX"
-            || key == "HOMEBREW_CELLAR"
-            || key == "HTTP_PROXY"
-            || key == "HTTPS_PROXY"
-            || key == "NO_PROXY"
-            || key == "ALL_PROXY"
-        {
-            cmd.env(&key, &value);
+    // Remove all Claude Code internal env vars to prevent nested session detection
+    // and other interference. Tauri inherits these when launched from a Claude Code session.
+    cmd.env_remove("CLAUDECODE");
+    cmd.env_remove("CLAUDE_AGENT_SDK_VERSION");
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CLAUDE_CODE_") || key.starts_with("CLAUDE_AGENT_") {
+            cmd.env_remove(&key);
         }
     }
+    // Set effort level (default: low for fast responses)
+    cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
 
-    // Add NVM support if the program is in an NVM directory
-    if program.contains("/.nvm/versions/node/") {
-        if let Some(node_bin_dir) = std::path::Path::new(program).parent() {
-            let current_path = std::env::var("PATH").unwrap_or_default();
-            let node_bin_str = node_bin_dir.to_string_lossy();
-            if !current_path.contains(node_bin_str.as_ref()) {
-                let new_path = format!("{}:{}", node_bin_str, current_path);
-                cmd.env("PATH", new_path);
-            }
-        }
-    }
-
-    // Add Homebrew support
-    if program.contains("/homebrew/") || program.contains("/opt/homebrew/") {
-        if let Some(program_dir) = std::path::Path::new(program).parent() {
-            let current_path = std::env::var("PATH").unwrap_or_default();
-            let homebrew_bin_str = program_dir.to_string_lossy();
-            if !current_path.contains(homebrew_bin_str.as_ref()) {
-                let new_path = format!("{}:{}", homebrew_bin_str, current_path);
-                cmd.env("PATH", new_path);
-            }
+    // Add the program's parent directory to PATH if not already present
+    if let Some(program_dir) = std::path::Path::new(program).parent() {
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let program_dir_str = program_dir.to_string_lossy();
+        if !current_path.contains(program_dir_str.as_ref()) {
+            #[cfg(target_os = "windows")]
+            let sep = ";";
+            #[cfg(not(target_os = "windows"))]
+            let sep = ":";
+            let new_path = format!("{}{}{}", program_dir_str, sep, current_path);
+            cmd.env("PATH", new_path);
         }
     }
 
@@ -182,14 +200,24 @@ async fn spawn_claude_process(
     let session_id_holder: Arc<std::sync::Mutex<Option<String>>> =
         Arc::new(std::sync::Mutex::new(None));
 
+    let start_time = std::time::Instant::now();
+
     // Spawn stdout streaming task — emit only to the originating window
     let win_stdout = window.clone();
     let session_id_stdout = session_id_holder.clone();
     let stdout_task = tokio::spawn(async move {
         let mut lines = stdout_reader.lines();
+        let mut line_count: u64 = 0;
         while let Ok(Some(line)) = lines.next_line().await {
+            line_count += 1;
+            let elapsed = start_time.elapsed().as_secs_f64();
+
             // Parse for system:init to extract session_id
             if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
+                let msg_type = msg["type"].as_str().unwrap_or("?");
+                let msg_sub = msg["subtype"].as_str().unwrap_or("");
+                eprintln!("[claude-stdout] +{:.1}s #{} type={} sub={} len={}", elapsed, line_count, msg_type, msg_sub, line.len());
+
                 if msg["type"] == "system" && msg["subtype"] == "init" {
                     if let Some(sid) = msg["session_id"].as_str() {
                         let mut guard = session_id_stdout.lock().unwrap();
@@ -198,24 +226,18 @@ async fn spawn_claude_process(
                 }
             }
 
-            // Emit session-scoped event to this window only
-            if let Some(ref sid) = *session_id_stdout.lock().unwrap() {
-                let _ = win_stdout.emit(&format!("claude-output:{}", sid), &line);
-            }
-            // Always emit generic event to this window
+            // Emit output event to this window
             let _ = win_stdout.emit("claude-output", &line);
         }
+        eprintln!("[claude-stdout] stream ended after {} lines ({:.1}s)", line_count, start_time.elapsed().as_secs_f64());
     });
 
     // Spawn stderr streaming task — emit only to the originating window
     let win_stderr = window.clone();
-    let session_id_stderr = session_id_holder.clone();
     let stderr_task = tokio::spawn(async move {
         let mut lines = stderr_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(ref sid) = *session_id_stderr.lock().unwrap() {
-                let _ = win_stderr.emit(&format!("claude-error:{}", sid), &line);
-            }
+            eprintln!("[claude-stderr] +{:.1}s {}", start_time.elapsed().as_secs_f64(), &line[..line.len().min(200)]);
             let _ = win_stderr.emit("claude-error", &line);
         }
     });
@@ -224,7 +246,6 @@ async fn spawn_claude_process(
     let process_arc_wait = process_arc.clone();
     let win_wait = window;
     let window_label_wait = window_label;
-    let session_id_wait = session_id_holder.clone();
     tokio::spawn(async move {
         // Wait for stdout/stderr to finish
         let _ = stdout_task.await;
@@ -234,25 +255,296 @@ async fn spawn_claude_process(
         let mut processes = process_arc_wait.lock().await;
         let success = if let Some(mut child) = processes.remove(&window_label_wait) {
             match child.wait().await {
-                Ok(status) => status.success(),
-                Err(_) => false,
+                Ok(status) => {
+                    eprintln!("[claude-process] exited with status={} ({:.1}s)", status, start_time.elapsed().as_secs_f64());
+                    status.success()
+                }
+                Err(e) => {
+                    eprintln!("[claude-process] wait error: {} ({:.1}s)", e, start_time.elapsed().as_secs_f64());
+                    false
+                }
             }
         } else {
+            eprintln!("[claude-process] no child found in map ({:.1}s)", start_time.elapsed().as_secs_f64());
             false
         };
         drop(processes);
 
-        // Small delay to ensure all events are flushed
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        // Emit completion event to this window only
-        if let Some(ref sid) = *session_id_wait.lock().unwrap() {
-            let _ = win_wait.emit(&format!("claude-complete:{}", sid), success);
-        }
+        // Emit completion event to this window
         let _ = win_wait.emit("claude-complete", success);
     });
 
     Ok(())
+}
+
+// ─── Setup / Status Commands ───
+
+#[derive(serde::Serialize)]
+pub struct ClaudeStatus {
+    pub installed: bool,
+    pub authenticated: bool,
+    pub binary_path: Option<String>,
+    pub version: Option<String>,
+    pub account_email: Option<String>,
+}
+
+#[tauri::command]
+pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
+    // Try to find binary
+    let binary_path = match find_claude_binary() {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(ClaudeStatus {
+                installed: false,
+                authenticated: false,
+                binary_path: None,
+                version: None,
+                account_email: None,
+            });
+        }
+    };
+
+    // Verify binary actually works by running --version
+    let version_output = std::process::Command::new(&binary_path)
+        .arg("--version")
+        .output();
+
+    let version = match version_output {
+        Ok(output) if output.status.success() => {
+            Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        }
+        _ => {
+            // Binary found but doesn't work (bare "claude" fallback or broken install)
+            return Ok(ClaudeStatus {
+                installed: false,
+                authenticated: false,
+                binary_path: None,
+                version: None,
+                account_email: None,
+            });
+        }
+    };
+
+    // Check auth status
+    let auth_output = std::process::Command::new(&binary_path)
+        .args(["auth", "status"])
+        .output();
+
+    let (authenticated, account_email) = match auth_output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            // Parse for email — claude auth status outputs account info
+            let email = stdout
+                .lines()
+                .find(|line| line.contains('@'))
+                .map(|line| {
+                    // Extract email-like substring
+                    line.split_whitespace()
+                        .find(|word| word.contains('@'))
+                        .unwrap_or(line.trim())
+                        .to_string()
+                });
+            (true, email)
+        }
+        _ => (false, None),
+    };
+
+    Ok(ClaudeStatus {
+        installed: true,
+        authenticated,
+        binary_path: Some(binary_path),
+        version,
+        account_email,
+    })
+}
+
+#[tauri::command]
+pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("bash");
+        c.args(["-c", "curl -fsSL https://claude.ai/install.sh | bash"]);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("powershell");
+        c.args(["-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"]);
+        c
+    };
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    // Inherit essential environment variables
+    for (key, value) in std::env::vars() {
+        if key == "PATH"
+            || key == "HOME"
+            || key == "USER"
+            || key == "SHELL"
+            || key == "LANG"
+            || key.starts_with("LC_")
+            || key == "HOMEBREW_PREFIX"
+            || key == "HOMEBREW_CELLAR"
+            || key == "HTTP_PROXY"
+            || key == "HTTPS_PROXY"
+            || key == "NO_PROXY"
+            || key == "ALL_PROXY"
+        {
+            cmd.env(&key, &value);
+        }
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run installer: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let stdout_reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
+
+    // Stream stdout
+    let win_stdout = window.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut lines = stdout_reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stdout.emit("install-output", &line);
+        }
+    });
+
+    // Stream stderr
+    let win_stderr = window.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut lines = stderr_reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stderr.emit("install-error", &line);
+        }
+    });
+
+    // Wait for completion and emit result
+    let win_complete = window;
+    tokio::spawn(async move {
+        let _ = stdout_task.await;
+        let _ = stderr_task.await;
+
+        let success = match child.wait().await {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        };
+
+        let _ = win_complete.emit("install-complete", success);
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
+    let binary_path = find_claude_binary()
+        .map_err(|e| format!("Claude CLI not found: {}", e))?;
+
+    // Verify it actually exists
+    let version_check = std::process::Command::new(&binary_path)
+        .arg("--version")
+        .output();
+
+    if version_check.is_err() || !version_check.unwrap().status.success() {
+        return Err("Claude CLI is not properly installed".to_string());
+    }
+
+    let mut cmd = tokio::process::Command::new(&binary_path);
+    cmd.args(["auth", "login"]);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    // Inherit essential environment variables
+    for (key, value) in std::env::vars() {
+        if key == "PATH"
+            || key == "HOME"
+            || key == "USER"
+            || key == "SHELL"
+            || key == "LANG"
+            || key.starts_with("LC_")
+            || key == "HOMEBREW_PREFIX"
+            || key == "HOMEBREW_CELLAR"
+            || key == "HTTP_PROXY"
+            || key == "HTTPS_PROXY"
+            || key == "NO_PROXY"
+            || key == "ALL_PROXY"
+        {
+            cmd.env(&key, &value);
+        }
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run auth login: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let stdout_reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
+
+    // Stream stdout
+    let win_stdout = window.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut lines = stdout_reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stdout.emit("login-output", &line);
+        }
+    });
+
+    // Stream stderr
+    let win_stderr = window.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut lines = stderr_reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stderr.emit("login-error", &line);
+        }
+    });
+
+    // Wait for completion and emit result
+    let win_complete = window;
+    tokio::spawn(async move {
+        let _ = stdout_task.await;
+        let _ = stderr_task.await;
+
+        let success = match child.wait().await {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        };
+
+        let _ = win_complete.emit("login-complete", success);
+    });
+
+    Ok(())
+}
+
+/// Common CLI flags shared across all Claude invocations.
+fn common_claude_args() -> Vec<String> {
+    vec![
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--verbose".to_string(),
+        "--dangerously-skip-permissions".to_string(),
+        "--append-system-prompt".to_string(),
+        concat!(
+            "You are an AI assistant integrated into a LaTeX document editor (Prism). ",
+            "Follow these rules strictly:\n",
+            "1. PLANNING FIRST: Before making changes, use TodoWrite to create a step-by-step plan. ",
+            "Break large tasks into small, incremental steps (one section or one logical unit per step).\n",
+            "2. INCREMENTAL EDITS: Use the Edit tool to make small, targeted changes — one step at a time. ",
+            "NEVER write or rewrite an entire file at once. Always prefer editing existing content over replacing it wholesale.\n",
+            "3. STEP BY STEP: After each edit, mark the todo item as completed, then proceed to the next step. ",
+            "This lets the user review changes incrementally.\n",
+            "4. PRESERVE EXISTING CONTENT: Always read the file first. Keep the existing preamble, packages, ",
+            "and structure intact. Only add or modify what is needed for the current step.\n",
+            "5. LaTeX BEST PRACTICES: Use proper sectioning (\\chapter, \\section, \\subsection), ",
+            "citations (\\cite), cross-references (\\label, \\ref), and BibTeX for bibliographies."
+        ).to_string(),
+    ]
 }
 
 // ─── Tauri Commands ───
@@ -262,22 +554,22 @@ pub async fn execute_claude_code(
     window: WebviewWindow,
     project_path: String,
     prompt: String,
-    model: String,
+    model: Option<String>,
+    effort_level: Option<String>,
 ) -> Result<(), String> {
     let claude_path = find_claude_binary()?;
 
-    let args = vec![
+    let mut args = vec![
         "-p".to_string(),
         prompt,
-        "--model".to_string(),
-        model,
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    if let Some(m) = model {
+        args.push("--model".to_string());
+        args.push(m);
+    }
+    args.extend(common_claude_args());
 
-    let cmd = create_command(&claude_path, args, &project_path);
+    let cmd = create_command(&claude_path, args, &project_path, effort_level.as_deref());
     spawn_claude_process(window, cmd).await
 }
 
@@ -286,23 +578,23 @@ pub async fn continue_claude_code(
     window: WebviewWindow,
     project_path: String,
     prompt: String,
-    model: String,
+    model: Option<String>,
+    effort_level: Option<String>,
 ) -> Result<(), String> {
     let claude_path = find_claude_binary()?;
 
-    let args = vec![
+    let mut args = vec![
         "-c".to_string(),
         "-p".to_string(),
         prompt,
-        "--model".to_string(),
-        model,
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    if let Some(m) = model {
+        args.push("--model".to_string());
+        args.push(m);
+    }
+    args.extend(common_claude_args());
 
-    let cmd = create_command(&claude_path, args, &project_path);
+    let cmd = create_command(&claude_path, args, &project_path, effort_level.as_deref());
     spawn_claude_process(window, cmd).await
 }
 
@@ -312,24 +604,24 @@ pub async fn resume_claude_code(
     project_path: String,
     session_id: String,
     prompt: String,
-    model: String,
+    model: Option<String>,
+    effort_level: Option<String>,
 ) -> Result<(), String> {
     let claude_path = find_claude_binary()?;
 
-    let args = vec![
+    let mut args = vec![
         "--resume".to_string(),
         session_id,
         "-p".to_string(),
         prompt,
-        "--model".to_string(),
-        model,
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    if let Some(m) = model {
+        args.push("--model".to_string());
+        args.push(m);
+    }
+    args.extend(common_claude_args());
 
-    let cmd = create_command(&claude_path, args, &project_path);
+    let cmd = create_command(&claude_path, args, &project_path, effort_level.as_deref());
     spawn_claude_process(window, cmd).await
 }
 
@@ -410,8 +702,9 @@ fn clean_user_message_title(text: &str) -> Option<String> {
         return None;
     }
 
-    let title = if clean.len() > 80 {
-        format!("{}...", &clean[..77])
+    let title = if clean.chars().count() > 80 {
+        let truncated: String = clean.chars().take(77).collect();
+        format!("{}...", truncated)
     } else {
         clean.to_string()
     };
@@ -578,8 +871,11 @@ pub async fn run_shell_command(
     command: String,
     cwd: String,
 ) -> Result<ShellCommandResult, String> {
-    let args = vec!["-c".to_string(), command];
-    let mut cmd = create_command("sh", args, &cwd);
+    #[cfg(not(target_os = "windows"))]
+    let (shell, args) = ("sh", vec!["-c".to_string(), command]);
+    #[cfg(target_os = "windows")]
+    let (shell, args) = ("cmd", vec!["/C".to_string(), command]);
+    let mut cmd = create_command(shell, args, &cwd, None);
 
     let child = cmd
         .spawn()
@@ -595,4 +891,61 @@ pub async fn run_shell_command(
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     })
+}
+
+// ─── Claude Settings (fast mode, etc.) ───
+
+fn get_claude_settings_path() -> Result<std::path::PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    Ok(home.join(".claude").join("settings.json"))
+}
+
+#[tauri::command]
+pub async fn get_claude_fast_mode() -> Result<bool, String> {
+    let path = get_claude_settings_path()?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read settings: {}", e))?;
+    let settings: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or(serde_json::json!({}));
+    Ok(settings["fastMode"].as_bool().unwrap_or(false))
+}
+
+#[tauri::command]
+pub async fn set_claude_fast_mode(enabled: bool) -> Result<(), String> {
+    let path = get_claude_settings_path()?;
+
+    // Ensure directory exists
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create settings dir: {}", e))?;
+    }
+
+    // Read existing settings or create new
+    let mut settings: serde_json::Value = if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read settings: {}", e))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Update fastMode
+    if let Some(obj) = settings.as_object_mut() {
+        if enabled {
+            obj.insert("fastMode".to_string(), serde_json::json!(true));
+        } else {
+            obj.remove("fastMode");
+        }
+    }
+
+    // Write back
+    let content = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    std::fs::write(&path, content)
+        .map_err(|e| format!("Failed to write settings: {}", e))?;
+
+    Ok(())
 }

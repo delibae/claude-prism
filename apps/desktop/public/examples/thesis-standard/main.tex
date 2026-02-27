@@ -1,0 +1,295 @@
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{natbib}
+\usepackage{setspace}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{lipsum}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{xcolor}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=green!50!black,
+  urlcolor=blue!70!black
+}
+
+% Chapter heading style
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries}{\chaptertitlename\\ \thechapter}{18pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{30pt}
+
+% Header/footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\slshape\nouppercase{\leftmark}}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\onehalfspacing
+
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\begin{document}
+
+% ──── Title Page ────
+\begin{titlepage}
+\centering
+\vspace*{1.5cm}
+{\Large University of Cambridge\\[0.3cm]}
+{\large Faculty of Mathematics\\Department of Applied Mathematics and Theoretical Physics\\[2cm]}
+{\Huge\bfseries Spectral Methods for\\Nonlinear Partial Differential Equations\\with Applications to Fluid Dynamics\\[1.5cm]}
+{\Large A thesis submitted for the degree of\\Doctor of Philosophy\\[2cm]}
+{\Large\textbf{Alexandra M. Richardson}\\[0.5cm]}
+{\large Churchill College\\[1cm]}
+{\large September 2025}
+\vfill
+\end{titlepage}
+
+% ──── Declaration ────
+\chapter*{Declaration}
+\addcontentsline{toc}{chapter}{Declaration}
+
+This thesis is the result of my own work and includes nothing which is the outcome of work done in collaboration except as declared in the preface and specified in the text. It is not substantially the same as any work that has already been submitted before for any degree or other qualification except as declared in the preface and specified in the text.
+
+This thesis does not exceed the prescribed word limit of 60,000 words set by the Degree Committee for the Faculty of Mathematics.
+
+\vspace{2cm}
+\noindent\textit{Alexandra M. Richardson}\\
+Cambridge, September 2025
+
+% ──── Abstract ────
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+This thesis develops novel spectral methods for the numerical solution of nonlinear partial differential equations (PDEs) arising in fluid dynamics. We focus on three interrelated topics: high-order spectral element methods for the incompressible Navier--Stokes equations, adaptive spectral methods for singularly perturbed problems, and spectral collocation methods for free-boundary problems.
+
+In the first part, we introduce a new stabilized spectral element formulation for the Navier--Stokes equations that maintains exponential convergence while avoiding spurious pressure modes. We prove stability and convergence estimates for the fully discrete scheme and demonstrate its effectiveness on benchmark problems including lid-driven cavity flow and flow past a cylinder.
+
+In the second part, we develop an adaptive spectral method that automatically adjusts the polynomial degree and element size to resolve boundary layers in singularly perturbed convection-diffusion equations. We derive \textit{a posteriori} error estimates in the energy norm that drive the adaptation strategy.
+
+In the third part, we apply spectral collocation methods to Stefan-type free-boundary problems arising in solidification and melting processes. We formulate the free-boundary condition as a nonlinear equation coupled with the bulk PDE and develop an efficient iterative solver based on Newton's method with spectral discretization.
+
+Numerical experiments throughout the thesis confirm the theoretical convergence rates and demonstrate the practical effectiveness of the proposed methods on physically relevant problems.
+
+% ──── Acknowledgements ────
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+
+I am deeply grateful to my supervisor, Professor James H. Thornton, for his unwavering guidance, patience, and encouragement throughout my doctoral studies. His insights into numerical analysis and fluid dynamics have been invaluable, and his mentorship has shaped my development as a researcher.
+
+I would like to thank Dr. Sophie Chen and Dr. Marcus Weber for many stimulating discussions and for their collaboration on the work presented in Chapter~4. I am also grateful to the members of the Applied Mathematics group at DAMTP for creating an intellectually vibrant and supportive environment.
+
+This work was supported by a Gates Cambridge Scholarship and by EPSRC Grant EP/R014604/1. Computing resources were provided by the Cambridge Service for Data Driven Discovery (CSD3).
+
+Finally, I thank my family and friends for their love and support throughout this journey.
+
+% ──── Table of Contents ────
+\tableofcontents
+\listoffigures
+\listoftables
+
+% ──── Main Matter ────
+
+\chapter{Introduction}
+\label{ch:introduction}
+
+\section{Motivation}
+
+The numerical simulation of fluid flows is one of the most important and challenging problems in computational science and engineering. From weather prediction and climate modeling to the design of aircraft and biomedical devices, accurate and efficient numerical methods for fluid dynamics are essential tools in modern science and technology.
+
+The governing equations for incompressible viscous flow are the Navier--Stokes equations:
+\begin{align}
+  \frac{\partial \mathbf{u}}{\partial t} + (\mathbf{u} \cdot \nabla)\mathbf{u} &= -\nabla p + \frac{1}{\text{Re}} \nabla^2 \mathbf{u} + \mathbf{f}, \label{eq:ns_momentum} \\
+  \nabla \cdot \mathbf{u} &= 0, \label{eq:ns_continuity}
+\end{align}
+where $\mathbf{u}$ is the velocity field, $p$ is the pressure, $\text{Re}$ is the Reynolds number, and $\mathbf{f}$ represents body forces. Despite their apparent simplicity, these equations exhibit an extraordinary range of complex phenomena, from laminar boundary layers to turbulent cascades spanning multiple scales.
+
+\section{Spectral Methods: An Overview}
+
+Spectral methods approximate the solution of a PDE as a finite sum of basis functions, typically orthogonal polynomials or trigonometric functions. For a function $u(x)$ on the interval $[-1, 1]$, the spectral approximation takes the form:
+\begin{equation}
+  u_N(x) = \sum_{k=0}^{N} \hat{u}_k \phi_k(x)
+\end{equation}
+where $\{\phi_k\}$ are the basis functions and $\{\hat{u}_k\}$ are the expansion coefficients. The hallmark of spectral methods is their \textit{spectral} (exponential) convergence rate for smooth problems: if $u$ is analytic, then the approximation error decreases exponentially with $N$.
+
+\begin{theorem}[Spectral Convergence]
+Let $u \in H^s([-1,1])$ for some $s \geq 0$, and let $u_N$ be its best polynomial approximation of degree $N$. Then:
+\begin{equation}
+  \|u - u_N\|_{L^2} \leq C N^{-s} \|u\|_{H^s}
+\end{equation}
+Moreover, if $u$ is analytic in an ellipse $\mathcal{E}_\rho$ with parameter $\rho > 1$, then:
+\begin{equation}
+  \|u - u_N\|_{L^2} \leq C \rho^{-N} \max_{z \in \mathcal{E}_\rho} |u(z)|
+\end{equation}
+\end{theorem}
+
+\section{Thesis Outline}
+
+The remainder of this thesis is organized as follows:
+\begin{description}
+  \item[Chapter 2] reviews the mathematical foundations of spectral methods, including polynomial interpolation, quadrature rules, and the spectral element method.
+  \item[Chapter 3] presents our stabilized spectral element formulation for the Navier--Stokes equations.
+  \item[Chapter 4] develops adaptive spectral methods for singularly perturbed problems.
+  \item[Chapter 5] applies spectral collocation to free-boundary problems.
+  \item[Chapter 6] summarizes our contributions and discusses future research directions.
+\end{description}
+
+\chapter{Mathematical Foundations}
+\label{ch:foundations}
+
+\section{Polynomial Interpolation and Approximation}
+
+The foundation of spectral methods rests on polynomial interpolation at carefully chosen nodes. Let $\{x_j\}_{j=0}^N$ be a set of distinct interpolation nodes in $[-1, 1]$. The unique polynomial $p_N$ of degree at most $N$ that interpolates a function $u$ at these nodes can be written using the Lagrange basis:
+\begin{equation}
+  p_N(x) = \sum_{j=0}^{N} u(x_j) \ell_j(x), \quad \ell_j(x) = \prod_{\substack{k=0 \\ k \neq j}}^{N} \frac{x - x_k}{x_j - x_k}
+\end{equation}
+
+\begin{definition}[Lebesgue Constant]
+The Lebesgue constant associated with the node set $\{x_j\}_{j=0}^N$ is defined as:
+\begin{equation}
+  \Lambda_N = \max_{x \in [-1,1]} \sum_{j=0}^{N} |\ell_j(x)|
+\end{equation}
+\end{definition}
+
+The Lebesgue constant quantifies the stability of polynomial interpolation. For equispaced nodes, $\Lambda_N$ grows exponentially with $N$, leading to the well-known Runge phenomenon. In contrast, Chebyshev nodes yield $\Lambda_N = O(\log N)$, providing nearly optimal interpolation.
+
+\section{Gauss Quadrature}
+
+Spectral methods require efficient and accurate numerical integration. Gaussian quadrature rules achieve the highest possible algebraic accuracy for polynomial integrands:
+\begin{equation}
+  \int_{-1}^{1} f(x) w(x) \, dx \approx \sum_{j=0}^{N} w_j f(x_j)
+\end{equation}
+where $\{x_j\}$ are the roots of the $(N+1)$-th degree orthogonal polynomial associated with the weight function $w(x)$, and $\{w_j\}$ are the corresponding quadrature weights.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of standard Gaussian quadrature rules.}
+\label{tab:quadrature}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+\textbf{Rule} & \textbf{Weight $w(x)$} & \textbf{Degree of Exactness} & \textbf{Includes Endpoints} \\
+\midrule
+Gauss--Legendre       & $1$                   & $2N+1$ & No  \\
+Gauss--Lobatto        & $1$                   & $2N-1$ & Yes \\
+Gauss--Chebyshev      & $(1-x^2)^{-1/2}$     & $2N+1$ & No  \\
+Gauss--Jacobi         & $(1-x)^\alpha(1+x)^\beta$ & $2N+1$ & No  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{The Spectral Element Method}
+
+The spectral element method (SEM) combines the geometric flexibility of finite elements with the high-order accuracy of spectral methods. The computational domain $\Omega$ is decomposed into non-overlapping elements $\{\Omega_e\}_{e=1}^{E}$:
+\begin{equation}
+  \overline{\Omega} = \bigcup_{e=1}^{E} \overline{\Omega}_e, \quad \Omega_i \cap \Omega_j = \emptyset \text{ for } i \neq j
+\end{equation}
+
+Within each element, the solution is approximated by high-degree polynomials using a Gauss--Lobatto--Legendre (GLL) nodal basis. The GLL nodes include the element endpoints, facilitating $C^0$ continuity across elements through simple nodal matching.
+
+\begin{proposition}[SEM Error Estimate]
+Let $u \in H^s(\Omega)$ with $s > 1$, and let $u_{N,h}$ be the SEM approximation with polynomial degree $N$ and element size $h$. Then:
+\begin{equation}
+  \|u - u_{N,h}\|_{H^1(\Omega)} \leq C h^{\min(s,N)-1} N^{1-s} \|u\|_{H^s(\Omega)}
+\end{equation}
+\end{proposition}
+
+This estimate reveals the dual convergence mechanism of the SEM: algebraic convergence in $h$ (mesh refinement) and spectral convergence in $N$ (polynomial enrichment). In practice, $p$-refinement (increasing $N$) is preferred for smooth solutions, while $h$-refinement is used to resolve singularities and boundary layers.
+
+\chapter{Stabilized Spectral Elements for the Navier--Stokes Equations}
+\label{ch:navier_stokes}
+
+\section{Weak Formulation}
+
+We consider the time-dependent incompressible Navier--Stokes equations~\eqref{eq:ns_momentum}--\eqref{eq:ns_continuity} on a bounded domain $\Omega \subset \mathbb{R}^d$ ($d = 2, 3$) with suitable boundary conditions. The weak formulation seeks $(\mathbf{u}, p) \in \mathbf{V} \times Q$ such that for all $(\mathbf{v}, q) \in \mathbf{V} \times Q$:
+\begin{align}
+  \left(\frac{\partial \mathbf{u}}{\partial t}, \mathbf{v}\right) + a(\mathbf{u}, \mathbf{v}) + c(\mathbf{u}; \mathbf{u}, \mathbf{v}) + b(\mathbf{v}, p) &= (\mathbf{f}, \mathbf{v}) \\
+  b(\mathbf{u}, q) &= 0
+\end{align}
+where $a(\cdot,\cdot)$ is the viscous bilinear form, $c(\cdot;\cdot,\cdot)$ is the convective trilinear form, and $b(\cdot,\cdot)$ is the pressure-velocity coupling form.
+
+\section{Stabilization Strategy}
+
+A well-known difficulty in the spectral element discretization of the Navier--Stokes equations is the need to satisfy the inf-sup (LBB) condition. We propose a new pressure stabilization technique based on polynomial filtering that maintains spectral accuracy while eliminating spurious pressure modes.
+
+The key idea is to introduce a spectrally small perturbation to the continuity equation:
+\begin{equation}
+  b(\mathbf{u}_N, q_N) - \epsilon_N (\Pi_{N-2} p_N, \Pi_{N-2} q_N) = 0
+\end{equation}
+where $\Pi_{N-2}$ is the $L^2$ projection onto polynomials of degree $N-2$ and $\epsilon_N = O(N^{-2s})$ for solutions in $H^s$.
+
+\section{Numerical Results}
+
+We validate our stabilized formulation on two benchmark problems: lid-driven cavity flow and flow past a circular cylinder. For the cavity flow at $\text{Re} = 1000$, our method produces smooth pressure fields without oscillations while maintaining spectral convergence rates. For the cylinder flow at $\text{Re} = 100$, we accurately capture the Von K\'{a}rm\'{a}n vortex street with a coarse spectral element mesh ($E = 48$ elements, $N = 8$).
+
+\chapter{Conclusions and Future Work}
+\label{ch:conclusions}
+
+\section{Summary of Contributions}
+
+This thesis has developed three novel spectral methods for nonlinear PDEs with applications to fluid dynamics:
+
+\begin{enumerate}
+\item A stabilized spectral element method for the incompressible Navier--Stokes equations that eliminates spurious pressure modes while preserving exponential convergence.
+
+\item An adaptive spectral method for singularly perturbed convection-diffusion equations with rigorous \textit{a posteriori} error estimates.
+
+\item A spectral collocation method for Stefan-type free-boundary problems with a Newton-based solver for the coupled system.
+\end{enumerate}
+
+\section{Future Directions}
+
+Several promising research directions emerge from this work. First, extending the stabilized spectral element formulation to compressible flows and turbulence modeling using large eddy simulation (LES) would be a natural next step. Second, the adaptive spectral method could be generalized to handle systems of PDEs and multiphysics problems. Third, the free-boundary methodology could be applied to more complex phase-change problems, including dendritic solidification and multi-component alloy systems.
+
+\appendix
+
+\chapter{Proof of the Main Convergence Theorem}
+\label{app:proof}
+
+\begin{proof}
+We provide the detailed proof of Theorem~3.1 stated in Chapter~3. Let $e_N = u - u_N$ denote the approximation error. By the triangle inequality:
+\begin{equation}
+  \|e_N\|_{H^1} \leq \|u - \Pi_N u\|_{H^1} + \|\Pi_N u - u_N\|_{H^1}
+\end{equation}
+The first term is the best approximation error, bounded by standard approximation theory. For the second term, we use the coercivity of the bilinear form $a(\cdot,\cdot)$ and the stability of the stabilization operator to obtain the desired estimate. The full technical details involve careful tracking of the stabilization parameter $\epsilon_N$ and its interaction with the polynomial degree.
+\end{proof}
+
+\bibliographystyle{plainnat}
+% \bibliography{references}
+
+\begin{thebibliography}{10}
+
+\bibitem[Canuto et~al.(2006)]{canuto2006spectral}
+C.~Canuto, M.~Y. Hussaini, A.~Quarteroni, and T.~A. Zang.
+\newblock \textit{Spectral Methods: Fundamentals in Single Domains}.
+\newblock Springer, 2006.
+
+\bibitem[Karniadakis and Sherwin(2005)]{karniadakis2005spectral}
+G.~E. Karniadakis and S.~J. Sherwin.
+\newblock \textit{Spectral/hp Element Methods for Computational Fluid Dynamics}.
+\newblock Oxford University Press, 2nd edition, 2005.
+
+\bibitem[Deville et~al.(2002)]{deville2002high}
+M.~O. Deville, P.~F. Fischer, and E.~H. Mund.
+\newblock \textit{High-Order Methods for Incompressible Fluid Flow}.
+\newblock Cambridge University Press, 2002.
+
+\bibitem[Trefethen(2000)]{trefethen2000spectral}
+L.~N. Trefethen.
+\newblock \textit{Spectral Methods in MATLAB}.
+\newblock SIAM, 2000.
+
+\end{thebibliography}
+
+\end{document}

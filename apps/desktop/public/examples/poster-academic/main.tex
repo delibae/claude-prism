@@ -1,0 +1,247 @@
+\documentclass[a0paper,portrait]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{multicol}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{microtype}
+
+\pagestyle{empty}
+
+% ──── Color Theme ────
+\definecolor{headerblue}{HTML}{1B3A5C}
+\definecolor{accentblue}{HTML}{2E86C1}
+\definecolor{lightbg}{HTML}{EBF5FB}
+\definecolor{darktext}{HTML}{2C3E50}
+\definecolor{sectioncolor}{HTML}{1A5276}
+
+% ──── Section styling ────
+\makeatletter
+\renewcommand{\section}{\@startsection{section}{1}{0pt}%
+  {-1.5ex plus -0.5ex minus -0.2ex}{1ex plus 0.2ex}%
+  {\LARGE\bfseries\color{sectioncolor}}}
+\makeatother
+
+\renewcommand{\familydefault}{\sfdefault}
+
+\begin{document}
+
+% ════════════════════════════════════════════
+% HEADER
+% ════════════════════════════════════════════
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[headerblue] ([yshift=0cm]current page.north west) rectangle ([yshift=-14cm]current page.north east);
+\end{tikzpicture}
+
+\vspace*{-1cm}
+\begin{center}
+  {\color{white}\fontsize{72}{86}\selectfont\bfseries
+  Machine Learning--Guided Drug Discovery:\\[0.3cm]
+  Predicting Protein--Ligand Binding Affinity\\[0.3cm]
+  with Graph Neural Networks}\\[1.5cm]
+  {\color{white}\fontsize{36}{44}\selectfont
+  \textbf{Elena Vasquez}$^1$, \textbf{Thomas Wright}$^{1,2}$, \textbf{Kenji Yamamoto}$^2$, \textbf{Prof. Laura Kingston}$^1$}\\[0.8cm]
+  {\color{white!85}\fontsize{30}{36}\selectfont
+  $^1$Department of Biochemistry, University of Oxford \quad\quad
+  $^2$DeepMind, London, UK}\\[0.5cm]
+  {\color{accentblue!40}\fontsize{26}{32}\selectfont
+  Contact: elena.vasquez@bioch.ox.ac.uk \quad|\quad ICML 2025 -- Poster \#247}
+\end{center}
+
+\vspace{2cm}
+
+% ════════════════════════════════════════════
+% BODY -- Three Columns
+% ════════════════════════════════════════════
+\begin{multicols}{3}
+
+% ──── Introduction ────
+\section*{Introduction}
+
+\large
+
+Drug discovery is a lengthy and expensive process, with the average new drug requiring over 10 years and \$2.6 billion to develop. A critical bottleneck is the accurate prediction of protein--ligand binding affinity, which determines whether a candidate molecule will effectively interact with its target protein.
+
+\vspace{0.5cm}
+
+\textbf{Traditional approaches:}
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt]
+  \item Molecular docking (AutoDock, Glide) -- fast but inaccurate
+  \item Molecular dynamics simulations -- accurate but computationally prohibitive
+  \item Classical QSAR models -- limited to predefined descriptors
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Our contribution:} We propose \textbf{AffinityGNN}, a graph neural network that operates directly on the 3D molecular graph of the protein--ligand complex to predict binding free energy ($\Delta G$) with near-experimental accuracy.
+
+\vspace{0.8cm}
+
+% ──── Methods ────
+\section*{Methods}
+
+\textbf{Graph Construction.} We represent the protein--ligand complex as a heterogeneous graph $G = (V_P \cup V_L, E)$ where:
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt]
+  \item $V_P$: protein residue nodes (C$\alpha$ atoms)
+  \item $V_L$: ligand heavy atom nodes
+  \item $E$: edges based on spatial proximity ($< 8$\AA)
+\end{itemize}
+
+\vspace{0.5cm}
+
+\textbf{Architecture.} AffinityGNN consists of:
+\begin{enumerate}[leftmargin=1.5em, itemsep=4pt]
+  \item Node feature encoder (atom type, charge, hybridization)
+  \item 6 layers of message-passing with attention
+  \item Graph-level readout with Set2Set pooling
+  \item Prediction head: 3-layer MLP $\rightarrow \Delta G$
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\textbf{Message Passing:}
+\begin{equation*}
+  h_i^{(l+1)} = \sigma\!\left( \sum_{j \in \mathcal{N}(i)} \alpha_{ij}^{(l)} W^{(l)} h_j^{(l)} + b^{(l)} \right)
+\end{equation*}
+
+where $\alpha_{ij}$ are attention weights incorporating edge features (distance, angle).
+
+\vspace{0.5cm}
+
+\textbf{Training.} We use a combined loss:
+\begin{equation*}
+  \mathcal{L} = \underbrace{\|\hat{y} - y\|_2^2}_{\text{MSE}} + \lambda \underbrace{(1 - \rho(\hat{y}, y))}_{\text{Correlation}}
+\end{equation*}
+
+\columnbreak
+
+% ──── Results ────
+\section*{Results}
+
+\textbf{Benchmark Performance} on PDBbind v2020 core set:
+
+\vspace{0.5cm}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+{\large
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Method} & \textbf{RMSE} & \textbf{Pearson $R$} \\
+\midrule
+AutoDock Vina  & 2.41 & 0.604 \\
+RF-Score v3    & 1.82 & 0.713 \\
+OnionNet-2     & 1.54 & 0.782 \\
+PLIP-GNN       & 1.41 & 0.801 \\
+\midrule
+\textbf{AffinityGNN} & \textbf{1.18} & \textbf{0.862} \\
+\bottomrule
+\end{tabular}}
+\end{center}
+
+\vspace{1cm}
+
+\textbf{Virtual Screening on DUD-E:}
+
+\vspace{0.5cm}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+{\large
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Target} & \textbf{AUC-ROC} & \textbf{EF$_{1\%}$} \\
+\midrule
+CDK2 (kinase)     & 0.94 & 42.3 \\
+COX-2 (enzyme)    & 0.91 & 38.7 \\
+EGFR (receptor)   & 0.93 & 45.1 \\
+HIV-RT (viral)    & 0.89 & 31.4 \\
+\midrule
+\textbf{Average}  & \textbf{0.92} & \textbf{39.4} \\
+\bottomrule
+\end{tabular}}
+\end{center}
+
+\vspace{1cm}
+
+\textbf{Experimental Validation.} We used AffinityGNN to screen 50,000 compounds against SARS-CoV-2 main protease (M$^{\text{pro}}$). The top 100 predictions were synthesized and tested:
+\begin{itemize}[leftmargin=1.5em, itemsep=4pt]
+  \item 23 compounds showed IC$_{50} < 10\,\mu$M
+  \item 4 compounds showed IC$_{50} < 100\,$nM
+  \item Best hit: IC$_{50} = 28\,$nM (comparable to nirmatrelvir)
+\end{itemize}
+
+\columnbreak
+
+% ──── Analysis ────
+\section*{Ablation \& Analysis}
+
+\textbf{Component Contributions:}
+
+\vspace{0.5cm}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+{\large
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Variant} & \textbf{RMSE} \\
+\midrule
+Full model                   & 1.18 \\
+$-$ Attention mechanism      & 1.34 \\
+$-$ Edge features            & 1.29 \\
+$-$ Correlation loss         & 1.25 \\
+$-$ Set2Set pooling          & 1.31 \\
+GCN baseline (no attention)  & 1.52 \\
+\bottomrule
+\end{tabular}}
+\end{center}
+
+\vspace{1cm}
+
+\textbf{Attention Visualization.} The learned attention weights highlight key interactions at the binding site, including hydrogen bonds, $\pi$-stacking, and hydrophobic contacts---consistent with known biochemistry.
+
+\vspace{1cm}
+
+% ──── Conclusions ────
+\section*{Conclusions}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=6pt]
+  \item AffinityGNN achieves \textbf{state-of-the-art} binding affinity prediction (RMSE = 1.18 kcal/mol)
+  \item \textbf{Interpretable} attention mechanism reveals binding site interactions
+  \item \textbf{Practical impact}: identified 4 potent M$^{\text{pro}}$ inhibitors from virtual screening
+  \item Inference time: \textbf{0.3ms per complex} (GPU), enabling large-scale screening
+  \item Code and models available at \texttt{github.com/oxbiochem/affinitygnn}
+\end{itemize}
+
+\vspace{1cm}
+
+% ──── References ────
+\section*{Key References}
+
+{\normalsize
+\begin{enumerate}[leftmargin=1.5em, itemsep=2pt]
+  \item Corso et al., ``DiffDock,'' \textit{ICLR}, 2023.
+  \item St\"{a}rk et al., ``EquiBind,'' \textit{ICML}, 2022.
+  \item Wang et al., ``PDBbind v2020,'' \textit{JCIM}, 2020.
+  \item Kipf \& Welling, ``GCN,'' \textit{ICLR}, 2017.
+\end{enumerate}
+}
+
+\vspace{0.8cm}
+
+% ──── Acknowledgements ────
+\section*{Acknowledgements}
+
+{\normalsize
+This work was supported by the Wellcome Trust (Grant 203141/Z/16/Z), EPSRC Doctoral Training Partnership, and computing resources from JADE2 (EP/T022205/1).}
+
+\end{multicols}
+
+\end{document}

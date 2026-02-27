@@ -1,0 +1,222 @@
+\documentclass[sigconf,nonacm]{acmart}
+
+\usepackage{booktabs}
+\usepackage{lipsum}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!50!black}\itshape,
+  stringstyle=\color{red!60!black},
+  frame=single,
+  breaklines=true,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  tabsize=2
+}
+
+\title{ConversaDB: A Context-Aware Query Engine for Conversational Database Interactions}
+
+\author{Emily R. Nakamura}
+\affiliation{
+  \institution{University of Washington}
+  \department{Paul G. Allen School of Computer Science}
+  \city{Seattle}
+  \state{WA}
+  \country{USA}
+}
+\email{enakamura@cs.washington.edu}
+
+\author{Carlos A. Mendez}
+\affiliation{
+  \institution{ETH Zurich}
+  \department{Department of Computer Science}
+  \city{Zurich}
+  \country{Switzerland}
+}
+\email{mendez@inf.ethz.ch}
+
+\author{Priya S. Gupta}
+\affiliation{
+  \institution{Microsoft Research}
+  \city{Redmond}
+  \state{WA}
+  \country{USA}
+}
+\email{priyag@microsoft.com}
+
+\begin{document}
+
+\begin{abstract}
+Natural language interfaces to databases (NLIDBs) have long been a goal of the database and NLP communities. While recent advances in large language models (LLMs) have dramatically improved text-to-SQL accuracy, existing systems treat each query independently, ignoring the conversational context that is natural in real-world database interactions. We present ConversaDB, a context-aware query engine that maintains a multi-turn dialogue state to resolve ambiguities, handle co-references, and support follow-up queries. Our system introduces three key innovations: (1)~a dialogue state tracker that maintains a structured representation of the conversation history, including referenced tables, columns, and filter conditions; (2)~a context-aware SQL generation module that conditions on both the current utterance and the dialogue state; and (3)~an interactive disambiguation protocol that proactively seeks clarification when query intent is uncertain. We evaluate ConversaDB on the SParC and CoSQL benchmarks, achieving 71.4\% and 53.8\% question match accuracy respectively, representing improvements of 6.2\% and 8.1\% over the previous state of the art. A user study with 48 participants confirms that ConversaDB significantly reduces the number of interaction turns required to complete complex analytical tasks.
+\end{abstract}
+
+\keywords{natural language interfaces, text-to-SQL, conversational AI, database systems, dialogue state tracking}
+
+\maketitle
+
+\section{Introduction}
+
+Databases store vast amounts of structured information, yet accessing this data requires proficiency in query languages such as SQL. Natural language interfaces to databases (NLIDBs) aim to bridge this gap by allowing users to express their information needs in plain language. Recent progress in large language models has led to dramatic improvements in single-turn text-to-SQL systems, with state-of-the-art models achieving over 80\% accuracy on the Spider benchmark~\cite{yu2018spider}.
+
+However, real-world database interactions are inherently conversational. Users rarely formulate their complete information need in a single query. Instead, they engage in multi-turn dialogues, refining their queries, asking follow-up questions, and exploring the data incrementally. Consider the following example interaction:
+
+\begin{enumerate}
+\item \textit{``Show me sales by region for Q4 2024.''}
+\item \textit{``What about the previous quarter?''}
+\item \textit{``Sort those by revenue.''}
+\item \textit{``Which region had the highest growth?''}
+\end{enumerate}
+
+Each utterance after the first requires understanding the conversational context to generate the correct SQL query. Utterance~2 requires resolving ``the previous quarter'' relative to Q4~2024. Utterance~3 refers to ``those,'' which co-references the results from utterance~2. These phenomena---temporal references, co-references, and ellipsis---are pervasive in natural dialogue but poorly handled by single-turn systems.
+
+\paragraph{Contributions.} We make the following contributions:
+
+\begin{itemize}
+\item We introduce ConversaDB, a context-aware query engine that maintains structured dialogue state for multi-turn database interactions.
+\item We propose a novel context-aware SQL generation architecture that combines dialogue state tracking with constrained decoding.
+\item We design an interactive disambiguation protocol that reduces errors by proactively seeking clarification.
+\item We achieve new state-of-the-art results on SParC and CoSQL benchmarks and validate our system through a comprehensive user study.
+\end{itemize}
+
+\section{Related Work}
+
+\subsection{Text-to-SQL}
+
+The text-to-SQL task has seen rapid progress in recent years. Early approaches used rule-based parsing and template filling~\cite{li2014constructing}. Neural approaches, beginning with Seq2SQL~\cite{zhong2017seq2sql}, framed the problem as sequence-to-sequence translation. More recent work leverages pre-trained language models, with systems like RESDSQL~\cite{li2023resdsql} achieving over 80\% exact match accuracy on Spider.
+
+\subsection{Conversational Text-to-SQL}
+
+SParC~\cite{yu2019sparc} and CoSQL~\cite{yu2019cosql} introduced benchmarks for context-dependent text-to-SQL. EditSQL~\cite{zhang2019editing} proposed editing the previous SQL query to handle follow-up questions. IGSQL~\cite{cai2020igsql} used an interaction graph to capture cross-turn dependencies. Despite these advances, handling complex co-references and temporal expressions remains challenging.
+
+\section{System Architecture}
+
+ConversaDB consists of three main components: (1)~a Dialogue State Tracker (DST), (2)~a Context-Aware SQL Generator (CASG), and (3)~an Interactive Disambiguation Module (IDM). Figure~1 illustrates the overall architecture.
+
+\subsection{Dialogue State Tracker}
+
+The DST maintains a structured representation $\mathcal{S}_t$ at each turn $t$ that captures the essential context from the conversation history:
+
+\begin{equation}
+\mathcal{S}_t = (\mathcal{T}_t, \mathcal{C}_t, \mathcal{F}_t, \mathcal{R}_t, Q_{t-1})
+\end{equation}
+
+\noindent where $\mathcal{T}_t$ is the set of referenced tables, $\mathcal{C}_t$ is the set of referenced columns, $\mathcal{F}_t$ represents active filter conditions, $\mathcal{R}_t$ captures the result schema from the previous query, and $Q_{t-1}$ is the most recent SQL query. At each turn, the DST updates the state based on the new utterance $u_t$:
+
+\begin{equation}
+\mathcal{S}_t = \text{DST}(\mathcal{S}_{t-1}, u_t, \mathcal{DB})
+\end{equation}
+
+\noindent where $\mathcal{DB}$ denotes the database schema.
+
+\subsection{Context-Aware SQL Generator}
+
+The CASG generates SQL queries conditioned on both the current utterance and the dialogue state. We encode the input as a linearized sequence:
+
+\begin{equation}
+x_t = [u_t; \text{serialize}(\mathcal{S}_t); \text{serialize}(\mathcal{DB})]
+\end{equation}
+
+The SQL query is generated autoregressively with schema-aware constrained decoding that ensures syntactic validity. We fine-tune a pre-trained T5-large model with the following objective:
+
+\begin{equation}
+\mathcal{L} = -\sum_{t=1}^{T} \sum_{j=1}^{|q_t|} \log P(q_t^j \mid q_t^{<j}, x_t; \theta)
+\end{equation}
+
+\subsection{Interactive Disambiguation}
+
+When the model's confidence in the generated SQL falls below threshold $\tau$, the IDM generates a clarification question. We compute confidence as the geometric mean of token-level probabilities:
+
+\begin{equation}
+\text{conf}(q_t) = \left( \prod_{j=1}^{|q_t|} P(q_t^j \mid q_t^{<j}, x_t) \right)^{1/|q_t|}
+\end{equation}
+
+\section{Evaluation}
+
+\subsection{Benchmark Results}
+
+Table~\ref{tab:benchmark} shows results on SParC and CoSQL.
+
+\begin{table}[t]
+\caption{Question match accuracy (\%) on SParC and CoSQL development sets.}
+\label{tab:benchmark}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Model} & \textbf{SParC} & \textbf{CoSQL} \\
+\midrule
+EditSQL (2019)           & 47.2 & 31.4 \\
+IGSQL (2020)             & 50.7 & 36.8 \\
+HIE-SQL (2022)           & 60.1 & 42.3 \\
+STAR (2023)              & 65.2 & 45.7 \\
+\midrule
+\textbf{ConversaDB}      & \textbf{71.4} & \textbf{53.8} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{User Study}
+
+We conducted a user study with 48 participants (24 SQL-proficient, 24 non-technical) who completed 8 analytical tasks using ConversaDB and a single-turn baseline. ConversaDB reduced the average number of interaction turns from 6.3 to 3.8 and increased task completion rate from 72\% to 91\%. Participants rated ConversaDB 4.2/5.0 on naturalness compared to 2.8/5.0 for the baseline.
+
+\subsection{Ablation Study}
+
+Table~\ref{tab:ablation} shows the contribution of each component.
+
+\begin{table}[t]
+\caption{Ablation study on SParC development set.}
+\label{tab:ablation}
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Configuration} & \textbf{QM Acc. (\%)} \\
+\midrule
+Full ConversaDB                    & 71.4 \\
+$-$ Dialogue State Tracker         & 63.8 \\
+$-$ Constrained Decoding           & 67.1 \\
+$-$ Interactive Disambiguation     & 69.2 \\
+$-$ Pre-training                   & 58.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusion}
+
+We presented ConversaDB, a context-aware query engine that brings conversational capabilities to natural language database interfaces. By maintaining structured dialogue state and employing context-aware SQL generation with interactive disambiguation, ConversaDB achieves state-of-the-art results on multi-turn text-to-SQL benchmarks. Our user study confirms that the conversational paradigm significantly improves the database interaction experience for both technical and non-technical users.
+
+\section*{Acknowledgments}
+
+This research was supported by NSF Award IIS-2238811 and a gift from Microsoft Research. We thank the anonymous reviewers for their constructive feedback.
+
+\bibliographystyle{ACM-Reference-Format}
+% \bibliography{references}
+
+\begin{thebibliography}{10}
+
+\bibitem{yu2018spider}
+T.~Yu et~al., ``Spider: A large-scale human-labeled dataset for complex and cross-database semantic parsing and text-to-SQL task,'' in \textit{EMNLP}, 2018, pp.~3911--3921.
+
+\bibitem{li2014constructing}
+F.~Li and H.~V. Jagadish, ``Constructing an interactive natural language interface for relational databases,'' \textit{PVLDB}, vol.~8, no.~1, pp.~73--84, 2014.
+
+\bibitem{zhong2017seq2sql}
+V.~Zhong, C.~Xiong, and R.~Socher, ``Seq2SQL: Generating structured queries from natural language using reinforcement learning,'' \textit{arXiv:1709.00103}, 2017.
+
+\bibitem{li2023resdsql}
+H.~Li et~al., ``RESDSQL: Decoupling schema linking and skeleton parsing for text-to-SQL,'' in \textit{AAAI}, 2023.
+
+\bibitem{yu2019sparc}
+T.~Yu et~al., ``SParC: Cross-domain semantic parsing in context,'' in \textit{ACL}, 2019, pp.~4511--4523.
+
+\bibitem{yu2019cosql}
+T.~Yu et~al., ``CoSQL: A conversational text-to-SQL challenge towards cross-domain natural language interfaces to databases,'' in \textit{EMNLP}, 2019.
+
+\bibitem{zhang2019editing}
+R.~Zhang et~al., ``Editing-based SQL query generation for cross-domain context-dependent questions,'' in \textit{EMNLP}, 2019.
+
+\bibitem{cai2020igsql}
+Y.~Cai and B.~Wan, ``IGSQL: Database schema interaction graph based neural model for context-dependent text-to-SQL generation,'' in \textit{EMNLP}, 2020.
+
+\end{thebibliography}
+
+\end{document}

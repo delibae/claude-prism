@@ -40,7 +40,8 @@
       "allow": [
         { "path": "$HOME/**" },
         { "path": "$DOCUMENT/**" },
-        { "path": "$DESKTOP/**" }
+        { "path": "$DESKTOP/**" },
+        { "path": "$TEMP/**" }
       ]
     },
     "shell:default",

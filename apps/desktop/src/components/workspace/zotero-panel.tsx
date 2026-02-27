@@ -14,6 +14,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useZoteroStore, type CollectionSyncInfo } from "@/stores/zotero-store";
+import { useDocumentStore } from "@/stores/document-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,7 +41,9 @@ export function ZoteroPanel() {
   const isValidating = useZoteroStore((s) => s.isValidating);
   const isSyncing = useZoteroStore((s) => s.isSyncing);
   const syncProgress = useZoteroStore((s) => s.syncProgress);
-  const syncedCollections = useZoteroStore((s) => s.syncedCollections);
+  const projectRoot = useDocumentStore((s) => s.projectRoot);
+  const allSyncedCollections = useZoteroStore((s) => s.syncedCollections);
+  const syncedCollections = projectRoot ? (allSyncedCollections[projectRoot] ?? {}) : {};
   const error = useZoteroStore((s) => s.error);
   const collections = useZoteroStore((s) => s.collections);
   const isLoadingCollections = useZoteroStore((s) => s.isLoadingCollections);

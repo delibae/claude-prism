@@ -1,0 +1,160 @@
+name: Build Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
+          - platform: macos-13
+            target: x86_64-apple-darwin
+            label: macos-x64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux dependencies
+        if: matrix.label == 'linux-x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build and release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseName: "ClaudePrism ${{ github.ref_name }}"
+          releaseBody: "Release is being built..."
+          releaseDraft: false
+          prerelease: false
+
+      - name: Build only (no release)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Upload artifacts (manual builds)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: |
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz*
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage*
+          if-no-files-found: warn
+
+  update-release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog and update release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | sed -n '2p' || true)
+
+          # Build changelog
+          if [ -n "$PREV_TAG" ]; then
+            CHANGES=$(git log --pretty=format:"- %s" "$PREV_TAG".."$TAG" --no-merges 2>/dev/null || echo "- Initial release")
+            COMPARE="[Full Changelog](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG})"
+          else
+            CHANGES="- Initial release"
+            COMPARE=""
+          fi
+
+          cat > release-body.md << EOF
+          <p align="center">
+            <img src="https://raw.githubusercontent.com/${{ github.repository }}/main/apps/desktop/src-tauri/icons/icon.png" width="128" height="128" />
+          </p>
+
+          ## ClaudePrism ${TAG}
+
+          ### What's Changed
+
+          ${CHANGES}
+
+          ### Downloads
+
+          - **Windows**: \`.msi\` (installer) or \`.exe\` (NSIS setup)
+          - **macOS**: \`.dmg\` (Apple Silicon: \`aarch64\`, Intel: \`x64\`)
+          - **Linux**: \`.AppImage\` (universal) or \`.deb\` (Debian/Ubuntu)
+
+          ### Installation
+
+          - **Windows**: Run the \`.msi\` installer or \`.exe\` setup
+          - **macOS**: Open the \`.dmg\` and drag ClaudePrism to Applications
+          - **Linux**: \`chmod +x\` the \`.AppImage\` and run it, or \`sudo dpkg -i\` the \`.deb\`
+
+          ${COMPARE}
+          EOF
+
+          gh release edit "$TAG" \
+            --repo "${{ github.repository }}" \
+            --notes-file release-body.md

@@ -1,86 +1,55 @@
-import { type FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircleIcon, BotIcon, UserIcon } from "lucide-react";
+import { type FC, memo, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircleIcon } from "lucide-react";
 import { useClaudeChatStore, type ClaudeStreamMessage, type ContentBlock } from "@/stores/claude-chat-store";
 import { MarkdownRenderer } from "./markdown-renderer";
-import { ToolWidget } from "./tool-widgets";
+import { ThinkingWidget, ToolWidget } from "./tool-widgets";
 
-const THINKING_MESSAGES = [
-  "Thinking",
-  "Analyzing your document",
-  "Reviewing the structure",
-  "Processing your request",
-  "Almost there",
-  "Working on it",
-  "Diving into the details",
-  "Crafting a response",
-  "Examining the code",
-];
+// ─── Streaming Indicator (isolated to prevent re-render storms) ───
 
-type TypewriterPhase = "typing" | "pausing" | "deleting";
-
-function useTypewriter(
-  words: string[],
-  active: boolean,
-  { typeSpeed = 60, deleteSpeed = 30, pauseDelay = 1800 } = {},
-) {
-  const [text, setText] = useState("");
-  const [wordIndex, setWordIndex] = useState(0);
-  const [phase, setPhase] = useState<TypewriterPhase>("typing");
-
-  // Reset when deactivated
-  useEffect(() => {
-    if (!active) {
-      setText("");
-      setWordIndex(0);
-      setPhase("typing");
-    }
-  }, [active]);
-
-  const tick = useCallback(() => {
-    const current = words[wordIndex];
-
-    if (phase === "typing") {
-      if (text.length < current.length) {
-        setText(current.slice(0, text.length + 1));
-      } else {
-        setPhase("pausing");
-      }
-    } else if (phase === "pausing") {
-      setPhase("deleting");
-    } else if (phase === "deleting") {
-      if (text.length > 0) {
-        setText(current.slice(0, text.length - 1));
-      } else {
-        setWordIndex((prev) => (prev + 1) % words.length);
-        setPhase("typing");
-      }
-    }
-  }, [text, wordIndex, phase, words]);
+const StreamingIndicator: FC = memo(() => {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
 
   useEffect(() => {
-    if (!active) return;
+    startRef.current = Date.now();
+    setElapsed(0);
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    const delay =
-      phase === "typing" ? typeSpeed : phase === "deleting" ? deleteSpeed : pauseDelay;
+  return (
+    <div className="flex items-center gap-1.5 px-1 py-1.5 text-muted-foreground">
+      <div className="flex gap-0.5">
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "0ms" }} />
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "150ms" }} />
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "300ms" }} />
+      </div>
+      <span className="text-sm">
+        Thinking...
+        {elapsed >= 3 && (
+          <span className="ml-1 text-xs text-muted-foreground/60">{elapsed}s</span>
+        )}
+      </span>
+    </div>
+  );
+});
 
-    const timeout = setTimeout(tick, delay);
-    return () => clearTimeout(timeout);
-  }, [active, tick, phase, typeSpeed, deleteSpeed, pauseDelay]);
-
-  return { text, phase };
-}
+// ─── Chat Messages (main component) ───
 
 export const ChatMessages: FC = () => {
   const messages = useClaudeChatStore((s) => s.messages);
   const isStreaming = useClaudeChatStore((s) => s.isStreaming);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const { text: thinkingText, phase: thinkingPhase } = useTypewriter(THINKING_MESSAGES, isStreaming);
+  const shouldAutoScrollRef = useRef(true);
+  const userHasScrolledRef = useRef(false);
 
   // Build a map of tool_use_id → tool_result for inline display
   const toolResultMap = useMemo(() => {
     const map = new Map<string, ContentBlock>();
     for (const msg of messages) {
-      if (msg.type === "user" && msg.message?.content) {
+      if (msg.type === "user" && Array.isArray(msg.message?.content)) {
         for (const block of msg.message.content) {
           if (block.type === "tool_result" && block.tool_use_id) {
             map.set(block.tool_use_id, block);
@@ -96,7 +65,7 @@ export const ChatMessages: FC = () => {
     // Collect all assistant text for dedup against result
     const assistantTexts = new Set<string>();
     for (const msg of messages) {
-      if (msg.type === "assistant" && msg.message?.content) {
+      if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
         for (const block of msg.message.content) {
           if (block.type === "text" && block.text) {
             assistantTexts.add(block.text.trim());
@@ -106,18 +75,16 @@ export const ChatMessages: FC = () => {
     }
 
     return messages.filter((msg) => {
-      // Skip system:init
       if (msg.type === "system" && msg.subtype === "init") return false;
-      // Skip non-displayable event types (rate_limit_event, etc.)
       if (msg.type !== "user" && msg.type !== "assistant" && msg.type !== "result") return false;
-      // Skip user messages that only contain tool_results
       if (msg.type === "user" && msg.message?.content) {
-        const hasOnlyToolResults = msg.message.content.every(
-          (b) => b.type === "tool_result"
-        );
-        if (hasOnlyToolResults) return false;
+        if (Array.isArray(msg.message.content)) {
+          const hasOnlyToolResults = msg.message.content.every(
+            (b: any) => b.type === "tool_result"
+          );
+          if (hasOnlyToolResults) return false;
+        }
       }
-      // Skip result message if its text duplicates an assistant message
       if (msg.type === "result" && msg.result) {
         if (assistantTexts.has(msg.result.trim())) return false;
       }
@@ -125,16 +92,41 @@ export const ChatMessages: FC = () => {
     });
   }, [messages]);
 
-  // Auto-scroll to bottom on new messages or message updates
+  // Auto-scroll to bottom (only if user hasn't scrolled up)
   useEffect(() => {
-    if (viewportRef.current) {
-      viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
+    if (shouldAutoScrollRef.current && viewportRef.current) {
+      viewportRef.current.scrollTo({
+        top: viewportRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
   }, [displayMessages]);
+
+  // Reset auto-scroll when streaming stops
+  useEffect(() => {
+    if (!isStreaming) {
+      shouldAutoScrollRef.current = true;
+      userHasScrolledRef.current = false;
+    }
+  }, [isStreaming]);
+
+  const handleScroll = () => {
+    if (!viewportRef.current) return;
+    const el = viewportRef.current;
+    const isAtBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 50;
+    if (!isAtBottom) {
+      userHasScrolledRef.current = true;
+      shouldAutoScrollRef.current = false;
+    } else if (userHasScrolledRef.current) {
+      shouldAutoScrollRef.current = true;
+      userHasScrolledRef.current = false;
+    }
+  };
 
   return (
     <div
       ref={viewportRef}
+      onScroll={handleScroll}
       className="absolute inset-0 overflow-y-auto scroll-smooth px-4 py-2"
     >
       {displayMessages.length === 0 && !isStreaming && (
@@ -151,23 +143,7 @@ export const ChatMessages: FC = () => {
         />
       ))}
 
-      {isStreaming && (
-        <div className="flex items-center gap-1.5 px-1 py-1.5 text-muted-foreground">
-          <div className="flex gap-0.5">
-            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "0ms" }} />
-            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "150ms" }} />
-            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "300ms" }} />
-          </div>
-          <span className="text-sm">
-            {thinkingText}
-            <span
-              className={`ml-px inline-block h-[1em] w-0.5 translate-y-px bg-muted-foreground/70 ${
-                thinkingPhase === "pausing" ? "animate-pulse" : ""
-              }`}
-            />
-          </span>
-        </div>
-      )}
+      {isStreaming && <StreamingIndicator />}
     </div>
   );
 };
@@ -177,13 +153,7 @@ export const ChatMessages: FC = () => {
 const MessageBubble: FC<{
   message: ClaudeStreamMessage;
   toolResultMap: Map<string, ContentBlock>;
-}> = ({ message, toolResultMap }) => {
-  console.log(
-    `[chat-msg] type=${message.type} subtype=${message.subtype ?? ""} ` +
-    `contentTypes=[${message.message?.content?.map((b) => b.type).join(",") ?? "none"}] ` +
-    `result=${message.result ? `"${message.result.slice(0, 60)}"` : "none"}`
-  );
-
+}> = memo(({ message, toolResultMap }) => {
   if (message.type === "user") {
     return <UserMessage message={message} />;
   }
@@ -194,15 +164,20 @@ const MessageBubble: FC<{
     return <ResultMessage message={message} />;
   }
   return null;
-};
+});
 
 // ─── User Message ───
 
 const UserMessage: FC<{ message: ClaudeStreamMessage }> = ({ message }) => {
-  const textContent = message.message?.content
-    ?.filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
+  const rawContent = message.message?.content;
+  const textContent = Array.isArray(rawContent)
+    ? rawContent
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+    : typeof rawContent === "string"
+      ? rawContent
+      : "";
 
   if (!textContent) return null;
 
@@ -304,26 +279,30 @@ const AssistantMessage: FC<{
   toolResultMap: Map<string, ContentBlock>;
 }> = ({ message, toolResultMap }) => {
   const content = message.message?.content;
-  if (!content || content.length === 0) return null;
+  if (!Array.isArray(content) || content.length === 0) return null;
 
-  // Check if any content block would actually render
   const hasRenderableContent = content.some(
     (block) =>
       (block.type === "text" && block.text) ||
+      (block.type === "thinking" && block.thinking) ||
       (block.type === "tool_use" && block.id)
   );
 
-  if (!hasRenderableContent) {
-    console.log("[chat-msg] AssistantMessage skipped — no renderable content:",
-      content.map((b) => ({ type: b.type, hasText: !!b.text, hasId: !!b.id }))
-    );
-    return null;
-  }
+  if (!hasRenderableContent) return null;
 
   return (
     <div className="w-full py-1.5">
       <div className="px-1 text-foreground text-sm leading-relaxed">
         {content.map((block, idx) => {
+          if (block.type === "thinking" && block.thinking) {
+            return (
+              <ThinkingWidget
+                key={idx}
+                thinking={block.thinking}
+                signature={block.signature}
+              />
+            );
+          }
           if (block.type === "text" && block.text) {
             return (
               <MarkdownRenderer

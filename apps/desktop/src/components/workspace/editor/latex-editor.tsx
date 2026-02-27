@@ -260,7 +260,7 @@ export function LatexEditor() {
   const handleFindNext = () => { const view = viewRef.current; if (view) { findNext(view); view.focus(); } };
   const handleFindPrevious = () => { const view = viewRef.current; if (view) { findPrevious(view); view.focus(); } };
 
-  // Compile: save all files first, then compile via sidecar using projectDir
+  // Compile: save all files first, then compile via Tauri command
   compileRef.current = async () => {
     if (isCompiling || !projectRoot || activeFile?.type !== "tex") return;
     useHistoryStore.getState().stopReview();
@@ -566,6 +566,8 @@ export function LatexEditor() {
         });
         view.scrollDOM.scrollTop = scrollTop;
         console.log("[merge-view] merge view activated successfully");
+        // Auto-scroll to first chunk
+        setTimeout(() => goToChunk(0), 50);
       } catch (err) {
         console.error("[merge-view] failed to activate merge view:", err);
         isMergeActiveRef.current = false;
@@ -784,17 +786,15 @@ export function LatexEditor() {
             </span>
             <div className="mx-0.5 h-4 w-px bg-border" />
             <button
-              onClick={() => goToChunk(mergeChunkInfo.current - 2)}
-              disabled={mergeChunkInfo.current <= 1}
-              className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+              onClick={() => goToChunk(mergeChunkInfo.current <= 1 ? mergeChunkInfo.total - 1 : mergeChunkInfo.current - 2)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
               title="Previous change"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
             <button
-              onClick={() => goToChunk(mergeChunkInfo.current)}
-              disabled={mergeChunkInfo.current >= mergeChunkInfo.total}
-              className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+              onClick={() => goToChunk(mergeChunkInfo.current >= mergeChunkInfo.total ? 0 : mergeChunkInfo.current)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
               title="Next change"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -921,7 +921,6 @@ function InlinePdfViewer({
             data={pdfData}
             scale={imageScale}
             onScaleChange={onImageScaleChange}
-            onError={(msg) => setError(msg)}
           />
         ) : error ? (
           <div className="flex h-full items-center justify-center text-muted-foreground text-sm">

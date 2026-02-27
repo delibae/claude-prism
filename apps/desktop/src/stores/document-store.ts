@@ -15,6 +15,7 @@ import {
   type ProjectFileType,
 } from "@/lib/tauri/fs";
 import { useHistoryStore } from "@/stores/history-store";
+import { useClaudeChatStore } from "@/stores/claude-chat-store";
 
 export interface ProjectFile {
   id: string; // relativePath is the id
@@ -172,6 +173,10 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       cursorPosition: 0,
       selectionRange: null,
     });
+
+    // Initialize history system early so snapshots work before the panel is opened
+    const historyStore = useHistoryStore.getState();
+    historyStore.init(rootPath).then(() => historyStore.loadSnapshots(rootPath)).catch(() => {});
   },
 
   closeProject: () => {
@@ -184,6 +189,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       compileError: null,
       initialized: false,
     });
+    // Reset chat session so stale messages don't leak into the next project
+    useClaudeChatStore.getState().newSession();
   },
 
   setActiveFile: (id) =>
@@ -204,12 +211,16 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     return id;
   },
 
-  deleteFile: (id) => {
+  deleteFile: async (id) => {
     const state = get();
     if (state.files.length <= 1) return;
     const file = state.files.find((f) => f.id === id);
     if (file) {
-      deleteFileFromDisk(file.absolutePath).catch(console.error);
+      try {
+        await deleteFileFromDisk(file.absolutePath);
+      } catch (e) {
+        console.error("Failed to delete file from disk:", e);
+      }
     }
     const newFiles = state.files.filter((f) => f.id !== id);
     const newActiveId =
@@ -217,7 +228,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     set({ files: newFiles, activeFileId: newActiveId });
   },
 
-  renameFile: (id, name) => {
+  renameFile: async (id, name) => {
     const state = get();
     const file = state.files.find((f) => f.id === id);
     if (!file || !state.projectRoot) return;
@@ -227,23 +238,27 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       : "";
     const newRelativePath = dir ? `${dir}/${name}` : name;
 
-    join(state.projectRoot, newRelativePath).then((newAbsPath) => {
-      renameFileOnDisk(file.absolutePath, newAbsPath).catch(console.error);
-      set((s) => ({
-        files: s.files.map((f) =>
-          f.id === id
-            ? {
-                ...f,
-                name,
-                relativePath: newRelativePath,
-                absolutePath: newAbsPath,
-                id: newRelativePath,
-              }
-            : f,
-        ),
-        activeFileId: s.activeFileId === id ? newRelativePath : s.activeFileId,
-      }));
-    });
+    const newAbsPath = await join(state.projectRoot, newRelativePath);
+    try {
+      await renameFileOnDisk(file.absolutePath, newAbsPath);
+    } catch (e) {
+      console.error("Failed to rename file on disk:", e);
+      return;
+    }
+    set((s) => ({
+      files: s.files.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              name,
+              relativePath: newRelativePath,
+              absolutePath: newAbsPath,
+              id: newRelativePath,
+            }
+          : f,
+      ),
+      activeFileId: s.activeFileId === id ? newRelativePath : s.activeFileId,
+    }));
   },
 
   updateFileContent: (id, content) => {
@@ -259,7 +274,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
   setPdfData: (data) => set({ pdfData: data, compileError: null }),
 
-  setCompileError: (error) => set({ compileError: error, pdfData: null }),
+  setCompileError: (error) => set({ compileError: error }),
 
   setIsCompiling: (isCompiling) => set({ isCompiling }),
 
@@ -345,12 +360,21 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   saveAllFiles: async () => {
     const state = get();
     const dirtyFiles = state.files.filter((f) => f.isDirty && f.content);
-    await Promise.all(
+    const results = await Promise.allSettled(
       dirtyFiles.map((f) => writeTexFileContent(f.absolutePath, f.content!)),
     );
-    set((s) => ({
-      files: s.files.map((f) => ({ ...f, isDirty: false })),
-    }));
+    // Only mark successfully saved files as clean
+    const savedIds = new Set<string>();
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") savedIds.add(dirtyFiles[i].id);
+    });
+    if (savedIds.size > 0) {
+      set((s) => ({
+        files: s.files.map((f) =>
+          savedIds.has(f.id) ? { ...f, isDirty: false } : f,
+        ),
+      }));
+    }
   },
 
   saveCurrentFile: async () => {
@@ -485,13 +509,29 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     if (!projectRoot) return;
 
     const { files: fsFiles, folders: fsFolders } = await scanProjectFolder(projectRoot);
-    const existingPaths = new Set(files.map((f) => f.relativePath));
+    const existingMap = new Map(files.map((f) => [f.relativePath, f]));
     const diskPaths = new Set(fsFiles.map((f) => f.relativePath));
 
-    // Find new files on disk that aren't in the store
-    const newFiles: ProjectFile[] = [];
+    const merged: ProjectFile[] = [];
+
     for (const fsFile of fsFiles) {
-      if (!existingPaths.has(fsFile.relativePath)) {
+      const existing = existingMap.get(fsFile.relativePath);
+
+      if (existing) {
+        // Existing file — reload content from disk unless the user has unsaved edits
+        if (existing.isDirty) {
+          merged.push(existing);
+        } else {
+          const updated = { ...existing };
+          if (updated.type === "tex" || updated.type === "bib" || updated.type === "style" || updated.type === "other") {
+            try {
+              updated.content = await readTexFileContent(updated.absolutePath);
+            } catch { /* keep previous content */ }
+          }
+          merged.push(updated);
+        }
+      } else {
+        // New file on disk
         const pf: ProjectFile = {
           id: fsFile.relativePath,
           name: fsFile.relativePath.split("/").pop() || fsFile.relativePath,
@@ -511,16 +551,17 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
         } else if (pf.type === "pdf") {
           pf.dataUrl = getAssetUrl(pf.absolutePath);
         }
-        newFiles.push(pf);
+        merged.push(pf);
       }
     }
 
-    // Remove files from store that no longer exist on disk (keep dirty ones)
-    const kept = files.filter(
-      (f) => diskPaths.has(f.relativePath) || f.isDirty,
-    );
+    // Keep dirty files that were deleted from disk (user hasn't saved yet)
+    for (const f of files) {
+      if (!diskPaths.has(f.relativePath) && f.isDirty) {
+        merged.push(f);
+      }
+    }
 
-    const merged = [...kept, ...newFiles];
     const newActiveId = merged.some((f) => f.id === activeFileId)
       ? activeFileId
       : merged[0]?.id ?? "";

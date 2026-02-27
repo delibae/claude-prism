@@ -1,0 +1,164 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=0.65in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\usepackage{microtype}
+\usepackage{multicol}
+
+\definecolor{primary}{HTML}{2C3E50}
+\definecolor{accent}{HTML}{2E86C1}
+\definecolor{lightgray}{HTML}{95A5A6}
+\definecolor{darktext}{HTML}{333333}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accent,
+  urlcolor=accent
+}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{}[{\color{accent}\titlerule[1.5pt]}]
+\titlespacing{\section}{0pt}{14pt}{6pt}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+% Custom commands
+\newcommand{\cventry}[4]{%
+  \textbf{#1} \hfill {\color{lightgray}#2}\\
+  {\color{accent}\textit{#3}} \hfill {\color{lightgray}\textit{#4}}\\[2pt]
+}
+\newcommand{\cvsep}{\vspace{6pt}}
+
+\begin{document}
+
+% ──── Header ────
+\begin{center}
+  {\fontsize{28}{34}\selectfont\bfseries\color{primary} Dr.\\ Alexandra Chen}\\[8pt]
+  {\color{lightgray}\rule{8cm}{0.5pt}}\\[8pt]
+  {\small
+    \faIcon{envelope}\;\href{mailto:a.chen@stanford.edu}{a.chen@stanford.edu} \quad
+    \faIcon{phone}\;+1 (650) 555-0142 \quad
+    \faIcon{map-marker-alt}\;Stanford, CA\\[4pt]
+    \faIcon{globe}\;\href{https://alexchen.io}{alexchen.io} \quad
+    \faIcon{github}\;\href{https://github.com/alexchen}{github.com/alexchen} \quad
+    \faIcon{linkedin}\;\href{https://linkedin.com/in/alexchen}{linkedin.com/in/alexchen} \quad
+    \faIcon{graduation-cap}\;\href{https://scholar.google.com/citations?user=XXXXX}{Google Scholar}
+  }
+\end{center}
+
+\vspace{4pt}
+
+% ──── Summary ────
+\section{Summary}
+
+Machine learning researcher with 8+ years of experience in natural language processing and large language models. Published 25+ papers at top venues (NeurIPS, ICML, ACL, EMNLP) with 3,800+ citations. Led research teams developing foundation models deployed to millions of users. Seeking faculty positions in computer science.
+
+% ──── Education ────
+\section{Education}
+
+\cventry{Ph.D.\\ in Computer Science}{2016 -- 2021}{Stanford University}{Stanford, CA}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=2pt]
+  \item Thesis: ``Efficient Transformers for Long-Range Sequence Modeling''
+  \item Advisor: Prof.\\ Christopher Manning \quad Committee: Profs.\\ Percy Liang, Dan Jurafsky
+  \item Stanford Graduate Fellowship (SGF) recipient
+\end{itemize}
+
+\cvsep
+
+\cventry{M.S.\\ in Computer Science}{2014 -- 2016}{Carnegie Mellon University}{Pittsburgh, PA}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=2pt]
+  \item Focus: Machine Learning and Language Technologies
+  \item GPA: 4.0/4.0 \quad Dean's List all semesters
+\end{itemize}
+
+\cvsep
+
+\cventry{B.S.\\ in Mathematics and Computer Science}{2010 -- 2014}{MIT}{Cambridge, MA}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=2pt]
+  \item Summa Cum Laude \quad Phi Beta Kappa
+  \item Undergraduate thesis on spectral graph theory (awarded departmental prize)
+\end{itemize}
+
+% ──── Experience ────
+\section{Professional Experience}
+
+\cventry{Senior Research Scientist}{2023 -- Present}{Google DeepMind}{Mountain View, CA}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=2pt]
+  \item Lead a team of 8 researchers developing next-generation language models
+  \item Designed novel attention mechanisms reducing compute by 40\% at scale
+  \item Core contributor to Gemini model family; responsible for efficiency improvements
+  \item Mentored 4 PhD interns, all placed at top research labs or faculty positions
+\end{itemize}
+
+\cvsep
+
+\cventry{Research Scientist}{2021 -- 2023}{Meta AI (FAIR)}{Menlo Park, CA}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=2pt]
+  \item Developed sparse mixture-of-experts models for efficient inference
+  \item Led the retrieval-augmented generation (RAG) project for factual consistency
+  \item Published 8 papers; 2 received spotlight/oral designations at NeurIPS
+  \item Open-sourced model checkpoints downloaded 500K+ times
+\end{itemize}
+
+\cvsep
+
+\cventry{Research Intern}{Summers 2018, 2019}{OpenAI}{San Francisco, CA}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=2pt]
+  \item Contributed to GPT-2 training infrastructure and evaluation framework
+  \item Developed techniques for reducing hallucination in text generation
+\end{itemize}
+
+% ──── Selected Publications ────
+\section{Selected Publications}
+{\small
+\begin{enumerate}[leftmargin=1.5em, itemsep=3pt]
+  \item \textbf{A.\\ Chen}, J.\\ Smith, R.\\ Patel. ``FlashLinear: Sub-Quadratic Attention via Structured State Spaces.'' \textit{NeurIPS 2024}. \textbf{(Oral, top 0.5\%)}
+  \item \textbf{A.\\ Chen}, M.\\ Johnson. ``Scaling Laws for Mixture-of-Experts Language Models.'' \textit{ICML 2024}.
+  \item L.\\ Wang, \textbf{A.\\ Chen}, K.\\ Lee. ``Retrieval-Augmented Generation with Learned Relevance.'' \textit{ACL 2023}. \textbf{(Best Paper Award)}
+  \item \textbf{A.\\ Chen}, T.\\ Brown, S.\\ Narang. ``Efficient Long-Context Transformers via Sliding Window Attention.'' \textit{NeurIPS 2022}. \textbf{(Spotlight)}
+  \item \textbf{A.\\ Chen}, C.\\ Manning. ``Linear Transformers with Gated Retention.'' \textit{ICLR 2021}.
+\end{enumerate}
+}
+
+% ──── Awards ────
+\section{Awards \& Honors}
+
+\begin{multicols}{2}
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=3pt]
+  \item ACL Best Paper Award, 2023
+  \item MIT Technology Review 35 Under 35, 2024
+  \item Stanford Graduate Fellowship, 2016--2021
+  \item NSF Graduate Research Fellowship, 2016
+  \item CRA Outstanding Undergraduate Award, 2014
+  \item Phi Beta Kappa, MIT Chapter, 2014
+\end{itemize}
+\end{multicols}
+
+% ──── Skills ────
+\section{Technical Skills}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textbf{Languages:} & Python, C++, CUDA, Julia, Rust \\
+\textbf{Frameworks:} & PyTorch, JAX, TensorFlow, Hugging Face, DeepSpeed, Megatron-LM \\
+\textbf{Infrastructure:} & Kubernetes, Slurm, TPU Pods, multi-node GPU training (up to 2048 GPUs) \\
+\textbf{Specialties:} & Large language models, efficient attention, distributed training, NLP \\
+\end{tabularx}
+
+% ──── Service ────
+\section{Academic Service}
+
+\begin{itemize}[leftmargin=1.5em, nosep, itemsep=3pt]
+  \item \textbf{Area Chair}: NeurIPS 2024, ICML 2024, ACL 2023
+  \item \textbf{Reviewer}: NeurIPS, ICML, ICLR, ACL, EMNLP, JMLR, TACL (100+ reviews total)
+  \item \textbf{Workshop Organizer}: ``Efficient NLP'' at EMNLP 2023; ``Scaling Laws'' at ICML 2024
+  \item \textbf{Invited Talks}: Google, Microsoft, Meta, Amazon, Apple, NVIDIA, 15+ universities
+\end{itemize}
+
+\end{document}

@@ -158,12 +158,34 @@
   scrollbar-color: var(--sidebar-border) transparent;
 }
 
-.react-pdf__Page__textContent span {
-  cursor: pointer;
-  transition: background-color 0.15s ease;
+/* MuPDF text selection layer */
+.mupdf-text-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: auto;
 }
 
-.react-pdf__Page__textContent span:hover {
-  background-color: oklch(0.9 0.1 250 / 30%);
-  border-radius: 2px;
+.mupdf-text-layer text {
+  fill: transparent;
+  white-space: pre;
+  cursor: text;
+}
+
+.mupdf-text-layer text::selection {
+  fill: hsla(220, 100%, 50%, 0.3);
+}
+
+/* MuPDF link overlay layer */
+.mupdf-link-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.mupdf-link-layer a {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
 }

@@ -22,13 +22,16 @@ export interface CollectionSyncInfo {
   keyMap: Record<string, string>;
 }
 
+/** Synced collections scoped per project path */
+type ProjectSyncedCollections = Record<string, Record<string, CollectionSyncInfo>>;
+
 interface ZoteroState {
   // Persisted
   apiKey: string | null;
   userID: string | null;
   username: string | null;
-  /** Synced collections, keyed by collectionKey (or "__my_library__" for all items) */
-  syncedCollections: Record<string, CollectionSyncInfo>;
+  /** Synced collections keyed by projectPath → collectionKey */
+  syncedCollections: ProjectSyncedCollections;
 
   // Transient
   isAuthenticated: boolean;
@@ -187,6 +190,7 @@ export const useZoteroStore = create<ZoteroState>()(
 
         const docStore = useDocumentStore.getState();
         if (!docStore.projectRoot) return;
+        const projectRoot = docStore.projectRoot;
 
         const sk = storeKey(collectionKey);
         set({ isSyncing: sk, syncProgress: null, error: null });
@@ -205,7 +209,7 @@ export const useZoteroStore = create<ZoteroState>()(
             docStore.updateFileContent(existingFile.id, result.bibtex);
           } else {
             const fullPath = await createFileOnDisk(
-              docStore.projectRoot,
+              projectRoot,
               bibFileName,
               result.bibtex,
             );
@@ -218,7 +222,7 @@ export const useZoteroStore = create<ZoteroState>()(
             });
           }
 
-          // Store sync info
+          // Store sync info scoped to current project
           const syncInfo: CollectionSyncInfo = {
             collectionKey,
             name,
@@ -226,11 +230,17 @@ export const useZoteroStore = create<ZoteroState>()(
             libraryVersion: result.libraryVersion,
             keyMap: result.keyMap,
           };
-          set((s) => ({
-            syncedCollections: { ...s.syncedCollections, [sk]: syncInfo },
-            isSyncing: null,
-            syncProgress: null,
-          }));
+          set((s) => {
+            const projectColls = s.syncedCollections[projectRoot] ?? {};
+            return {
+              syncedCollections: {
+                ...s.syncedCollections,
+                [projectRoot]: { ...projectColls, [sk]: syncInfo },
+              },
+              isSyncing: null,
+              syncProgress: null,
+            };
+          });
         } catch (err) {
           set({
             error: err instanceof Error ? err.message : "Import failed",
@@ -244,11 +254,15 @@ export const useZoteroStore = create<ZoteroState>()(
         const { apiKey, userID, syncedCollections } = get();
         if (!apiKey || !userID) return;
 
+        const docStore = useDocumentStore.getState();
+        if (!docStore.projectRoot) return;
+        const projectRoot = docStore.projectRoot;
+
         const sk = storeKey(collectionKey);
-        const syncInfo = syncedCollections[sk];
+        const projectColls = syncedCollections[projectRoot] ?? {};
+        const syncInfo = projectColls[sk];
         if (!syncInfo) return;
 
-        const docStore = useDocumentStore.getState();
         const bibFile = docStore.files.find((f) => f.name === syncInfo.bibFileName);
         if (!bibFile) return;
 
@@ -274,18 +288,24 @@ export const useZoteroStore = create<ZoteroState>()(
             const updatedContent = entries.join("\n\n") + "\n";
             docStore.updateFileContent(bibFile.id, updatedContent);
 
-            set((s) => ({
-              syncedCollections: {
-                ...s.syncedCollections,
-                [sk]: {
-                  ...syncInfo,
-                  libraryVersion: result.libraryVersion,
-                  keyMap: newKeyMap,
+            set((s) => {
+              const pColls = s.syncedCollections[projectRoot] ?? {};
+              return {
+                syncedCollections: {
+                  ...s.syncedCollections,
+                  [projectRoot]: {
+                    ...pColls,
+                    [sk]: {
+                      ...syncInfo,
+                      libraryVersion: result.libraryVersion,
+                      keyMap: newKeyMap,
+                    },
+                  },
                 },
-              },
-              isSyncing: null,
-              syncProgress: null,
-            }));
+                isSyncing: null,
+                syncProgress: null,
+              };
+            });
           } else {
             // For "My Library", apply incremental diff
             const currentContent = bibFile.content ?? "";
@@ -312,18 +332,24 @@ export const useZoteroStore = create<ZoteroState>()(
             const updatedContent = Array.from(entries.values()).join("\n\n") + "\n";
             docStore.updateFileContent(bibFile.id, updatedContent);
 
-            set((s) => ({
-              syncedCollections: {
-                ...s.syncedCollections,
-                [sk]: {
-                  ...syncInfo,
-                  libraryVersion: result.libraryVersion,
-                  keyMap: newKeyMap,
+            set((s) => {
+              const pColls = s.syncedCollections[projectRoot] ?? {};
+              return {
+                syncedCollections: {
+                  ...s.syncedCollections,
+                  [projectRoot]: {
+                    ...pColls,
+                    [sk]: {
+                      ...syncInfo,
+                      libraryVersion: result.libraryVersion,
+                      keyMap: newKeyMap,
+                    },
+                  },
                 },
-              },
-              isSyncing: null,
-              syncProgress: null,
-            }));
+                isSyncing: null,
+                syncProgress: null,
+              };
+            });
           }
         } catch (err) {
           set({
@@ -335,10 +361,19 @@ export const useZoteroStore = create<ZoteroState>()(
       },
 
       removeCollection: (collectionKey) => {
+        const projectRoot = useDocumentStore.getState().projectRoot;
+        if (!projectRoot) return;
+
         const sk = storeKey(collectionKey);
         set((s) => {
-          const { [sk]: _, ...rest } = s.syncedCollections;
-          return { syncedCollections: rest };
+          const projectColls = s.syncedCollections[projectRoot] ?? {};
+          const { [sk]: _, ...rest } = projectColls;
+          return {
+            syncedCollections: {
+              ...s.syncedCollections,
+              [projectRoot]: rest,
+            },
+          };
         });
       },
     }),
