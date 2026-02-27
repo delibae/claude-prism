@@ -51,20 +51,50 @@ struct CommandOutput {
 }
 
 /// Build an augmented PATH that includes common TeX installation directories.
-/// macOS GUI apps don't inherit the user's shell PATH, so pdflatex etc. won't be found.
+/// GUI apps don't always inherit the user's shell PATH, so pdflatex etc. won't be found.
 fn tex_path() -> String {
     let mut path = std::env::var("PATH").unwrap_or_default();
-    let extras = [
-        "/Library/TeX/texbin",
-        "/usr/local/texlive/2024/bin/universal-darwin",
-        "/usr/local/texlive/2023/bin/universal-darwin",
-        "/usr/texbin",
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-    ];
+
+    #[cfg(target_os = "macos")]
+    let (extras, sep) = (
+        vec![
+            "/Library/TeX/texbin".to_string(),
+            "/usr/local/texlive/2024/bin/universal-darwin".to_string(),
+            "/usr/local/texlive/2023/bin/universal-darwin".to_string(),
+            "/usr/texbin".to_string(),
+            "/opt/homebrew/bin".to_string(),
+            "/usr/local/bin".to_string(),
+        ],
+        ":",
+    );
+
+    #[cfg(target_os = "windows")]
+    let (extras, sep) = ({
+        let mut v = vec![
+            "C:\\texlive\\2024\\bin\\windows".to_string(),
+            "C:\\texlive\\2023\\bin\\windows".to_string(),
+            "C:\\Program Files\\MiKTeX\\miktex\\bin\\x64".to_string(),
+        ];
+        // Also check user-local MiKTeX
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            v.push(format!("{}\\Programs\\MiKTeX\\miktex\\bin\\x64", localappdata));
+        }
+        v
+    }, ";");
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let (extras, sep): (Vec<String>, &str) = (
+        vec![
+            "/usr/local/texlive/2024/bin/x86_64-linux".to_string(),
+            "/usr/local/texlive/2023/bin/x86_64-linux".to_string(),
+            "/usr/local/bin".to_string(),
+        ],
+        ":",
+    );
+
     for extra in &extras {
-        if Path::new(extra).exists() && !path.contains(extra) {
-            path = format!("{}:{}", extra, path);
+        if Path::new(extra).exists() && !path.contains(extra.as_str()) {
+            path = format!("{}{}{}", extra, sep, path);
         }
     }
     path
@@ -83,8 +113,13 @@ async fn run_with_timeout(
         .stderr(std::process::Stdio::piped())
         .env("PATH", tex_path());
 
+    #[cfg(not(target_os = "windows"))]
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", home);
+    }
+    #[cfg(target_os = "windows")]
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        cmd.env("USERPROFILE", home);
     }
 
     let child = cmd
@@ -703,12 +738,16 @@ pub async fn synctex_edit(
         return Err("Could not resolve source location".to_string());
     }
 
-    // Normalize: strip work_dir prefix and "./" prefix
+    // Normalize: strip work_dir prefix and "./" or ".\\" prefix
     let work_dir_str = work_dir.to_string_lossy().to_string();
     if let Some(rest) = file.strip_prefix(&format!("{}/", work_dir_str)) {
         file = rest.to_string();
+    } else if let Some(rest) = file.strip_prefix(&format!("{}\\", work_dir_str)) {
+        file = rest.to_string();
     }
     if let Some(rest) = file.strip_prefix("./") {
+        file = rest.to_string();
+    } else if let Some(rest) = file.strip_prefix(".\\") {
         file = rest.to_string();
     }
 

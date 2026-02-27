@@ -30,6 +30,7 @@ dotenvy = "0.15"
 git2 = "0.20"
 chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
+which = "7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

@@ -4,6 +4,12 @@ import { App } from "./App";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./styles/globals.css";
 
+// On non-macOS platforms, reset titlebar height (no overlay titlebar)
+if (!navigator.userAgent.includes("Macintosh")) {
+  document.documentElement.style.setProperty("--titlebar-height", "0px");
+  document.documentElement.style.setProperty("--traffic-light-width", "0px");
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App

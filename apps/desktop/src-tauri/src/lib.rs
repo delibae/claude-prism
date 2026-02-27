@@ -18,24 +18,42 @@ struct EditorInfo {
 struct EditorDef {
     id: &'static str,
     name: &'static str,
-    app_path: &'static str,
     cli: &'static str,
 }
 
 const KNOWN_EDITORS: &[EditorDef] = &[
-    EditorDef { id: "cursor", name: "Cursor", app_path: "/Applications/Cursor.app", cli: "cursor" },
-    EditorDef { id: "vscode", name: "VS Code", app_path: "/Applications/Visual Studio Code.app", cli: "code" },
-    EditorDef { id: "zed", name: "Zed", app_path: "/Applications/Zed.app", cli: "zed" },
-    EditorDef { id: "sublime", name: "Sublime Text", app_path: "/Applications/Sublime Text.app", cli: "subl" },
+    EditorDef { id: "cursor", name: "Cursor", cli: "cursor" },
+    EditorDef { id: "vscode", name: "VS Code", cli: "code" },
+    EditorDef { id: "zed", name: "Zed", cli: "zed" },
+    EditorDef { id: "sublime", name: "Sublime Text", cli: "subl" },
+];
+
+#[cfg(target_os = "macos")]
+const MACOS_APP_PATHS: &[(&str, &str)] = &[
+    ("cursor", "/Applications/Cursor.app"),
+    ("vscode", "/Applications/Visual Studio Code.app"),
+    ("zed", "/Applications/Zed.app"),
+    ("sublime", "/Applications/Sublime Text.app"),
 ];
 
 #[tauri::command]
 fn detect_editors() -> Vec<EditorInfo> {
     KNOWN_EDITORS
         .iter()
-        .filter(|e| Path::new(e.app_path).exists())
+        .filter(|e| is_editor_installed(e))
         .map(|e| EditorInfo { id: e.id.to_string(), name: e.name.to_string() })
         .collect()
+}
+
+fn is_editor_installed(editor: &EditorDef) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some((_, app_path)) = MACOS_APP_PATHS.iter().find(|(id, _)| *id == editor.id) {
+            return Path::new(app_path).exists();
+        }
+    }
+    // Fallback / Windows / Linux: check if CLI is on PATH
+    which::which(editor.cli).is_ok()
 }
 
 #[tauri::command]

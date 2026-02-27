@@ -34,8 +34,14 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
+      "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
   },
   "plugins": {}
 }

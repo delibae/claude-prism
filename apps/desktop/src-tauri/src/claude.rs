@@ -20,57 +20,90 @@ impl Default for ClaudeProcessState {
 }
 
 /// Discover the claude binary on the system.
-/// Checks: which claude → NVM paths → standard paths → bare fallback.
+/// Checks: which/where claude → NVM paths → standard paths → bare fallback.
 fn find_claude_binary() -> Result<String, String> {
-    // 1. Try `which claude`
-    if let Ok(output) = std::process::Command::new("which")
-        .arg("claude")
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() && PathBuf::from(&path).exists() {
-                return Ok(path);
-            }
-        }
+    // 1. Try to find claude on PATH
+    if let Ok(path) = which::which("claude") {
+        return Ok(path.to_string_lossy().to_string());
     }
 
-    // 2. Check NVM directories
+    // 2. Check NVM directories (Unix) or npm global (Windows)
     if let Some(home) = dirs::home_dir() {
-        let nvm_dir = home.join(".nvm").join("versions").join("node");
-        if nvm_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
-                let mut candidates: Vec<PathBuf> = entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path().join("bin").join("claude"))
-                    .filter(|p| p.exists())
-                    .collect();
-                // Sort by version (directory name) descending to prefer latest
-                candidates.sort();
-                candidates.reverse();
-                if let Some(path) = candidates.first() {
-                    return Ok(path.to_string_lossy().to_string());
+        #[cfg(not(target_os = "windows"))]
+        {
+            let nvm_dir = home.join(".nvm").join("versions").join("node");
+            if nvm_dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
+                    let mut candidates: Vec<PathBuf> = entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path().join("bin").join("claude"))
+                        .filter(|p| p.exists())
+                        .collect();
+                    // Sort by version (directory name) descending to prefer latest
+                    candidates.sort();
+                    candidates.reverse();
+                    if let Some(path) = candidates.first() {
+                        return Ok(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // Check common Windows Node.js locations
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                let npm_global = PathBuf::from(&appdata).join("npm").join("claude.cmd");
+                if npm_global.exists() {
+                    return Ok(npm_global.to_string_lossy().to_string());
+                }
+            }
+            // NVM for Windows
+            if let Ok(nvm_home) = std::env::var("NVM_HOME") {
+                // nvm symlink lives under NVM_SYMLINK (default: C:\Program Files\nodejs)
+                if let Ok(nvm_symlink) = std::env::var("NVM_SYMLINK") {
+                    let p = PathBuf::from(&nvm_symlink).join("claude.cmd");
+                    if p.exists() {
+                        return Ok(p.to_string_lossy().to_string());
+                    }
+                }
+                // Also scan NVM_HOME/<version>
+                if let Ok(entries) = std::fs::read_dir(&nvm_home) {
+                    let mut candidates: Vec<PathBuf> = entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path().join("claude.cmd"))
+                        .filter(|p| p.exists())
+                        .collect();
+                    candidates.sort();
+                    candidates.reverse();
+                    if let Some(path) = candidates.first() {
+                        return Ok(path.to_string_lossy().to_string());
+                    }
                 }
             }
         }
     }
 
-    // 3. Check standard paths
-    let standard_paths = [
-        "/usr/local/bin/claude",
-        "/opt/homebrew/bin/claude",
-        "/usr/bin/claude",
-        "/bin/claude",
-    ];
-    for path in &standard_paths {
-        if PathBuf::from(path).exists() {
-            return Ok(path.to_string());
+    // 3. Check standard paths (Unix only)
+    #[cfg(not(target_os = "windows"))]
+    {
+        let standard_paths = [
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/claude",
+            "/usr/bin/claude",
+            "/bin/claude",
+        ];
+        for path in &standard_paths {
+            if PathBuf::from(path).exists() {
+                return Ok(path.to_string());
+            }
         }
     }
 
     // 4. Check user-specific paths
     if let Some(home) = dirs::home_dir() {
-        let user_paths = [
+        #[cfg(not(target_os = "windows"))]
+        let user_paths = vec![
             home.join(".claude").join("local").join("claude"),
             home.join(".local").join("bin").join("claude"),
             home.join(".npm-global").join("bin").join("claude"),
@@ -78,6 +111,12 @@ fn find_claude_binary() -> Result<String, String> {
             home.join(".bun").join("bin").join("claude"),
             home.join("bin").join("claude"),
         ];
+        #[cfg(target_os = "windows")]
+        let user_paths = vec![
+            home.join(".claude").join("local").join("claude.exe"),
+            home.join("AppData").join("Local").join("Programs").join("claude").join("claude.exe"),
+        ];
+
         for path in &user_paths {
             if path.exists() {
                 return Ok(path.to_string_lossy().to_string());
@@ -111,27 +150,17 @@ fn create_command(program: &str, args: Vec<String>, cwd: &str, effort_level: Opt
     // Set effort level (default: low for fast responses)
     cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
 
-    // Add NVM support if the program is in an NVM directory
-    if program.contains("/.nvm/versions/node/") {
-        if let Some(node_bin_dir) = std::path::Path::new(program).parent() {
-            let current_path = std::env::var("PATH").unwrap_or_default();
-            let node_bin_str = node_bin_dir.to_string_lossy();
-            if !current_path.contains(node_bin_str.as_ref()) {
-                let new_path = format!("{}:{}", node_bin_str, current_path);
-                cmd.env("PATH", new_path);
-            }
-        }
-    }
-
-    // Add Homebrew support
-    if program.contains("/homebrew/") || program.contains("/opt/homebrew/") {
-        if let Some(program_dir) = std::path::Path::new(program).parent() {
-            let current_path = std::env::var("PATH").unwrap_or_default();
-            let homebrew_bin_str = program_dir.to_string_lossy();
-            if !current_path.contains(homebrew_bin_str.as_ref()) {
-                let new_path = format!("{}:{}", homebrew_bin_str, current_path);
-                cmd.env("PATH", new_path);
-            }
+    // Add the program's parent directory to PATH if not already present
+    if let Some(program_dir) = std::path::Path::new(program).parent() {
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let program_dir_str = program_dir.to_string_lossy();
+        if !current_path.contains(program_dir_str.as_ref()) {
+            #[cfg(target_os = "windows")]
+            let sep = ";";
+            #[cfg(not(target_os = "windows"))]
+            let sep = ":";
+            let new_path = format!("{}{}{}", program_dir_str, sep, current_path);
+            cmd.env("PATH", new_path);
         }
     }
 
@@ -331,8 +360,18 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
 
 #[tauri::command]
 pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
-    let mut cmd = tokio::process::Command::new("bash");
-    cmd.args(["-c", "curl -fsSL https://claude.ai/install.sh | bash"]);
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("bash");
+        c.args(["-c", "curl -fsSL https://claude.ai/install.sh | bash"]);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("powershell");
+        c.args(["-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"]);
+        c
+    };
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -832,8 +871,11 @@ pub async fn run_shell_command(
     command: String,
     cwd: String,
 ) -> Result<ShellCommandResult, String> {
-    let args = vec!["-c".to_string(), command];
-    let mut cmd = create_command("sh", args, &cwd, None);
+    #[cfg(not(target_os = "windows"))]
+    let (shell, args) = ("sh", vec!["-c".to_string(), command]);
+    #[cfg(target_os = "windows")]
+    let (shell, args) = ("cmd", vec!["/C".to_string(), command]);
+    let mut cmd = create_command(shell, args, &cwd, None);
 
     let child = cmd
         .spawn()
