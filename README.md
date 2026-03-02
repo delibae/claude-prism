@@ -2,7 +2,7 @@
 
 Open-source AI-powered LaTeX writing workspace with live preview.
 
-![ClaudePrism Screenshot](./assets/ClaudePrism.png)
+![ClaudePrism Screenshot](./apps/desktop/src-tauri/icons/icon.png)
 
 ## Features
 

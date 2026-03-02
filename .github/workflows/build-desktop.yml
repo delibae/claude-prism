@@ -60,6 +60,12 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::Apple signing certificate not configured. Skipping code signing."
+            echo "APPLE_SIGNING_SKIPPED=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
@@ -102,14 +108,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code signing
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # macOS notarization
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS code signing (skipped if not configured)
+          APPLE_CERTIFICATE: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          # macOS notarization (skipped if not configured)
+          APPLE_ID: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
@@ -125,12 +131,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.APPLE_SIGNING_SKIPPED != 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
@@ -165,45 +171,109 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
           PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | sed -n '2p' || true)
+          REPO="${{ github.repository }}"
+          ICON_URL="https://raw.githubusercontent.com/${REPO}/main/apps/desktop/src-tauri/icons/icon.png"
 
-          # Build changelog
+          # Build categorized changelog
+          FEAT="" FIX="" CHORE="" OTHER=""
           if [ -n "$PREV_TAG" ]; then
-            CHANGES=$(git log --pretty=format:"- %s" "$PREV_TAG".."$TAG" --no-merges 2>/dev/null || echo "- Initial release")
-            COMPARE="[Full Changelog](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG})"
-          else
-            CHANGES="- Initial release"
-            COMPARE=""
+            while IFS= read -r line; do
+              msg="${line#- }"
+              case "$msg" in
+                feat:*|feat\(*) FEAT="${FEAT}\n- ${msg}" ;;
+                fix:*|fix\(*)   FIX="${FIX}\n- ${msg}" ;;
+                chore:*|chore\(*|docs:*|docs\(*|ci:*|ci\(*|build:*|build\(*) CHORE="${CHORE}\n- ${msg}" ;;
+                *)              OTHER="${OTHER}\n- ${msg}" ;;
+              esac
+            done < <(git log --pretty=format:"- %s" "$PREV_TAG".."$TAG" --no-merges 2>/dev/null)
+            COMPARE_URL="https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
           fi
 
-          cat > release-body.md << EOF
+          CHANGELOG=""
+          if [ -n "$FEAT" ]; then
+            CHANGELOG="${CHANGELOG}#### New Features\n${FEAT}\n\n"
+          fi
+          if [ -n "$FIX" ]; then
+            CHANGELOG="${CHANGELOG}#### Bug Fixes\n${FIX}\n\n"
+          fi
+          if [ -n "$OTHER" ]; then
+            CHANGELOG="${CHANGELOG}#### Other Changes\n${OTHER}\n\n"
+          fi
+          if [ -n "$CHORE" ]; then
+            CHANGELOG="${CHANGELOG}<details>\n<summary>Maintenance</summary>\n\n${CHORE}\n</details>\n\n"
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- Initial release\n"
+          fi
+
+          # Get contributors for this release
+          CONTRIBUTORS=""
+          if [ -n "$PREV_TAG" ]; then
+            CONTRIBUTORS=$(git log --pretty=format:"%an" "$PREV_TAG".."$TAG" --no-merges | sort -u | while read -r name; do
+              # Try to find GitHub username from commit
+              email=$(git log --pretty=format:"%ae" --author="$name" -1 "$PREV_TAG".."$TAG")
+              gh_user=$(echo "$email" | sed -n 's/.*+\(.*\)@users.noreply.github.com/\1/p')
+              if [ -z "$gh_user" ]; then
+                gh_user=$(gh api "search/users?q=${email}+in:email" --jq '.items[0].login' 2>/dev/null || true)
+              fi
+              if [ -n "$gh_user" ]; then
+                echo "<a href=\"https://github.com/${gh_user}\"><img src=\"https://github.com/${gh_user}.png\" width=\"40\" height=\"40\" style=\"border-radius:50%\" alt=\"@${gh_user}\" /></a>"
+              else
+                echo "**${name}**"
+              fi
+            done | tr '\n' ' ')
+          fi
+          if [ -z "$CONTRIBUTORS" ]; then
+            CONTRIBUTORS="<a href=\"https://github.com/${REPO}/graphs/contributors\">View all contributors</a>"
+          fi
+
+          # Build release body
+          cat > release-body.md << BODY_EOF
           <p align="center">
-            <img src="https://raw.githubusercontent.com/${{ github.repository }}/main/apps/desktop/src-tauri/icons/icon.png" width="128" height="128" />
+            <img src="${ICON_URL}" width="120" height="120" alt="ClaudePrism" />
           </p>
 
-          ## ClaudePrism ${TAG}
+          <h2 align="center">ClaudePrism ${TAG}</h2>
+
+          ---
 
           ### What's Changed
 
-          ${CHANGES}
+          $(echo -e "$CHANGELOG")
+
+          ---
 
           ### Downloads
 
-          - **Windows**: \`.msi\` (installer) or \`.exe\` (NSIS setup)
-          - **macOS**: \`.dmg\` (Apple Silicon: \`aarch64\`, Intel: \`x64\`) — signed & notarized
-          - **Linux**: \`.AppImage\` (universal) or \`.deb\` (Debian/Ubuntu)
+          | Platform | Architecture | File | Install |
+          |:--------:|:------------:|:----:|:--------|
+          | **Windows** | x64 | \`.msi\` / \`.exe\` | Run the installer |
+          | **macOS** | Apple Silicon | \`.dmg\` (aarch64) | Open \`.dmg\` → drag to Applications |
+          | **macOS** | Intel | \`.dmg\` (x64) | Open \`.dmg\` → drag to Applications |
+          | **macOS** | Both | **Homebrew** | \`brew install --cask claude-prism\` |
+          | **Linux** | x64 | \`.AppImage\` | \`chmod +x\` and run |
+          | **Linux** | x64 | \`.deb\` | \`sudo dpkg -i claude-prism_*.deb\` |
 
-          ### Installation
+          ---
 
-          - **Windows**: Run the \`.msi\` installer or \`.exe\` setup
-          - **macOS**: Open the \`.dmg\` and drag ClaudePrism to Applications
-          - **Linux**: \`chmod +x\` the \`.AppImage\` and run it, or \`sudo dpkg -i\` the \`.deb\`
+          ### Contributors
 
-          ${COMPARE}
-          EOF
+          <p align="center">
+          ${CONTRIBUTORS}
+          </p>
+
+          ---
+
+          <p align="center">
+          $([ -n "$PREV_TAG" ] && echo "<a href=\"${COMPARE_URL}\">Full Changelog (${PREV_TAG}...${TAG})</a>" || echo "Initial Release")
+          </p>
+          BODY_EOF
 
           gh release edit "$TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "${REPO}" \
             --notes-file release-body.md
 
       - name: Update Homebrew Cask SHA256
