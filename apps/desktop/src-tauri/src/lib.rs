@@ -1,7 +1,9 @@
 mod claude;
 mod history;
 mod latex;
+mod skills;
 mod slash_commands;
+mod uv;
 mod zotero;
 
 use std::path::Path;
@@ -185,6 +187,18 @@ pub fn run() {
             slash_commands::slash_command_get,
             slash_commands::slash_command_save,
             slash_commands::slash_command_delete,
+            skills::install_scientific_skills,
+            skills::install_scientific_skills_global,
+            skills::check_skills_installed,
+            skills::list_installed_skills,
+            skills::uninstall_scientific_skills,
+            skills::get_skill_categories,
+            skills::get_skill_content,
+            uv::check_uv_status,
+            uv::install_uv,
+            uv::setup_project_venv,
+            uv::uv_add_packages,
+            uv::uv_run_command,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

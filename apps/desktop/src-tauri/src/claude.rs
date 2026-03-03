@@ -150,19 +150,33 @@ fn create_command(program: &str, args: Vec<String>, cwd: &str, effort_level: Opt
     // Set effort level (default: low for fast responses)
     cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
 
+    // Build PATH: start with current PATH, prepend program dir and venv bin
+    let mut current_path = std::env::var("PATH").unwrap_or_default();
+    #[cfg(target_os = "windows")]
+    let sep = ";";
+    #[cfg(not(target_os = "windows"))]
+    let sep = ":";
+
     // Add the program's parent directory to PATH if not already present
     if let Some(program_dir) = std::path::Path::new(program).parent() {
-        let current_path = std::env::var("PATH").unwrap_or_default();
         let program_dir_str = program_dir.to_string_lossy();
         if !current_path.contains(program_dir_str.as_ref()) {
-            #[cfg(target_os = "windows")]
-            let sep = ";";
-            #[cfg(not(target_os = "windows"))]
-            let sep = ":";
-            let new_path = format!("{}{}{}", program_dir_str, sep, current_path);
-            cmd.env("PATH", new_path);
+            current_path = format!("{}{}{}", program_dir_str, sep, current_path);
         }
     }
+
+    // Auto-detect project venv and inject VIRTUAL_ENV + PATH
+    let venv_dir = std::path::Path::new(cwd).join(".venv");
+    if venv_dir.exists() {
+        cmd.env("VIRTUAL_ENV", &venv_dir);
+        #[cfg(not(target_os = "windows"))]
+        let venv_bin = venv_dir.join("bin");
+        #[cfg(target_os = "windows")]
+        let venv_bin = venv_dir.join("Scripts");
+        current_path = format!("{}{}{}", venv_bin.to_string_lossy(), sep, current_path);
+    }
+
+    cmd.env("PATH", current_path);
 
     cmd
 }
@@ -576,7 +590,11 @@ fn common_claude_args() -> Vec<String> {
             "4. PRESERVE EXISTING CONTENT: Always read the file first. Keep the existing preamble, packages, ",
             "and structure intact. Only add or modify what is needed for the current step.\n",
             "5. LaTeX BEST PRACTICES: Use proper sectioning (\\chapter, \\section, \\subsection), ",
-            "citations (\\cite), cross-references (\\label, \\ref), and BibTeX for bibliographies."
+            "citations (\\cite), cross-references (\\label, \\ref), and BibTeX for bibliographies.\n",
+            "6. SKILLS: If scientific skills are installed in .claude/skills/, follow their guidelines ",
+            "for domain-specific tasks. Use skill-provided LaTeX packages (.sty) and code patterns.\n",
+            "7. PYTHON: If a .venv/ exists in the project, it is already activated. ",
+            "Use `uv pip install` to add packages and `python` to run scripts."
         ).to_string(),
     ]
 }

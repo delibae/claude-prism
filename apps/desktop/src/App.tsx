@@ -5,13 +5,19 @@ import { useDocumentStore } from "@/stores/document-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { ProjectPicker } from "@/components/project-picker";
 import { WorkspaceLayout } from "@/components/workspace/workspace-layout";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  ScientificSkillsOnboarding,
+  shouldShowOnboarding,
+} from "@/components/scientific-skills/scientific-skills-onboarding";
+import { useUvSetupStore } from "@/stores/uv-setup-store";
 
 function WorkspaceWithClaude() {
   const projectRoot = useDocumentStore((s) => s.projectRoot);
   const initialized = useDocumentStore((s) => s.initialized);
+  const [showSkillsOnboarding, setShowSkillsOnboarding] = useState(false);
 
   // Update window title
   useEffect(() => {
@@ -20,6 +26,28 @@ function WorkspaceWithClaude() {
       getCurrentWindow().setTitle(`${name} - ClaudePrism`);
     }
   }, [projectRoot]);
+
+  // Show scientific skills onboarding on first launch
+  useEffect(() => {
+    if (!initialized) return;
+    if (shouldShowOnboarding()) {
+      // Small delay so the workspace renders first
+      const timer = setTimeout(() => setShowSkillsOnboarding(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [initialized]);
+
+  // Auto-setup Python venv when project opens
+  useEffect(() => {
+    if (!initialized || !projectRoot) return;
+    const uvStore = useUvSetupStore.getState();
+    uvStore.checkStatus().then(() => {
+      const { status } = useUvSetupStore.getState();
+      if (status === "ready") {
+        uvStore.setupVenv(projectRoot);
+      }
+    });
+  }, [initialized, projectRoot]);
 
   // Consume pending initial prompt from project wizard
   useEffect(() => {
@@ -38,6 +66,11 @@ function WorkspaceWithClaude() {
     <>
       <WorkspaceLayout />
       <Toaster />
+      {showSkillsOnboarding && (
+        <ScientificSkillsOnboarding
+          onClose={() => setShowSkillsOnboarding(false)}
+        />
+      )}
     </>
   );
 }

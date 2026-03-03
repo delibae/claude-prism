@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   FolderOpenIcon,
@@ -7,10 +9,17 @@ import {
   XIcon,
   FileTextIcon,
   SparklesIcon,
+  CheckCircle2Icon,
+  CircleIcon,
+  TerminalIcon,
+  FlaskConicalIcon,
+  DownloadIcon,
+  Loader2Icon,
 } from "lucide-react";
 import { useProjectStore } from "@/stores/project-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useClaudeSetupStore } from "@/stores/claude-setup-store";
+import { useUvSetupStore } from "@/stores/uv-setup-store";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { ProjectWizard, type CreationMode } from "./project-wizard";
 import { ClaudeSetup } from "./claude-setup";
+import { cn } from "@/lib/utils";
 
 export function ProjectPicker() {
   const [showModeDialog, setShowModeDialog] = useState(false);
@@ -81,7 +91,7 @@ export function ProjectPicker() {
           </p>
         </div>
 
-        {!isClaudeReady && <ClaudeSetup />}
+        {!isClaudeReady ? <ClaudeSetup /> : <EnvironmentStatus />}
 
         <div className={`flex w-full gap-3 ${!isClaudeReady ? "pointer-events-none opacity-50" : ""}`}>
           <Button
@@ -191,6 +201,180 @@ export function ProjectPicker() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Environment Status (shown when Claude is ready) ───
+
+interface SkillsStatus {
+  installed: boolean;
+  skill_count: number;
+  location: string;
+}
+
+function EnvironmentStatus() {
+  const claudeVersion = useClaudeSetupStore((s) => s.version);
+  const claudeEmail = useClaudeSetupStore((s) => s.accountEmail);
+
+  const uvStatus = useUvSetupStore((s) => s.status);
+  const uvVersion = useUvSetupStore((s) => s.version);
+  const uvInstalling = useUvSetupStore((s) => s.isInstalling);
+  const checkUv = useUvSetupStore((s) => s.checkStatus);
+  const installUv = useUvSetupStore((s) => s.install);
+  const _finishUvInstall = useUvSetupStore((s) => s._finishInstall);
+
+  const [skillsStatus, setSkillsStatus] = useState<SkillsStatus | null>(null);
+  const [skillsInstalling, setSkillsInstalling] = useState(false);
+  const [showSkillsOnboarding, setShowSkillsOnboarding] = useState(false);
+
+  const checkSkills = useCallback(async () => {
+    try {
+      const gs = await invoke<SkillsStatus>("check_skills_installed", {
+        projectPath: null,
+      });
+      setSkillsStatus(gs);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    checkUv();
+    checkSkills();
+  }, [checkUv, checkSkills]);
+
+  // Listen for uv install completion
+  useEffect(() => {
+    const unlisten = listen<boolean>("uv-install-complete", (event) => {
+      _finishUvInstall(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [_finishUvInstall]);
+
+  // Lazy load skills onboarding
+  const [OnboardingComponent, setOnboardingComponent] = useState<React.ComponentType<{
+    onClose: () => void;
+  }> | null>(null);
+
+  useEffect(() => {
+    if (showSkillsOnboarding && !OnboardingComponent) {
+      import("@/components/scientific-skills/scientific-skills-onboarding").then(
+        (mod) => setOnboardingComponent(() => mod.ScientificSkillsOnboarding)
+      );
+    }
+  }, [showSkillsOnboarding, OnboardingComponent]);
+
+  return (
+    <>
+      <div className="flex w-full flex-col rounded-xl border border-border bg-muted/30 px-4 py-3 gap-2">
+        {/* Claude Code — always ready here */}
+        <StatusRow
+          ok={true}
+          label="Claude Code"
+          detail={[claudeVersion, claudeEmail].filter(Boolean).join(" · ")}
+        />
+
+        {/* Python (uv) */}
+        <StatusRow
+          ok={uvStatus === "ready"}
+          label="Python (uv)"
+          detail={
+            uvInstalling
+              ? "Installing..."
+              : uvStatus === "ready"
+                ? uvVersion ?? "Installed"
+                : uvStatus === "checking"
+                  ? "Checking..."
+                  : "Not installed"
+          }
+          action={
+            uvStatus === "not-installed" && !uvInstalling
+              ? { label: "Install", onClick: installUv }
+              : uvInstalling
+                ? { label: "Installing...", loading: true }
+                : undefined
+          }
+        />
+
+        {/* Scientific Skills */}
+        <StatusRow
+          ok={!!skillsStatus?.installed}
+          label="Scientific Skills"
+          detail={
+            skillsInstalling
+              ? "Installing..."
+              : skillsStatus?.installed
+                ? `${skillsStatus.skill_count} skills`
+                : "Not installed"
+          }
+          action={
+            !skillsStatus?.installed && !skillsInstalling
+              ? { label: "Install", onClick: () => setShowSkillsOnboarding(true) }
+              : undefined
+          }
+        />
+      </div>
+
+      {showSkillsOnboarding && OnboardingComponent && (
+        <OnboardingComponent
+          onClose={() => {
+            setShowSkillsOnboarding(false);
+            checkSkills();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function StatusRow({
+  ok,
+  label,
+  detail,
+  action,
+}: {
+  ok: boolean;
+  label: string;
+  detail: string;
+  action?: { label: string; onClick?: () => void; loading?: boolean };
+}) {
+  return (
+    <div className="flex items-center gap-2.5 min-w-0">
+      {ok ? (
+        <CheckCircle2Icon className="size-3.5 shrink-0 text-foreground" />
+      ) : (
+        <CircleIcon className="size-3.5 shrink-0 text-muted-foreground/40" />
+      )}
+      <span
+        className={cn(
+          "text-sm shrink-0",
+          ok ? "text-foreground" : "text-muted-foreground"
+        )}
+      >
+        {label}
+      </span>
+      <span className="text-xs text-muted-foreground truncate min-w-0 flex-1">
+        {detail}
+      </span>
+      {action && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs shrink-0"
+          onClick={action.onClick}
+          disabled={action.loading}
+        >
+          {action.loading ? (
+            <Loader2Icon className="mr-1 size-3 animate-spin" />
+          ) : (
+            <DownloadIcon className="mr-1 size-3" />
+          )}
+          {action.label}
+        </Button>
+      )}
     </div>
   );
 }

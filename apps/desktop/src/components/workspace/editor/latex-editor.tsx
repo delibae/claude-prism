@@ -93,6 +93,12 @@ export function LatexEditor() {
   const historyDiffResult = useHistoryStore((s) => s.diffResult);
 
   const [imageScale, setImageScale] = useState(1.0);
+
+  // Reset scale when switching files so each file starts at fit-to-width
+  useEffect(() => {
+    setImageScale(1.0);
+  }, [activeFileId]);
+
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
@@ -714,26 +720,20 @@ export function LatexEditor() {
     useHistoryStore.getState().stopReview();
   }, []);
 
-  if (activeFile?.type === "pdf") {
-    return <InlinePdfViewer file={activeFile} editorView={viewRef} imageScale={imageScale} onImageScaleChange={setImageScale} />;
-  }
-
-  if (!isTextFile && activeFile) {
-    return (
-      <div className="flex h-full flex-col bg-background">
-        <EditorToolbar editorView={viewRef} fileType="image" imageScale={imageScale} onImageScaleChange={setImageScale} />
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          <ImagePreview file={activeFile} scale={imageScale} />
-          <ClaudeChatDrawer />
-        </div>
-      </div>
-    );
-  }
+  const isPdf = activeFile?.type === "pdf";
+  const isImage = !isTextFile && !isPdf && !!activeFile;
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <EditorToolbar editorView={viewRef} />
-      {isSearchOpen && (
+      {/* Toolbar — adapts to file type */}
+      <EditorToolbar
+        editorView={viewRef}
+        fileType={isPdf || isImage ? "image" : undefined}
+        imageScale={isPdf || isImage ? imageScale : undefined}
+        onImageScaleChange={isPdf || isImage ? setImageScale : undefined}
+      />
+      {/* Text-editor-only panels */}
+      {!isPdf && !isImage && isSearchOpen && (
         <SearchPanel
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
@@ -744,8 +744,7 @@ export function LatexEditor() {
           currentMatch={currentMatch}
         />
       )}
-      {/* History review bar */}
-      {reviewingSnapshot && (
+      {!isPdf && !isImage && reviewingSnapshot && (
         <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-amber-500/10 px-3">
           <div className="flex items-center gap-2 text-xs">
             <RotateCcwIcon className="size-3.5 text-amber-600 dark:text-amber-400" />
@@ -774,64 +773,77 @@ export function LatexEditor() {
           </div>
         </div>
       )}
-      <div ref={parentRef} className="relative min-h-0 flex-1 overflow-hidden">
-        <div ref={containerRef} className={reviewingSnapshot ? "hidden" : "absolute inset-0"} />
-        {/* History diff overlay */}
-        {reviewingSnapshot && historyDiffResult && (
-          <HistoryDiffView diffs={historyDiffResult} />
+      {/* Main content area — single wrapper keeps ClaudeChatDrawer stable */}
+      <div ref={isPdf || isImage ? undefined : parentRef} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* PDF content */}
+        {isPdf && activeFile && (
+          <InlinePdfContent file={activeFile} imageScale={imageScale} onImageScaleChange={setImageScale} />
         )}
+        {/* Image content */}
+        {isImage && activeFile && (
+          <ImagePreview file={activeFile} scale={imageScale} onScaleChange={setImageScale} />
+        )}
+        {/* Text editor content */}
+        {!isPdf && !isImage && (
+          <>
+            <div ref={containerRef} className={reviewingSnapshot ? "hidden" : "absolute inset-0"} />
+            {reviewingSnapshot && historyDiffResult && (
+              <HistoryDiffView diffs={historyDiffResult} />
+            )}
+            {toolbarPosition && selectionLabel && !isMergeActiveRef.current && !isSearchOpen && (
+              <SelectionToolbar
+                position={toolbarPosition}
+                contextLabel={selectionLabel}
+                actions={editorToolbarActions}
+                onSendPrompt={handleToolbarSendPrompt}
+                onAction={handleToolbarAction}
+                onDismiss={handleToolbarDismiss}
+              />
+            )}
+            {activeFileChange && mergeChunkInfo.total > 0 && (
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-1 rounded-lg border border-border bg-background/95 px-2 py-1 shadow-lg backdrop-blur-sm">
+                <span className="px-1 font-mono text-xs text-muted-foreground">
+                  ±&nbsp;{mergeChunkInfo.current}/{mergeChunkInfo.total}
+                </span>
+                <div className="mx-0.5 h-4 w-px bg-border" />
+                <button
+                  onClick={() => goToChunk(mergeChunkInfo.current <= 1 ? mergeChunkInfo.total - 1 : mergeChunkInfo.current - 2)}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
+                  title="Previous change"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                </button>
+                <button
+                  onClick={() => goToChunk(mergeChunkInfo.current >= mergeChunkInfo.total ? 0 : mergeChunkInfo.current)}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
+                  title="Next change"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div className="mx-0.5 h-4 w-px bg-border" />
+                <button
+                  onClick={acceptCurrentChunk}
+                  className="rounded p-0.5 text-green-400 hover:bg-green-600/20 transition-colors"
+                  title="Accept this change"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+                <button
+                  onClick={rejectCurrentChunk}
+                  className="rounded p-0.5 text-red-400 hover:bg-red-600/20 transition-colors"
+                  title="Reject this change"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {/* Chat drawer — single stable instance across all file types */}
         <ClaudeChatDrawer />
-        {/* Selection toolbar */}
-        {toolbarPosition && selectionLabel && !isMergeActiveRef.current && !isSearchOpen && (
-          <SelectionToolbar
-            position={toolbarPosition}
-            contextLabel={selectionLabel}
-            actions={editorToolbarActions}
-            onSendPrompt={handleToolbarSendPrompt}
-            onAction={handleToolbarAction}
-            onDismiss={handleToolbarDismiss}
-          />
-        )}
-        {/* Floating chunk navigator pill */}
-        {activeFileChange && mergeChunkInfo.total > 0 && (
-          <div className="absolute top-3 right-3 z-20 flex items-center gap-1 rounded-lg border border-border bg-background/95 px-2 py-1 shadow-lg backdrop-blur-sm">
-            <span className="px-1 font-mono text-xs text-muted-foreground">
-              ±&nbsp;{mergeChunkInfo.current}/{mergeChunkInfo.total}
-            </span>
-            <div className="mx-0.5 h-4 w-px bg-border" />
-            <button
-              onClick={() => goToChunk(mergeChunkInfo.current <= 1 ? mergeChunkInfo.total - 1 : mergeChunkInfo.current - 2)}
-              className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
-              title="Previous change"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-            </button>
-            <button
-              onClick={() => goToChunk(mergeChunkInfo.current >= mergeChunkInfo.total ? 0 : mergeChunkInfo.current)}
-              className="rounded p-0.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition-colors"
-              title="Next change"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div className="mx-0.5 h-4 w-px bg-border" />
-            <button
-              onClick={acceptCurrentChunk}
-              className="rounded p-0.5 text-green-400 hover:bg-green-600/20 transition-colors"
-              title="Accept this change"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </button>
-            <button
-              onClick={rejectCurrentChunk}
-              className="rounded p-0.5 text-red-400 hover:bg-red-600/20 transition-colors"
-              title="Reject this change"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-        )}
       </div>
-      {diagnostics.length > 0 && (
+      {/* Text-editor-only bottom panels */}
+      {!isPdf && !isImage && diagnostics.length > 0 && (
         <ProblemsPanel
           diagnostics={diagnostics}
           fileName={activeFile?.relativePath ?? "document.tex"}
@@ -860,7 +872,7 @@ export function LatexEditor() {
           }}
         />
       )}
-      {activeFileChange && (
+      {!isPdf && !isImage && activeFileChange && (
         <ProposedChangesPanel
           change={activeFileChange}
           changeIndex={proposedChanges.findIndex((c) => c.filePath === activeFile?.relativePath)}
@@ -894,26 +906,27 @@ export function LatexEditor() {
   );
 }
 
-// ─── Inline PDF Viewer (for PDF files opened from file tree) ───
+// ─── Inline PDF Content (data loading + MuPDF PdfViewer) ───
 
-function InlinePdfViewer({
+function InlinePdfContent({
   file,
-  editorView,
   imageScale,
   onImageScaleChange,
 }: {
   file: ProjectFile;
-  editorView: React.RefObject<EditorView | null>;
   imageScale: number;
   onImageScaleChange: (scale: number) => void;
 }) {
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fitted, setFitted] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     setPdfData(null);
     setError(null);
+    setFitted(false);
 
     readFile(file.absolutePath)
       .then((data) => {
@@ -926,27 +939,38 @@ function InlinePdfViewer({
     return () => { cancelled = true; };
   }, [file.absolutePath]);
 
-  return (
-    <div className="flex h-full flex-col bg-background">
-      <EditorToolbar editorView={editorView} fileType="image" imageScale={imageScale} onImageScaleChange={onImageScaleChange} />
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {pdfData ? (
-          <PdfViewer
-            data={pdfData}
-            scale={imageScale}
-            onScaleChange={onImageScaleChange}
-          />
-        ) : error ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-            Failed to load PDF: {error}
-          </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-            Loading PDF...
-          </div>
-        )}
-        <ClaudeChatDrawer />
+  const handleFirstPageSize = useCallback((pageWidth: number) => {
+    const containerWidth = wrapperRef.current?.clientWidth;
+    if (!containerWidth || !onImageScaleChange) return;
+    const fitScale = (containerWidth - 32) / pageWidth; // 32px padding
+    onImageScaleChange(Math.max(0.25, Math.min(2, fitScale)));
+    setFitted(true);
+  }, [onImageScaleChange]);
+
+  if (pdfData) {
+    return (
+      <div ref={wrapperRef} className="flex min-h-0 flex-1 flex-col" style={{ opacity: fitted ? 1 : 0 }}>
+        <PdfViewer
+          data={pdfData}
+          scale={imageScale}
+          onScaleChange={onImageScaleChange}
+          onFirstPageSize={handleFirstPageSize}
+        />
       </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+        Failed to load PDF: {error}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+      Loading PDF...
     </div>
   );
 }

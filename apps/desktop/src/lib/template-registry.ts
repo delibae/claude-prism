@@ -2916,6 +2916,167 @@ Back issues: \\href{https://cs.stanford.edu/newsletter}{cs.stanford.edu/newslett
 `,
   },
   {
+    id: "report-scientific",
+    name: "Scientific Report",
+    description:
+      "Professional scientific report with structured sections, statistical commands, and bibliography",
+    category: "academic",
+    subcategory: "reports",
+    tags: [
+      "scientific",
+      "report",
+      "research",
+      "lab",
+      "experiment",
+      "data",
+      "analysis",
+      "academic",
+    ],
+    icon: "FlaskConical",
+    documentClass: "report",
+    mainFileName: "main.tex",
+    accentColor: "#10b981",
+    hasBibliography: true,
+    aspectRatio: "3/4",
+    packages: [
+      { name: "amsmath", description: "AMS mathematical typesetting" },
+      { name: "graphicx", description: "Enhanced graphics support" },
+      { name: "geometry", description: "Page layout customization" },
+      { name: "hyperref", description: "Hyperlinks and PDF metadata" },
+      { name: "booktabs", description: "Professional table formatting" },
+      { name: "natbib", description: "Bibliography management" },
+      { name: "xcolor", description: "Color support" },
+      { name: "tcolorbox", description: "Colored boxes for highlights" },
+      { name: "siunitx", description: "SI units formatting" },
+    ],
+    content: `\\documentclass[11pt]{report}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage{lmodern}
+\\usepackage{amsmath,amssymb}
+\\usepackage{graphicx}
+\\usepackage[margin=1in]{geometry}
+\\usepackage{hyperref}
+\\usepackage{booktabs}
+\\usepackage[numbers]{natbib}
+\\usepackage{xcolor}
+\\usepackage{tcolorbox}
+\\usepackage{siunitx}
+\\usepackage{float}
+
+% Colors
+\\definecolor{sectionblue}{HTML}{1e40af}
+\\definecolor{highlightbg}{HTML}{eff6ff}
+\\definecolor{notebg}{HTML}{fef3c7}
+
+% Highlight box
+\\newtcolorbox{highlight}{
+  colback=highlightbg,
+  colframe=sectionblue!50,
+  boxrule=0.5pt,
+  arc=3pt,
+  left=6pt, right=6pt, top=6pt, bottom=6pt
+}
+
+% Note box
+\\newtcolorbox{note}{
+  colback=notebg,
+  colframe=orange!50,
+  boxrule=0.5pt,
+  arc=3pt,
+  left=6pt, right=6pt, top=6pt, bottom=6pt
+}
+
+\\hypersetup{
+  colorlinks=true,
+  linkcolor=sectionblue,
+  citecolor=sectionblue,
+  urlcolor=sectionblue
+}
+
+\\title{\\textbf{Scientific Report Title}\\\\[0.5em]
+\\large Subtitle or Project Name}
+\\author{Author Name\\\\
+\\small Institution or Laboratory\\\\
+\\small \\href{mailto:author@institution.edu}{author@institution.edu}}
+\\date{\\today}
+
+\\begin{document}
+
+\\maketitle
+
+\\begin{abstract}
+Provide a concise summary of the research objectives, methodology, key findings, and conclusions. The abstract should be self-contained and typically 150--300 words.
+\\end{abstract}
+
+\\tableofcontents
+
+\\chapter{Introduction}
+
+Describe the background, motivation, and objectives of the study. Include relevant literature context and clearly state the research questions or hypotheses.
+
+\\begin{highlight}
+\\textbf{Research Question:} State your primary research question or hypothesis here.
+\\end{highlight}
+
+\\chapter{Materials and Methods}
+
+\\section{Experimental Design}
+
+Describe the overall experimental approach, including study design, variables, and controls.
+
+\\section{Data Collection}
+
+Detail the instruments, protocols, and procedures used for data collection.
+
+\\section{Statistical Analysis}
+
+All analyses were performed using standard statistical methods. Results were considered significant at $p < 0.05$.
+
+\\begin{note}
+\\textbf{Note:} Include details about software versions, packages, and specific parameters used in the analysis.
+\\end{note}
+
+\\chapter{Results}
+
+\\section{Descriptive Statistics}
+
+Present summary statistics and initial findings.
+
+\\begin{table}[H]
+\\centering
+\\caption{Summary statistics of key variables.}
+\\label{tab:summary}
+\\begin{tabular}{lrrr}
+\\toprule
+\\textbf{Variable} & \\textbf{Mean} & \\textbf{SD} & \\textbf{N} \\\\
+\\midrule
+Variable A & \\num{42.5} & \\num{3.2} & 100 \\\\
+Variable B & \\num{18.7} & \\num{2.1} & 100 \\\\
+Variable C & \\num{7.3}  & \\num{1.8} & 100 \\\\
+\\bottomrule
+\\end{tabular}
+\\end{table}
+
+\\section{Main Findings}
+
+Present the main results with appropriate figures and tables. Reference Table~\\ref{tab:summary} and any figures as needed.
+
+\\chapter{Discussion}
+
+Interpret the results in the context of existing literature. Discuss implications, limitations, and future directions.
+
+\\chapter{Conclusion}
+
+Summarize the key findings and their significance. State the main contributions of this work.
+
+\\bibliographystyle{plainnat}
+\\bibliography{references}
+
+\\end{document}
+`,
+  },
+  {
     id: "blank",
     name: "Blank Document",
     description: "Minimal template to start from scratch",

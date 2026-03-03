@@ -30,6 +30,7 @@ interface PdfViewerProps {
   onTextClick?: (text: string) => void;
   onSynctexClick?: (page: number, x: number, y: number) => void;
   onTextSelect?: (selection: PdfTextSelection | null) => void;
+  onFirstPageSize?: (width: number, height: number) => void;
   captureMode?: boolean;
   onCapture?: (result: CaptureResult) => void;
   onCancelCapture?: () => void;
@@ -44,6 +45,7 @@ export function PdfViewer({
   onTextClick,
   onSynctexClick,
   onTextSelect,
+  onFirstPageSize,
   captureMode = false,
   onCapture,
   onCancelCapture,
@@ -148,6 +150,9 @@ export function PdfViewer({
 
         setPageSizes(sizes);
         setLoading(false);
+        if (isFirstLoad.current && sizes.length > 0) {
+          onFirstPageSize?.(sizes[0].width, sizes[0].height);
+        }
         isFirstLoad.current = false;
         onLoadSuccess?.(count);
 
@@ -361,6 +366,31 @@ export function PdfViewer({
     return () => container.removeEventListener("wheel", handleWheel);
   }, [scale, onScaleChange]);
 
+  // Keyboard zoom (Cmd/Ctrl +/-) — scoped to container to avoid affecting other panels
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !onScaleChange) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        onScaleChange(Math.min(4, scale + 0.25));
+      } else if (e.key === "-") {
+        e.preventDefault();
+        onScaleChange(Math.max(0.25, scale - 0.25));
+      } else if (e.key === "0") {
+        e.preventDefault();
+        onScaleChange(1);
+      }
+    };
+
+    container.addEventListener("keydown", handleKeyDown);
+    return () => container.removeEventListener("keydown", handleKeyDown);
+  }, [scale, onScaleChange]);
+
   // Intercept link clicks
   useEffect(() => {
     const container = containerRef.current;
@@ -548,7 +578,8 @@ export function PdfViewer({
   return (
     <div
       ref={containerRef}
-      className="min-h-0 flex-1 overflow-auto"
+      tabIndex={-1}
+      className="min-h-0 flex-1 overflow-auto outline-none"
       style={{ cursor: captureMode ? "crosshair" : undefined }}
       onMouseDown={handleCaptureMouseDown}
       onMouseMove={handleCaptureMouseMove}

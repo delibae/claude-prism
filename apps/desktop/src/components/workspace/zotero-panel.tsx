@@ -161,7 +161,7 @@ export function ZoteroHeader() {
         <span
           className={cn(
             "size-1.5 rounded-full",
-            isAuthenticated ? "bg-green-400" : "bg-muted-foreground/30",
+            isAuthenticated ? "bg-foreground" : "bg-muted-foreground/30",
           )}
         />
         <span className="font-medium text-xs">Zotero</span>
@@ -281,7 +281,7 @@ function CollectionRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <span className="truncate text-sm text-foreground">{name}</span>
-          {isSynced && <CheckIcon className="size-2.5 shrink-0 text-green-500" />}
+          {isSynced && <CheckIcon className="size-2.5 shrink-0 text-muted-foreground" />}
         </div>
         {isSynced && (
           <p className="truncate text-xs leading-none text-muted-foreground">

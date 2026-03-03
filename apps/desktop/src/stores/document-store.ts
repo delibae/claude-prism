@@ -4,7 +4,6 @@ import {
   readTexFileContent,
   writeTexFileContent,
   readImageAsDataUrl,
-  getAssetUrl,
   createFileOnDisk,
   copyFileToProject,
   deleteFileFromDisk,
@@ -149,10 +148,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
         }
       }
 
-      // Load asset URL for PDF files
-      if (f.type === "pdf") {
-        pf.dataUrl = getAssetUrl(f.absolutePath);
-      }
+      // PDF files are loaded on-demand via readFile in InlinePdfContent
 
       projectFiles.push(pf);
     }
@@ -548,9 +544,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
           try {
             pf.dataUrl = await readImageAsDataUrl(pf.absolutePath);
           } catch { /* skip unreadable */ }
-        } else if (pf.type === "pdf") {
-          pf.dataUrl = getAssetUrl(pf.absolutePath);
         }
+        // PDF files are loaded on-demand via readFile in InlinePdfContent
         merged.push(pf);
       }
     }

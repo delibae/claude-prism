@@ -37,6 +37,7 @@ tectonic = { version = "0.15", default-features = true, features = ["external-ha
 #   Linux:   apt install libicu-dev libgraphite2-dev libharfbuzz-dev libfreetype-dev libfontconfig-dev
 #   Windows: vcpkg install harfbuzz[graphite2] freetype icu fontconfig (with TECTONIC_DEP_BACKEND=vcpkg)
 flate2 = "1"
+tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

@@ -23,7 +23,10 @@ import {
   FileSpreadsheetIcon,
   GripVerticalIcon,
   AppWindowIcon,
+  FlaskConicalIcon,
+  TerminalIcon,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   DndContext,
   DragOverlay,
@@ -65,8 +68,9 @@ import {
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { useUvSetupStore } from "@/stores/uv-setup-store";
+import { UvSetupDialog } from "@/components/uv-setup";
 
 // ─── Table of Contents ───
 
@@ -667,6 +671,9 @@ export function Sidebar() {
         </Panel>
       </PanelGroup>
 
+      {/* Environment section — Python + Skills */}
+      <EnvironmentSection projectPath={projectRoot} />
+
       {/* Footer */}
       <div className="flex items-center justify-between border-sidebar-border border-t px-3 py-2 text-muted-foreground text-xs">
         <span className="truncate">ClaudePrism v{APP_VERSION}</span>
@@ -978,6 +985,115 @@ function FileTreeNode({
         </ContextMenuContent>
       </ContextMenu>
     </DraggableItem>
+  );
+}
+
+// ─── Environment Section (Python + Skills) ───
+
+interface SkillsStatus {
+  installed: boolean;
+  skill_count: number;
+  location: string;
+}
+
+function EnvironmentSection({ projectPath }: { projectPath: string | null }) {
+  // ── Python / uv ──
+  const venvReady = useUvSetupStore((s) => s.venvReady);
+  const uvStatus = useUvSetupStore((s) => s.status);
+  const [showUvDialog, setShowUvDialog] = useState(false);
+
+  // ── Scientific Skills ──
+  const [skillsStatus, setSkillsStatus] = useState<SkillsStatus | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const checkSkillsStatus = useCallback(async () => {
+    try {
+      const globalStatus = await invoke<SkillsStatus>("check_skills_installed", {
+        projectPath: null,
+      });
+      if (globalStatus.installed) {
+        setSkillsStatus(globalStatus);
+        return;
+      }
+      if (projectPath) {
+        const projectStatus = await invoke<SkillsStatus>("check_skills_installed", {
+          projectPath,
+        });
+        setSkillsStatus(projectStatus);
+      } else {
+        setSkillsStatus(globalStatus);
+      }
+    } catch {
+      // Ignore errors silently
+    }
+  }, [projectPath]);
+
+  useEffect(() => {
+    checkSkillsStatus();
+  }, [checkSkillsStatus]);
+
+  // Lazy import onboarding
+  const [OnboardingComponent, setOnboardingComponent] = useState<React.ComponentType<{
+    onClose: () => void;
+  }> | null>(null);
+
+  useEffect(() => {
+    if (showOnboarding && !OnboardingComponent) {
+      import("@/components/scientific-skills/scientific-skills-onboarding").then(
+        (mod) => setOnboardingComponent(() => mod.ScientificSkillsOnboarding)
+      );
+    }
+  }, [showOnboarding, OnboardingComponent]);
+
+  const pythonLabel =
+    venvReady ? "Active" : uvStatus === "not-installed" ? "Not installed" : uvStatus === "ready" ? "No venv" : "";
+  const skillsLabel =
+    skillsStatus?.installed ? `${skillsStatus.skill_count} skills` : "Not installed";
+
+  return (
+    <>
+      <div className="border-sidebar-border border-t">
+        <div className="flex h-8 shrink-0 items-center justify-center gap-2 px-3">
+          <AppWindowIcon className="size-3.5 text-muted-foreground" />
+          <span className="font-medium text-xs">Environment</span>
+        </div>
+        <div className="px-1 pb-1.5 space-y-0.5">
+          {/* Python / uv row */}
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-sidebar-accent/50 min-w-0"
+            onClick={() => setShowUvDialog(true)}
+          >
+            <TerminalIcon className={cn("size-3.5 shrink-0", venvReady ? "text-foreground" : "text-muted-foreground")} />
+            <span className="min-w-0 truncate text-xs flex-1">Python</span>
+            <span className={cn("shrink-0 text-xs", venvReady ? "text-foreground" : "text-muted-foreground")}>
+              {pythonLabel}
+            </span>
+          </button>
+          {/* Scientific Skills row */}
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-sidebar-accent/50 min-w-0"
+            onClick={() => setShowOnboarding(true)}
+          >
+            <FlaskConicalIcon className={cn("size-3.5 shrink-0", skillsStatus?.installed ? "text-foreground" : "text-muted-foreground")} />
+            <span className="min-w-0 truncate text-xs flex-1">Skills</span>
+            <span className={cn("shrink-0 text-xs", skillsStatus?.installed ? "text-foreground" : "text-muted-foreground")}>
+              {skillsLabel}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <UvSetupDialog open={showUvDialog} onClose={() => setShowUvDialog(false)} />
+
+      {showOnboarding && OnboardingComponent && (
+        <OnboardingComponent
+          onClose={() => {
+            setShowOnboarding(false);
+            checkSkillsStatus();
+          }}
+        />
+      )}
+    </>
   );
 }
 
