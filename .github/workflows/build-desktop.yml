@@ -51,13 +51,18 @@ jobs:
           echo "CXXFLAGS=-I$(brew --prefix)/include -std=c++17" >> $GITHUB_ENV
           echo "CFLAGS=-I$(brew --prefix)/include" >> $GITHUB_ENV
 
+      - name: Set vcpkg path
+        if: matrix.label == 'windows'
+        shell: bash
+        run: echo "VCPKG_INSTALLED=$VCPKG_INSTALLATION_ROOT/installed" >> $GITHUB_ENV
+
       - name: Restore vcpkg cache
         if: matrix.label == 'windows'
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
-          key: vcpkg-win-static-release-harfbuzz-fontconfig-freetype-icu-v1
+          path: ${{ env.VCPKG_INSTALLED }}
+          key: vcpkg-win-v2
 
       - name: Install Windows dependencies (vcpkg)
         if: matrix.label == 'windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -74,8 +79,8 @@ jobs:
         if: matrix.label == 'windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
-          key: vcpkg-win-static-release-harfbuzz-fontconfig-freetype-icu-v1
+          path: ${{ env.VCPKG_INSTALLED }}
+          key: vcpkg-win-v2
 
       - name: Set Windows build environment
         if: matrix.label == 'windows'
