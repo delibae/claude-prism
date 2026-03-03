@@ -53,13 +53,15 @@ jobs:
 
       - name: Cache vcpkg packages
         if: matrix.label == 'windows'
+        id: vcpkg-cache
         uses: actions/cache@v4
         with:
           path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
           key: vcpkg-win-static-release-harfbuzz-fontconfig-freetype-icu-v1
+          save-always: true
 
       - name: Install Windows dependencies (vcpkg)
-        if: matrix.label == 'windows'
+        if: matrix.label == 'windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
           VCPKG_BINARY_SOURCES: "clear"
