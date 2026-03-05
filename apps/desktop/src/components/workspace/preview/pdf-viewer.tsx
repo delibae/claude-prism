@@ -138,15 +138,9 @@ export function PdfViewer({
         }
         docIdRef.current = docId;
 
-        const count = await client.countPages(docId);
+        const sizes = await client.getAllPageSizes(docId);
         if (gen !== loadGenRef.current) return;
-
-        const sizes: PageSize[] = [];
-        for (let i = 0; i < count; i++) {
-          const size = await client.getPageSize(docId, i);
-          if (gen !== loadGenRef.current) return;
-          sizes.push(size);
-        }
+        const count = sizes.length;
 
         setPageSizes(sizes);
         setLoading(false);
@@ -357,7 +351,7 @@ export function PdfViewer({
     const handleWheel = (e: WheelEvent) => {
       if (e.metaKey || e.ctrlKey) {
         e.preventDefault();
-        const delta = -e.deltaY * 0.001;
+        const delta = -e.deltaY * 0.005;
         onScaleChange(Math.max(0.25, Math.min(4, scale + delta)));
       }
     };

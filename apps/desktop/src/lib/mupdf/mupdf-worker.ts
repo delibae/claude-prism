@@ -34,6 +34,21 @@ methods.getPageSize = (docId: number, pageIndex: number): { width: number; heigh
   };
 };
 
+methods.getAllPageSizes = (docId: number): { width: number; height: number }[] => {
+  const doc = documentMap.get(docId)!;
+  const count = doc.countPages();
+  const sizes: { width: number; height: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const page = doc.loadPage(i);
+    const bounds = page.getBounds();
+    sizes.push({
+      width: bounds[2] - bounds[0],
+      height: bounds[3] - bounds[1],
+    });
+  }
+  return sizes;
+};
+
 methods.drawPage = (docId: number, pageIndex: number, dpi: number): ImageData => {
   const doc = documentMap.get(docId)!;
   const page = doc.loadPage(pageIndex);

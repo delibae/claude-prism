@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "claude-prism-desktop"
-version = "0.0.1"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

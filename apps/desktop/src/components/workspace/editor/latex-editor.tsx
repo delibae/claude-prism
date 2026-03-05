@@ -93,10 +93,12 @@ export function LatexEditor() {
   const historyDiffResult = useHistoryStore((s) => s.diffResult);
 
   const [imageScale, setImageScale] = useState(1.0);
+  const [cropMode, setCropMode] = useState(false);
 
-  // Reset scale when switching files so each file starts at fit-to-width
+  // Reset scale and crop mode when switching files
   useEffect(() => {
     setImageScale(1.0);
+    setCropMode(false);
   }, [activeFileId]);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -272,14 +274,15 @@ export function LatexEditor() {
   // Compile: save all files first, then compile via Tauri command
   compileRef.current = async () => {
     if (isCompiling || !projectRoot || activeFile?.type !== "tex") return;
+    // Skip recompile if no edits since last successful compile
+    const { contentGeneration, lastCompiledGeneration, pdfData: existingPdf } = useDocumentStore.getState();
+    if (existingPdf && contentGeneration === lastCompiledGeneration) return;
     useHistoryStore.getState().stopReview();
     setIsCompiling(true);
     try {
       await saveAllFiles();
-      // Pre-compile snapshot
-      try {
-        await useHistoryStore.getState().createSnapshot(projectRoot, "[compile] Pre-compile");
-      } catch { /* snapshot failure should not block compile */ }
+      // Pre-compile snapshot (fire-and-forget to avoid blocking compilation start)
+      useHistoryStore.getState().createSnapshot(projectRoot, "[compile] Pre-compile").catch(() => {});
       const targetFile = activeFile?.relativePath || "document.tex";
       const data = await compileLatex(projectRoot, targetFile);
       setPdfData(data);
@@ -731,6 +734,8 @@ export function LatexEditor() {
         fileType={isPdf || isImage ? "image" : undefined}
         imageScale={isPdf || isImage ? imageScale : undefined}
         onImageScaleChange={isPdf || isImage ? setImageScale : undefined}
+        cropMode={isImage ? cropMode : undefined}
+        onCropToggle={isImage ? () => setCropMode((v) => !v) : undefined}
       />
       {/* Text-editor-only panels */}
       {!isPdf && !isImage && isSearchOpen && (
@@ -781,7 +786,7 @@ export function LatexEditor() {
         )}
         {/* Image content */}
         {isImage && activeFile && (
-          <ImagePreview file={activeFile} scale={imageScale} onScaleChange={setImageScale} />
+          <ImagePreview file={activeFile} scale={imageScale} onScaleChange={setImageScale} cropMode={cropMode} onCropModeChange={setCropMode} />
         )}
         {/* Text editor content */}
         {!isPdf && !isImage && (

@@ -5,8 +5,8 @@
 <h1 align="center">ClaudePrism</h1>
 
 <p align="center">
-  A private, offline-first LaTeX workspace powered by Claude.<br/>
-  Your documents never leave your machine.
+  A private, offline-first scientific writing workspace powered by Claude.<br/>
+  LaTeX + Python + 100 scientific skills — all running locally on your machine.
 </p>
 
 <p align="center">
@@ -28,6 +28,8 @@ ClaudePrism takes a different approach: **everything runs locally on your machin
 | AI Model | GPT-5.2 (cloud) | **Claude Opus / Sonnet / Haiku (local CLI)** |
 | Runtime | Browser (cloud) | **Native desktop (Tauri 2 + Rust)** |
 | LaTeX | Cloud compilation | **Tectonic (embedded, offline)** |
+| Python Environment | — | **Built-in uv + venv — one-click scientific Python setup** |
+| Scientific Skills | — | **100+ domain skills (bioinformatics, cheminformatics, ML, ...)** |
 | Getting Started | Account setup required | **Install and go — template gallery + project wizard** |
 | Version Control | — | **Git-based history with labels & diff** |
 | Data Privacy | Cloud storage, [trains models by default](https://openai.com/policies/how-your-data-is-used-to-improve-model-performance/) | **Local execution, [opt-out available](https://code.claude.com/docs/en/data-usage)** |
@@ -52,6 +54,25 @@ ClaudePrism invokes **Claude Code** as a local subprocess. Your documents stay o
 ---
 
 ## Features
+
+### Python Environment (uv)
+ClaudePrism integrates [uv](https://docs.astral.sh/uv/) — the fast Python package manager — directly into the app. One click to install uv, one click to create a project-level virtual environment. Claude Code automatically uses the `.venv` when running Python code, so you can generate plots, run analysis scripts, and process data without leaving the editor.
+
+### 100+ Scientific Skills
+Browse and install domain-specific skills from [K-Dense Scientific Skills](https://github.com/K-Dense-AI/claude-scientific-skills) — curated prompts and tool configurations that give Claude deep knowledge in specialized fields:
+
+| Domain | Skills |
+|--------|--------|
+| **Bioinformatics & Genomics** | Scanpy, BioPython, PyDESeq2, PySAM, gget, AnnData, ... |
+| **Cheminformatics & Drug Discovery** | RDKit, DeepChem, DiffDock, PubChem, ChEMBL, ... |
+| **Data Analysis & Visualization** | Matplotlib, Seaborn, Plotly, Polars, scikit-learn, ... |
+| **Machine Learning & AI** | PyTorch Lightning, Transformers, SHAP, UMAP, PyMC, ... |
+| **Clinical Research** | ClinicalTrials.gov, ClinVar, DrugBank, FDA, ... |
+| **Scientific Communication** | Literature Review, Grant Writing, Citation Management, ... |
+| **Multi-omics & Systems Biology** | scvi-tools, COBRApy, Reactome, Bioservices, ... |
+| **And more** | Materials Science, Lab Automation, Proteomics, Physics, ... |
+
+Skills are installed globally (`~/.claude/skills/`) or per-project, and Claude automatically loads them when relevant.
 
 ### Quick Start with Templates & Project Wizard
 Pick a template (paper, thesis, presentation, poster, letter, etc.), give it a name, optionally describe what you're writing — ClaudePrism sets up the project and generates initial content with AI. Drag & drop reference files (PDF, BIB, images) and start writing immediately.

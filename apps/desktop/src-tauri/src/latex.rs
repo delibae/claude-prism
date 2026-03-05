@@ -43,22 +43,63 @@ fn extract_error_lines(log: &str) -> String {
         return String::new();
     }
 
-    if log.lines().any(|l| l.contains("No pages of output")) {
-        return "No pages of output. Add visible content to the document body.".to_string();
-    }
-
+    // Extract real errors first — they take priority over "No pages of output"
     let error_lines: Vec<&str> = log
         .lines()
         .filter(|l| l.starts_with('!') || l.contains("Error:") || l.contains("error:"))
         .take(10)
         .collect();
 
-    if error_lines.is_empty() {
-        let start = log.len().saturating_sub(500);
-        log[start..].to_string()
-    } else {
-        error_lines.join("\n")
+    if !error_lines.is_empty() {
+        return error_lines.join("\n");
     }
+
+    if log.lines().any(|l| l.contains("No pages of output")) {
+        return "No pages of output. Add visible content to the document body.".to_string();
+    }
+
+    // Fallback: return tail of log
+    let start = log.len().saturating_sub(500);
+    log[start..].to_string()
+}
+
+/// Check if the log contains real TeX errors (! lines or Error: messages).
+fn has_real_errors(log: &str) -> bool {
+    log.lines()
+        .any(|l| l.starts_with('!') || l.contains("Error:"))
+}
+
+#[derive(Debug, PartialEq)]
+enum TexEngine {
+    Latex,
+    XeLaTeX,
+    LuaLaTeX,
+}
+
+/// Detect TeX engine from `% !TEX program = <engine>` magic comment in the first 20 lines.
+fn detect_tex_engine(content: &str) -> Option<TexEngine> {
+    for line in content.lines().take(20) {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix('%') {
+            let rest = rest.trim();
+            if let Some(rest) = rest.strip_prefix("!TEX") {
+                let rest = rest.trim();
+                if let Some(rest) = rest.strip_prefix("program") {
+                    let rest = rest.trim();
+                    if let Some(rest) = rest.strip_prefix('=') {
+                        let engine = rest.trim().to_lowercase();
+                        return match engine.as_str() {
+                            "xelatex" => Some(TexEngine::XeLaTeX),
+                            "lualatex" => Some(TexEngine::LuaLaTeX),
+                            "pdflatex" | "latex" => Some(TexEngine::Latex),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -83,8 +124,9 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Sync only source files (.tex, .bib, .sty, .cls, .bst, images) from project to build dir.
-/// Skips build artifacts (.aux, .log, .toc, .pdf, .synctex.gz, etc.) to preserve them.
+/// Sync only source files (.tex, .bib, .sty, .cls, .bst, images, .pdf figures) from project to build dir.
+/// Skips build artifacts (.aux, .log, .toc, .synctex.gz, etc.) to preserve them.
+/// Note: .pdf is NOT skipped — figure PDFs must be synced. The output PDF is managed by compile_latex.
 fn sync_source_files(src: &Path, dst: &Path) -> std::io::Result<()> {
     if !dst.exists() {
         std::fs::create_dir_all(dst)?;
@@ -103,7 +145,7 @@ fn sync_source_files(src: &Path, dst: &Path) -> std::io::Result<()> {
             let ext = src_path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let is_artifact = matches!(ext, "aux" | "log" | "toc" | "lof" | "lot" | "out"
                 | "nav" | "snm" | "vrb" | "bbl" | "blg" | "fls" | "fdb_latexmk"
-                | "synctex" | "pdf" | "idx" | "ind" | "ilg" | "glo" | "gls" | "glg"
+                | "synctex" | "idx" | "ind" | "ilg" | "glo" | "gls" | "glg"
                 | "fmt" | "xdv");
             let is_synctex = src_path.to_string_lossy().ends_with(".synctex.gz");
             if !is_artifact && !is_synctex {
@@ -118,6 +160,28 @@ fn sync_source_files(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// Stored in `<project>/.prism/build/` — hidden from file tree (dot-prefix is filtered).
 fn persistent_build_dir(project_dir: &str) -> PathBuf {
     PathBuf::from(project_dir).join(".prism").join("build")
+}
+
+// --- Thread priority ---
+
+/// Lower the current thread's scheduling priority so CPU-heavy compilation
+/// does not starve the WebView's main thread (and thus the UI / typing).
+fn lower_thread_priority() {
+    #[cfg(target_os = "macos")]
+    {
+        // QOS_CLASS_UTILITY (0x11) — lower than default, appropriate for long-running work.
+        extern "C" {
+            fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+        }
+        unsafe { pthread_set_qos_class_self_np(0x11, 0) };
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        extern "C" {
+            fn nice(inc: i32) -> i32;
+        }
+        unsafe { nice(10) };
+    }
 }
 
 // --- Tectonic Compilation ---
@@ -336,36 +400,60 @@ pub async fn compile_latex(
         .unwrap_or("document")
         .to_string();
 
-    // Set up build directory
+    // Set up build directory (offload blocking I/O to avoid starving the async runtime)
     let work_dir = persistent_build_dir(&project_dir);
     let is_reuse = work_dir.exists();
 
-    if is_reuse {
-        sync_source_files(Path::new(&project_dir), &work_dir)
-            .map_err(|e| format!("Failed to sync project: {}", e))?;
-        eprintln!(
-            "[latex] +{:.0}ms sync source files (reuse)",
-            t0.elapsed().as_millis()
-        );
-    } else {
-        std::fs::create_dir_all(&work_dir)
-            .map_err(|e| format!("Failed to create build dir: {}", e))?;
-        copy_dir_recursive(Path::new(&project_dir), &work_dir)
-            .map_err(|e| format!("Failed to copy project: {}", e))?;
-        eprintln!(
-            "[latex] +{:.0}ms full copy (first build)",
-            t0.elapsed().as_millis()
-        );
+    {
+        let work_dir = work_dir.clone();
+        let project_dir = project_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            if is_reuse {
+                sync_source_files(Path::new(&project_dir), &work_dir)
+                    .map_err(|e| format!("Failed to sync project: {}", e))
+            } else {
+                std::fs::create_dir_all(&work_dir)
+                    .map_err(|e| format!("Failed to create build dir: {}", e))?;
+                copy_dir_recursive(Path::new(&project_dir), &work_dir)
+                    .map_err(|e| format!("Failed to copy project: {}", e))
+            }
+        })
+        .await
+        .map_err(|e| format!("File sync task panicked: {}", e))??;
     }
+
+    eprintln!(
+        "[latex] +{:.0}ms {} ({})",
+        t0.elapsed().as_millis(),
+        if is_reuse { "sync source files" } else { "full copy" },
+        if is_reuse { "reuse" } else { "first build" }
+    );
 
     // Remove stale PDF so a failed compile doesn't return the previous result.
     let pdf_path = work_dir.join(format!("{}.pdf", main_file_name));
     let _ = std::fs::remove_file(&pdf_path);
 
-    // Run Tectonic in a blocking task (it uses an internal global mutex)
+    // Detect TeX engine from magic comment
+    let main_tex_path = work_dir.join(&main_file);
+    if let Ok(content) = std::fs::read_to_string(&main_tex_path) {
+        if let Some(engine) = detect_tex_engine(&content) {
+            if engine == TexEngine::LuaLaTeX {
+                return Err(
+                    "Compilation failed\n\nThis document requires LuaLaTeX (% !TEX program = lualatex), \
+                     which is not supported. Prism uses a XeTeX-based engine (Tectonic). \
+                     Please switch to XeLaTeX or remove the magic comment."
+                        .to_string(),
+                );
+            }
+            // XeLaTeX → native (Tectonic is XeTeX-based), pdflatex → mostly compatible
+        }
+    }
+
+    // Run Tectonic in a blocking task with reduced priority so the UI stays responsive.
     let work_dir_clone = work_dir.clone();
     let main_file_clone = main_file.clone();
     let compile_result = tokio::task::spawn_blocking(move || {
+        lower_thread_priority();
         compile_with_tectonic(&work_dir_clone, &main_file_clone)
     })
     .await
@@ -380,11 +468,20 @@ pub async fn compile_latex(
     let log_path = work_dir.join(format!("{}.log", main_file_name));
 
     // Handle "No pages of output" — retry with \AtEndDocument{\null} injection
+    // Skip retry if there are real errors (e.g. missing packages) — retrying won't help.
     if !pdf_path.exists() {
-        let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
-        if log_content.contains("No pages of output") {
+        let log_path_clone = log_path.clone();
+        let main_tex = work_dir.join(&main_file);
+        let pdf_path_clone = pdf_path.clone();
+        let main_file_clone = main_file.clone();
+        let work_dir_clone = work_dir.clone();
+
+        let needs_retry = tokio::task::spawn_blocking(move || {
+            let log_content = std::fs::read_to_string(&log_path_clone).unwrap_or_default();
+            if !log_content.contains("No pages of output") || has_real_errors(&log_content) {
+                return Ok(false);
+            }
             eprintln!("[latex] no pages of output — retrying with \\null injection");
-            let main_tex = work_dir.join(&main_file);
             if let Ok(content) = std::fs::read_to_string(&main_tex) {
                 if let Some(pos) = content.find("\\begin{document}") {
                     let modified = format!(
@@ -393,20 +490,25 @@ pub async fn compile_latex(
                         &content[pos..]
                     );
                     let _ = std::fs::write(&main_tex, &modified);
-                    let work_dir_clone = work_dir.clone();
-                    let main_file_clone = main_file.clone();
-                    let retry_result = tokio::task::spawn_blocking(move || {
-                        compile_with_tectonic(&work_dir_clone, &main_file_clone)
-                    })
-                    .await
-                    .map_err(|e| format!("Retry task panicked: {}", e))?;
-                    eprintln!(
-                        "[latex] empty-body retry: ok={} pdf_exists={}",
-                        retry_result.is_ok(),
-                        pdf_path.exists()
-                    );
+                    return Ok(true);
                 }
             }
+            Ok::<bool, String>(false)
+        })
+        .await
+        .map_err(|e| format!("Retry prep panicked: {}", e))??;
+
+        if needs_retry {
+            let retry_result = tokio::task::spawn_blocking(move || {
+                compile_with_tectonic(&work_dir_clone, &main_file_clone)
+            })
+            .await
+            .map_err(|e| format!("Retry task panicked: {}", e))?;
+            eprintln!(
+                "[latex] empty-body retry: ok={} pdf_exists={}",
+                retry_result.is_ok(),
+                pdf_path_clone.exists()
+            );
         }
     }
 
@@ -423,8 +525,11 @@ pub async fn compile_latex(
     }
 
     if pdf_path.exists() {
-        let pdf_bytes =
-            std::fs::read(&pdf_path).map_err(|e| format!("Failed to read PDF: {}", e))?;
+        let pdf_path_clone = pdf_path.clone();
+        let pdf_bytes = tokio::task::spawn_blocking(move || std::fs::read(&pdf_path_clone))
+            .await
+            .map_err(|e| format!("PDF read task panicked: {}", e))?
+            .map_err(|e| format!("Failed to read PDF: {}", e))?;
         eprintln!(
             "[latex] +{:.0}ms total (reuse={})",
             t0.elapsed().as_millis(),
@@ -469,25 +574,29 @@ pub async fn synctex_edit(
     let work_dir = build.work_dir.clone();
     drop(builds); // Release lock before I/O
 
-    // Read and decompress synctex data
-    let synctex_data = if synctex_gz.exists() {
-        let compressed =
-            std::fs::read(&synctex_gz).map_err(|e| format!("Failed to read synctex.gz: {}", e))?;
-        let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
-        let mut data = String::new();
-        decoder
-            .read_to_string(&mut data)
-            .map_err(|e| format!("Failed to decompress synctex: {}", e))?;
-        data
-    } else if synctex_plain.exists() {
-        std::fs::read_to_string(&synctex_plain)
-            .map_err(|e| format!("Failed to read synctex: {}", e))?
-    } else {
-        return Err("No synctex data found. Recompile with synctex enabled.".to_string());
-    };
+    // Read, decompress, and parse synctex data (blocking I/O + CPU work → offload)
+    let (mut file, line, column) = tokio::task::spawn_blocking(move || {
+        let synctex_data = if synctex_gz.exists() {
+            let compressed = std::fs::read(&synctex_gz)
+                .map_err(|e| format!("Failed to read synctex.gz: {}", e))?;
+            let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
+            let mut data = String::new();
+            decoder
+                .read_to_string(&mut data)
+                .map_err(|e| format!("Failed to decompress synctex: {}", e))?;
+            Ok::<_, String>(data)
+        } else if synctex_plain.exists() {
+            std::fs::read_to_string(&synctex_plain)
+                .map_err(|e| format!("Failed to read synctex: {}", e))
+        } else {
+            Err("No synctex data found. Recompile with synctex enabled.".to_string())
+        }?;
 
-    let (mut file, line, column) = parse_synctex_data(&synctex_data, page, x, y)
-        .ok_or("Could not resolve source location")?;
+        parse_synctex_data(&synctex_data, page, x, y)
+            .ok_or_else(|| "Could not resolve source location".to_string())
+    })
+    .await
+    .map_err(|e| format!("Synctex task panicked: {}", e))??;
 
     // Normalize: strip work_dir prefix and "./" or ".\\" prefix
     let work_dir_str = work_dir.to_string_lossy().to_string();
@@ -778,6 +887,71 @@ Postamble:
         assert_eq!(line, 25);
     }
 
+    // --- extract_error_lines: real errors take priority over "No pages of output" ---
+
+    #[test]
+    fn test_extract_error_lines_real_errors_over_no_pages() {
+        let log = "Some preamble\n! LaTeX Error: File `missing.sty' not found.\nNo pages of output.\nMore stuff";
+        let result = extract_error_lines(log);
+        assert!(result.contains("LaTeX Error"), "real error should be shown, got: {}", result);
+        assert!(!result.contains("Add visible content"), "No pages fallback should NOT appear");
+    }
+
+    // --- has_real_errors ---
+
+    #[test]
+    fn test_has_real_errors_with_bang() {
+        assert!(has_real_errors("ok\n! Undefined control sequence.\nmore"));
+    }
+
+    #[test]
+    fn test_has_real_errors_with_error_colon() {
+        assert!(has_real_errors("LaTeX Error: Bad math\nstuff"));
+    }
+
+    #[test]
+    fn test_has_real_errors_none() {
+        assert!(!has_real_errors("This is pdfTeX\nNo pages of output.\n"));
+    }
+
+    // --- detect_tex_engine ---
+
+    #[test]
+    fn test_detect_tex_engine_xelatex() {
+        let content = "% !TEX program = xelatex\n\\documentclass{article}\n";
+        assert_eq!(detect_tex_engine(content), Some(TexEngine::XeLaTeX));
+    }
+
+    #[test]
+    fn test_detect_tex_engine_pdflatex() {
+        let content = "% !TEX program = pdflatex\n\\documentclass{article}\n";
+        assert_eq!(detect_tex_engine(content), Some(TexEngine::Latex));
+    }
+
+    #[test]
+    fn test_detect_tex_engine_lualatex() {
+        let content = "% !TEX program = lualatex\n\\documentclass{article}\n";
+        assert_eq!(detect_tex_engine(content), Some(TexEngine::LuaLaTeX));
+    }
+
+    #[test]
+    fn test_detect_tex_engine_none() {
+        let content = "\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}\n";
+        assert_eq!(detect_tex_engine(content), None);
+    }
+
+    #[test]
+    fn test_detect_tex_engine_case_insensitive() {
+        let content = "% !TEX program = XeLaTeX\n";
+        assert_eq!(detect_tex_engine(content), Some(TexEngine::XeLaTeX));
+    }
+
+    #[test]
+    fn test_detect_tex_engine_no_spaces() {
+        let content = "%!TEX program=xelatex\n";
+        assert_eq!(detect_tex_engine(content), Some(TexEngine::XeLaTeX));
+    }
+
     // --- persistent_build_dir edge case ---
 
     #[test]
@@ -864,7 +1038,6 @@ Postamble:
         std::fs::write(src.path().join("main.tex"), "doc").unwrap();
         std::fs::write(src.path().join("main.aux"), "aux").unwrap();
         std::fs::write(src.path().join("main.log"), "log").unwrap();
-        std::fs::write(src.path().join("main.pdf"), "pdf").unwrap();
         std::fs::write(src.path().join("main.synctex.gz"), "sync").unwrap();
 
         sync_source_files(src.path(), dst.path()).unwrap();
@@ -872,7 +1045,6 @@ Postamble:
         assert!(dst.path().join("main.tex").exists());
         assert!(!dst.path().join("main.aux").exists());
         assert!(!dst.path().join("main.log").exists());
-        assert!(!dst.path().join("main.pdf").exists());
         assert!(!dst.path().join("main.synctex.gz").exists());
     }
 
@@ -897,33 +1069,25 @@ Postamble:
         assert!(!dst.path().join(".claudeprism").exists());
     }
 
-    // --- sync_source_files preserves stale PDF (compile_latex deletes it separately) ---
+    // --- sync_source_files copies figure PDFs ---
 
     #[test]
-    fn test_sync_source_files_does_not_copy_pdf_from_source() {
-        // sync_source_files treats .pdf as an artifact and does not copy it.
-        // This means a stale PDF in the build dir survives a sync — the
-        // compile_latex command must delete it explicitly before compiling.
+    fn test_sync_source_files_copies_figure_pdfs() {
+        // .pdf files (e.g. figures) must be synced — they are NOT artifacts.
+        // The output PDF is managed by compile_latex (explicit remove_file).
         let src = tempfile::tempdir().unwrap();
         let dst = tempfile::tempdir().unwrap();
 
-        std::fs::write(src.path().join("main.tex"), "new content").unwrap();
-        // Simulate a stale PDF already sitting in the build dir
-        std::fs::write(dst.path().join("main.pdf"), "old pdf bytes").unwrap();
+        std::fs::create_dir_all(src.path().join("figures")).unwrap();
+        std::fs::write(src.path().join("main.tex"), "doc").unwrap();
+        std::fs::write(src.path().join("figures").join("chart.pdf"), "pdf figure").unwrap();
 
         sync_source_files(src.path(), dst.path()).unwrap();
 
-        // Source .tex was synced
+        assert!(dst.path().join("main.tex").exists());
         assert_eq!(
-            std::fs::read_to_string(dst.path().join("main.tex")).unwrap(),
-            "new content"
-        );
-        // Stale PDF in dst was NOT overwritten (sync skips .pdf)
-        // This confirms that compile_latex must delete the PDF itself
-        assert!(dst.path().join("main.pdf").exists());
-        assert_eq!(
-            std::fs::read_to_string(dst.path().join("main.pdf")).unwrap(),
-            "old pdf bytes"
+            std::fs::read_to_string(dst.path().join("figures").join("chart.pdf")).unwrap(),
+            "pdf figure"
         );
     }
 

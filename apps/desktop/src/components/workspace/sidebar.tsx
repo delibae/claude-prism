@@ -353,24 +353,21 @@ export function Sidebar() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const tree = useMemo(() => buildFileTree(files, folders), [files, folders]);
 
-  // Auto-expand all folders on tree change
-  useMemo(() => {
-    const allFolders = new Set<string>();
-    function collectFolders(nodes: TreeNode[]) {
-      for (const n of nodes) {
-        if (n.type === "folder") {
-          allFolders.add(n.relativePath);
-          collectFolders(n.children);
-        }
-      }
-    }
-    collectFolders(tree);
+  // Auto-expand parent folders of the active file so it stays visible
+  useEffect(() => {
+    if (!activeFileId) return;
+    const parts = activeFileId.split("/");
+    if (parts.length <= 1) return;
     setExpandedFolders((prev) => {
-      const merged = new Set(prev);
-      for (const f of allFolders) merged.add(f);
-      return merged;
+      const next = new Set(prev);
+      let changed = false;
+      for (let i = 1; i < parts.length; i++) {
+        const folder = parts.slice(0, i).join("/");
+        if (!next.has(folder)) { next.add(folder); changed = true; }
+      }
+      return changed ? next : prev;
     });
-  }, [tree]);
+  }, [activeFileId]);
 
   const toggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {

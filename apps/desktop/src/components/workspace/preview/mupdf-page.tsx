@@ -35,14 +35,18 @@ export const MupdfPage = memo(function MupdfPage({
     const dpr = window.devicePixelRatio || 1;
     const dpi = scale * 72 * dpr;
 
-    client.drawPage(docId, pageIndex, dpi).then((imageData) => {
+    client.drawPage(docId, pageIndex, dpi).then(async (imageData) => {
       if (gen !== renderGenRef.current) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
       canvas.width = imageData.width;
       canvas.height = imageData.height;
+      // Use createImageBitmap to avoid blocking the main thread with putImageData
+      const bitmap = await createImageBitmap(imageData);
+      if (gen !== renderGenRef.current) { bitmap.close(); return; }
       const ctx = canvas.getContext("2d")!;
-      ctx.putImageData(imageData, 0, 0);
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
     }).catch((err) => {
       if (gen !== renderGenRef.current) return;
       console.error(`[mupdf-page] render error page ${pageIndex}:`, err);

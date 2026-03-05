@@ -41,6 +41,10 @@ interface DocumentState {
   isCompiling: boolean;
   isSaving: boolean;
   initialized: boolean;
+  /** Incremented on every file content change; used to skip no-op recompiles. */
+  contentGeneration: number;
+  /** The contentGeneration at the time of the last successful compile. */
+  lastCompiledGeneration: number;
 
   openProject: (rootPath: string) => Promise<void>;
   closeProject: () => void;
@@ -49,6 +53,7 @@ interface DocumentState {
   deleteFile: (id: string) => void;
   renameFile: (id: string, name: string) => void;
   updateFileContent: (id: string, content: string) => void;
+  updateImageDataUrl: (id: string, dataUrl: string) => void;
   setCursorPosition: (position: number) => void;
   setSelectionRange: (range: { start: number; end: number } | null) => void;
   requestJumpToPosition: (position: number) => void;
@@ -115,6 +120,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   isCompiling: false,
   isSaving: false,
   initialized: false,
+  contentGeneration: 0,
+  lastCompiledGeneration: -1,
 
   openProject: async (rootPath: string) => {
     const { files: fsFiles, folders: fsFolders } = await scanProjectFolder(rootPath);
@@ -262,13 +269,26 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       files: state.files.map((f) =>
         f.id === id ? { ...f, content, isDirty: true } : f,
       ),
+      contentGeneration: state.contentGeneration + 1,
     }));
     scheduleAutoSave();
   },
 
+  updateImageDataUrl: (id, dataUrl) => {
+    set((state) => ({
+      files: state.files.map((f) =>
+        f.id === id ? { ...f, dataUrl } : f,
+      ),
+    }));
+  },
+
   setThreadOpen: (open) => set({ isThreadOpen: open }),
 
-  setPdfData: (data) => set({ pdfData: data, compileError: null }),
+  setPdfData: (data) => set((s) => ({
+    pdfData: data,
+    compileError: null,
+    lastCompiledGeneration: data ? s.contentGeneration : s.lastCompiledGeneration,
+  })),
 
   setCompileError: (error) => set({ compileError: error }),
 
@@ -496,6 +516,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
         files: s.files.map((f) =>
           f.id === file.id ? { ...f, content, isDirty: false } : f,
         ),
+        contentGeneration: s.contentGeneration + 1,
       }));
     }
   },
@@ -561,7 +582,12 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       ? activeFileId
       : merged[0]?.id ?? "";
 
-    set({ files: merged, folders: fsFolders, activeFileId: newActiveId });
+    set((s) => ({
+      files: merged,
+      folders: fsFolders,
+      activeFileId: newActiveId,
+      contentGeneration: s.contentGeneration + 1,
+    }));
   },
 
   get fileName() {
@@ -591,6 +617,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
           ? { ...f, content, isDirty: true }
           : f,
       ),
+      contentGeneration: state.contentGeneration + 1,
     });
     scheduleAutoSave();
   },

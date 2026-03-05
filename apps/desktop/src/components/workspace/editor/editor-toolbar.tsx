@@ -8,6 +8,7 @@ import {
   Heading1Icon,
   Heading2Icon,
   CodeIcon,
+  CropIcon,
   FunctionSquareIcon,
   FileTextIcon,
   ImageIcon,
@@ -54,6 +55,8 @@ interface EditorToolbarProps {
   fileType?: "tex" | "image";
   imageScale?: number;
   onImageScaleChange?: (scale: number) => void;
+  cropMode?: boolean;
+  onCropToggle?: () => void;
 }
 
 export function EditorToolbar({
@@ -61,6 +64,8 @@ export function EditorToolbar({
   fileType = "tex",
   imageScale = 1,
   onImageScaleChange,
+  cropMode,
+  onCropToggle,
 }: EditorToolbarProps) {
   const fileName = useDocumentStore((s) => {
     const activeFile = s.files.find((f) => f.id === s.activeFileId);
@@ -167,6 +172,20 @@ export function EditorToolbar({
               ))}
             </SelectContent>
           </Select>
+          {onCropToggle && !fileName.toLowerCase().endsWith(".svg") && (
+            <>
+              <div className="mx-1 h-4 w-px bg-border" />
+              <Button
+                variant={cropMode ? "default" : "ghost"}
+                size="sm"
+                className="h-6 gap-1 px-2 text-xs"
+                onClick={onCropToggle}
+              >
+                <CropIcon className="size-3.5" />
+                Crop
+              </Button>
+            </>
+          )}
           {editors.length === 1 && (
             <TooltipIconButton
               tooltip={`Open in ${editors[0].name}`}

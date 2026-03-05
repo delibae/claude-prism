@@ -316,6 +316,9 @@ export function PdfPreview() {
 
   const handleCompile = async () => {
     if (isCompiling || !projectRoot || !isTexActive) return;
+    // Skip recompile if no edits since last successful compile
+    const { contentGeneration, lastCompiledGeneration, pdfData: existingPdf } = useDocumentStore.getState();
+    if (existingPdf && contentGeneration === lastCompiledGeneration) return;
     useHistoryStore.getState().stopReview();
     setIsCompiling(true);
     setPdfError(null);

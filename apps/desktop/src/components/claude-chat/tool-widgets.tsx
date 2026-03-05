@@ -42,7 +42,12 @@ export const ToolWidget: FC<ToolWidgetProps> = ({ toolUse, toolResult }) => {
 // ─── Status Icon ───
 
 const StatusIcon: FC<{ result?: ContentBlock }> = ({ result }) => {
+  const isStreaming = useClaudeChatStore((s) => s.isStreaming);
   if (!result) {
+    if (!isStreaming) {
+      // Tool was cancelled (stop pressed) — show stopped state
+      return <CircleIcon className="size-3.5 text-muted-foreground" />;
+    }
     return <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />;
   }
   if (result.is_error) {
