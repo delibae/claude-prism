@@ -32,7 +32,7 @@ ClaudePrism takes a different approach: **everything runs locally on your machin
 | Scientific Skills | — | **100+ domain skills (bioinformatics, cheminformatics, ML, ...)** |
 | Getting Started | Account setup required | **Install and go — template gallery + project wizard** |
 | Version Control | — | **Git-based history with labels & diff** |
-| Data Privacy | Cloud storage, [trains models by default](https://openai.com/policies/how-your-data-is-used-to-improve-model-performance/) | **Local execution, [opt-out available](https://code.claude.com/docs/en/data-usage)** |
+| Data Privacy | Cloud storage, [opt-out available](https://help.openai.com/en/articles/8983082-how-do-i-turn-off-model-training-to-stop-openai-training-models-on-my-conversations) | **Local execution, [opt-out available](https://code.claude.com/docs/en/data-usage)** |
 | Source Code | Proprietary | **Open source (MIT)** |
 
 ### Your Research, Your Machine
@@ -43,13 +43,17 @@ ClaudePrism invokes **Claude Code** as a local subprocess. Your documents stay o
 
 | | OpenAI Prism | ClaudePrism (via Claude Code) |
 |---|---|---|
-| Where documents live | OpenAI cloud servers | Your local disk |
-| Default training policy | **ON** — ChatGPT personal accounts [train models by default](https://openai.com/policies/how-your-data-is-used-to-improve-model-performance/) | **ON** for Consumer (Free/Pro/Max), **OFF** for [Commercial plans](https://code.claude.com/docs/en/data-usage) (Team/Enterprise/API) |
-| Opt-out | Settings > Data Controls | [Privacy Settings](https://claude.ai/settings/data-privacy-controls) or use Commercial plan |
-| Data retention | Not disclosed | 30 days (opt-out) / 5 years (opt-in) |
+| Where documents live | OpenAI cloud servers | **Your local disk only** |
+| Model training opt-out | [Available](https://help.openai.com/en/articles/8983082-how-do-i-turn-off-model-training-to-stop-openai-training-models-on-my-conversations) (Settings > Data Controls) | [Available](https://claude.ai/settings/data-privacy-controls) (Privacy Settings or API key) |
+| **Data exposure after opt-out** | **Documents remain on OpenAI servers** | **Nothing leaves your machine** |
+| **Feedback pitfall** | **👍/👎 sends entire conversation to training** | **No such mechanism** |
+| Default training policy | ON (personal accounts) | ON (Consumer), **OFF** (API key / Team / Enterprise) |
+| Data retention | ~30 days after opt-out | 30 days (opt-out) / 5 years (opt-in) |
 | Zero data retention | Not available | Available on Enterprise |
 | Telemetry | Cannot disable | `DISABLE_TELEMETRY=1` to fully disable |
 | Source code | Proprietary | Open source — [audit it yourself](https://github.com/delibae/claude-prism) |
+
+> **Both tools allow opting out of model training.** The critical difference is where your documents live. With Prism, your unpublished research exists on OpenAI's servers regardless of training settings. With ClaudePrism, files never leave your machine — only prompts are sent for AI inference.
 
 ---
 
