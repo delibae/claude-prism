@@ -149,7 +149,20 @@ fn sync_source_files(src: &Path, dst: &Path) -> std::io::Result<()> {
                 | "fmt" | "xdv");
             let is_synctex = src_path.to_string_lossy().ends_with(".synctex.gz");
             if !is_artifact && !is_synctex {
-                std::fs::copy(&src_path, &dst_path)?;
+                // Cloud storage (Dropbox/iCloud) may keep files as online-only
+                // placeholders with 0 bytes. Reading the file forces a download.
+                let metadata = std::fs::metadata(&src_path)?;
+                if metadata.len() == 0 {
+                    // Attempt to materialize the file by reading it
+                    let data = std::fs::read(&src_path)?;
+                    if !data.is_empty() {
+                        std::fs::write(&dst_path, &data)?;
+                    } else {
+                        std::fs::copy(&src_path, &dst_path)?;
+                    }
+                } else {
+                    std::fs::copy(&src_path, &dst_path)?;
+                }
             }
         }
     }
