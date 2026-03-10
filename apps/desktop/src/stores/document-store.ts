@@ -17,6 +17,8 @@ import { useHistoryStore } from "@/stores/history-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { clearDocCache } from "@/lib/mupdf/pdf-doc-cache";
 import { clearScrollPositionCache } from "@/components/workspace/preview/pdf-viewer";
+import { clearZoomCache } from "@/components/workspace/preview/pdf-preview";
+import { clearEditorStateCache } from "@/components/workspace/editor/latex-editor";
 
 export interface ProjectFile {
   id: string; // relativePath is the id
@@ -228,6 +230,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   closeProject: () => {
     clearDocCache();
     clearScrollPositionCache();
+    clearZoomCache();
+    clearEditorStateCache();
     set({
       projectRoot: null,
       files: [],
@@ -251,7 +255,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const cachedError = state.compileErrorCache.get(rootId) ?? null;
     set({
       activeFileId: id,
-      cursorPosition: 0,
+      // Don't reset cursorPosition — the editor restores it from per-file cache
       selectionRange: null,
       pdfData: cachedPdf,
       compileError: cachedError,

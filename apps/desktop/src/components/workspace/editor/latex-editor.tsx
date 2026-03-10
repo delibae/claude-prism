@@ -66,6 +66,14 @@ function getActiveFileContent(): string {
   return activeFile?.content ?? "";
 }
 
+/** Per-file editor state cache: fileId → { cursor, scrollTop } */
+const editorStateCache = new Map<string, { cursor: number; scrollTop: number }>();
+
+/** Clear editor state cache (e.g., on project close). */
+export function clearEditorStateCache(): void {
+  editorStateCache.clear();
+}
+
 export function LatexEditor() {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -527,7 +535,27 @@ export function LatexEditor() {
 
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
-    return () => { view.destroy(); viewRef.current = null; };
+
+    // Restore per-file cursor + scroll from cache
+    const cached = editorStateCache.get(activeFileId);
+    if (cached) {
+      const pos = Math.min(cached.cursor, view.state.doc.length);
+      view.dispatch({ selection: { anchor: pos, head: pos } });
+      // Scroll restoration needs layout to settle
+      requestAnimationFrame(() => {
+        view.scrollDOM.scrollTop = cached.scrollTop;
+      });
+    }
+
+    return () => {
+      // Save per-file cursor + scroll before destroying
+      editorStateCache.set(activeFileId, {
+        cursor: view.state.selection.main.head,
+        scrollTop: view.scrollDOM.scrollTop,
+      });
+      view.destroy();
+      viewRef.current = null;
+    };
   }, [activeFileId, isTextFile, setContent, setCursorPosition, setSelectionRange]);
 
   // Dynamically switch editor theme when resolvedTheme changes

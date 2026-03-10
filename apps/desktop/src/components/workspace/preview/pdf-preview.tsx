@@ -37,6 +37,17 @@ import { resolveTexRoot } from "@/stores/document-store";
 
 type FitMode = "fit-width" | "fit-height" | null;
 
+/** Per-root zoom state cache: rootFileId → { scale, fitMode } */
+const zoomCache = new Map<string, { scale: number; fitMode: FitMode }>();
+
+/** Max number of PdfViewer instances kept alive simultaneously. */
+const MAX_ALIVE_VIEWERS = 5;
+
+/** Clear zoom cache (e.g., on project close). */
+export function clearZoomCache(): void {
+  zoomCache.clear();
+}
+
 const ZOOM_OPTIONS = [
   { value: "0.5", label: "50%" },
   { value: "0.75", label: "75%" },
@@ -79,6 +90,38 @@ export function PdfPreview() {
   const [firstPageSize, setFirstPageSize] = useState<{ width: number; height: number } | null>(null);
   const hasInitialCompile = useRef(false);
   const initialized = useDocumentStore((s) => s.initialized);
+
+  // Keep-alive: track which root files have PdfViewer instances alive (LRU order)
+  const pdfCache = useDocumentStore((s) => s.pdfCache);
+  const currentRootFileId = resolveTexRoot(activeFile?.id ?? "", files);
+  const [aliveOrder, setAliveOrder] = useState<string[]>([]);
+  const prevRootRef = useRef(currentRootFileId);
+
+  // Save/restore zoom state per root file on switch
+  useEffect(() => {
+    const prev = prevRootRef.current;
+    if (prev && prev !== currentRootFileId) {
+      // Save previous root's zoom
+      zoomCache.set(prev, { scale, fitMode });
+    }
+    // Restore new root's zoom
+    const cached = zoomCache.get(currentRootFileId);
+    if (cached) {
+      setScale(cached.scale);
+      setFitMode(cached.fitMode);
+    }
+    prevRootRef.current = currentRootFileId;
+  }, [currentRootFileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update alive set when active root changes and has PDF data
+  useEffect(() => {
+    if (!currentRootFileId || !pdfData) return;
+    setAliveOrder((prev) => {
+      if (prev[0] === currentRootFileId) return prev; // already at front
+      const without = prev.filter((id) => id !== currentRootFileId);
+      return [currentRootFileId, ...without].slice(0, MAX_ALIVE_VIEWERS);
+    });
+  }, [currentRootFileId, pdfData]);
 
   // PDF text selection toolbar
   const [pdfSelection, setPdfSelection] = useState<PdfTextSelection | null>(null);
@@ -476,38 +519,59 @@ export function PdfPreview() {
         </div>
       );
     }
-    const currentRootFileId = resolveTexRoot(activeFile?.id ?? "", files);
 
+    // Keep-alive rendering: one PdfViewer per root file, toggle via CSS.
+    // Use visibility:hidden + absolute positioning instead of display:none
+    // so that the browser preserves scrollTop on the overflow container.
     return (
-      <ErrorBoundary
-        fallback={
-          <div className="flex h-full flex-col items-center justify-center gap-3 bg-muted/30 p-8">
-            <AlertCircleIcon className="size-10 text-destructive" />
-            <p className="text-sm text-muted-foreground">PDF viewer crashed. Try recompiling.</p>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCompile}>
-              <RefreshCwIcon className="size-3.5" />
-              Recompile
-            </Button>
-          </div>
-        }
-      >
-        <PdfViewer
-          data={pdfData}
-          scale={scale}
-          rootFileId={currentRootFileId}
-          onError={setPdfError}
-          onLoadSuccess={handleLoadSuccess}
-          onScaleChange={handleScaleChange}
-          onTextClick={handleTextClick}
-          onSynctexClick={handleSynctexClick}
-          onTextSelect={handleTextSelect}
-          onFirstPageSize={(w, h) => setFirstPageSize({ width: w, height: h })}
-          onContainerResize={(w, h) => setContainerSize({ width: w, height: h })}
-          captureMode={captureMode}
-          onCapture={handleCapture}
-          onCancelCapture={() => setCaptureMode(false)}
-        />
-      </ErrorBoundary>
+      <div className="relative flex min-h-0 flex-1">
+        {aliveOrder.map((rootId) => {
+          const data = pdfCache.get(rootId);
+          if (!data) return null;
+          const isActive = rootId === currentRootFileId;
+          return (
+            <ErrorBoundary
+              key={rootId}
+              fallback={
+                <div className="flex h-full flex-col items-center justify-center gap-3 bg-muted/30 p-8">
+                  <AlertCircleIcon className="size-10 text-destructive" />
+                  <p className="text-sm text-muted-foreground">PDF viewer crashed. Try recompiling.</p>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCompile}>
+                    <RefreshCwIcon className="size-3.5" />
+                    Recompile
+                  </Button>
+                </div>
+              }
+            >
+              <div
+                className={
+                  isActive
+                    ? "absolute inset-0 flex flex-col"
+                    : "invisible pointer-events-none absolute inset-0 flex flex-col"
+                }
+              >
+                <PdfViewer
+                  data={data}
+                  scale={scale}
+                  rootFileId={rootId}
+                  isActive={isActive}
+                  onError={isActive ? setPdfError : undefined}
+                  onLoadSuccess={isActive ? handleLoadSuccess : undefined}
+                  onScaleChange={isActive ? handleScaleChange : undefined}
+                  onTextClick={isActive ? handleTextClick : undefined}
+                  onSynctexClick={isActive ? handleSynctexClick : undefined}
+                  onTextSelect={isActive ? handleTextSelect : undefined}
+                  onFirstPageSize={isActive ? (w, h) => setFirstPageSize({ width: w, height: h }) : undefined}
+                  onContainerResize={isActive ? (w, h) => setContainerSize({ width: w, height: h }) : undefined}
+                  captureMode={isActive ? captureMode : false}
+                  onCapture={isActive ? handleCapture : undefined}
+                  onCancelCapture={isActive ? () => setCaptureMode(false) : undefined}
+                />
+              </div>
+            </ErrorBoundary>
+          );
+        })}
+      </div>
     );
   };
 

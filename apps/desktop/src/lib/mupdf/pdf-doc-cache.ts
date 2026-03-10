@@ -46,22 +46,32 @@ export interface DocCacheResult {
 }
 
 /**
- * Get or open a MuPDF document, using the LRU cache.
- * Returns the docId and pageSizes. If the same PDF bytes were already open,
- * reuses the existing document (cache hit).
+ * Synchronous cache lookup — returns the cached result if the PDF is already open,
+ * or null on cache miss. Use this to skip the async path on file switch.
  */
-export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResult> {
+export function getCachedDocument(data: Uint8Array): DocCacheResult | null {
   const fingerprint = computeFingerprint(data);
-
-  // O(1) cache lookup by fingerprint
   const cached = cache.get(fingerprint);
   if (cached) {
     cached.lastAccess = Date.now();
     return { docId: cached.docId, pageSizes: cached.pageSizes, cacheHit: true };
   }
+  return null;
+}
+
+/**
+ * Get or open a MuPDF document, using the LRU cache.
+ * Returns the docId and pageSizes. If the same PDF bytes were already open,
+ * reuses the existing document (cache hit).
+ */
+export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResult> {
+  // Reuse synchronous lookup to avoid duplicating fingerprint + cache logic
+  const hit = getCachedDocument(data);
+  if (hit) return hit;
 
   // Cache miss — evict if needed, then open
   await evictOldest();
+  const fingerprint = computeFingerprint(data);
 
   const client = getMupdfClient();
   // Always copy — the original buffer may not be transferable (e.g., from Tauri),
