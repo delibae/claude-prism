@@ -2,9 +2,12 @@ import { useCallback, useRef, useEffect, useState } from "react";
 import { LoaderIcon } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { getMupdfClient } from "@/lib/mupdf/mupdf-client";
+import { getOrOpenDocument } from "@/lib/mupdf/pdf-doc-cache";
 import { MupdfPage } from "./mupdf-page";
 import type { PageSize } from "@/lib/mupdf/types";
+
+/** Module-level scroll position cache: rootFileId → page number */
+const scrollPositionCache = new Map<string, number>();
 
 export interface PdfTextSelection {
   text: string;
@@ -24,6 +27,8 @@ export interface CaptureResult {
 interface PdfViewerProps {
   data: Uint8Array;
   scale: number;
+  /** Root file ID for scroll position caching across file switches. */
+  rootFileId?: string;
   onError?: (error: string) => void;
   onLoadSuccess?: (numPages: number) => void;
   onScaleChange?: (scale: number) => void;
@@ -40,6 +45,7 @@ interface PdfViewerProps {
 export function PdfViewer({
   data,
   scale,
+  rootFileId,
   onError,
   onLoadSuccess,
   onScaleChange,
@@ -95,10 +101,21 @@ export function PdfViewer({
     return 1;
   }
 
-  // Load document with MuPDF
+  const prevRootFileIdRef = useRef<string | undefined>(undefined);
+
+  // Save scroll position when rootFileId is about to change
+  useEffect(() => {
+    return () => {
+      if (prevRootFileIdRef.current && containerRef.current) {
+        scrollPositionCache.set(prevRootFileIdRef.current, getVisiblePage());
+      }
+    };
+  }, [rootFileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load document with MuPDF (using LRU doc cache)
   useEffect(() => {
     const gen = ++loadGenRef.current;
-    const client = getMupdfClient();
+    prevRootFileIdRef.current = rootFileId;
 
     const pdfData =
       data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer);
@@ -111,7 +128,7 @@ export function PdfViewer({
       return;
     }
 
-    // Save scroll position before reloading
+    // Save scroll position before reloading (for recompile of same file)
     if (containerRef.current && !isFirstLoad.current) {
       savedPageRef.current = getVisiblePage();
       if (contentRef.current) {
@@ -119,41 +136,32 @@ export function PdfViewer({
       }
     }
 
-    const prevDocId = docIdRef.current;
     setLoading(isFirstLoad.current);
 
     (async () => {
       try {
-        // Close previous document
-        if (prevDocId > 0) {
-          await client.closeDocument(prevDocId).catch(() => {});
-        }
-
-        const buffer = pdfData.buffer.slice(
-          pdfData.byteOffset,
-          pdfData.byteOffset + pdfData.byteLength,
-        ) as ArrayBuffer;
-        const docId = await client.openDocument(buffer);
-        if (gen !== loadGenRef.current) {
-          client.closeDocument(docId).catch(() => {});
-          return;
-        }
-        docIdRef.current = docId;
-
-        const sizes = await client.getAllPageSizes(docId);
+        const { docId, pageSizes: sizes, cacheHit } = await getOrOpenDocument(pdfData);
         if (gen !== loadGenRef.current) return;
-        const count = sizes.length;
 
+        docIdRef.current = docId;
         setPageSizes(sizes);
         setLoading(false);
+
         if (isFirstLoad.current && sizes.length > 0) {
           onFirstPageSize?.(sizes[0].width, sizes[0].height);
         }
         isFirstLoad.current = false;
-        onLoadSuccess?.(count);
+        onLoadSuccess?.(sizes.length);
 
-        // Restore scroll position
-        const targetPage = savedPageRef.current;
+        // Determine which page to scroll to:
+        // 1. Recompile of same file → savedPageRef (scroll preservation)
+        // 2. File switch with cached scroll → scrollPositionCache
+        // 3. Otherwise → no scroll change
+        let targetPage = savedPageRef.current;
+        if (targetPage <= 0 && cacheHit && rootFileId) {
+          targetPage = scrollPositionCache.get(rootFileId) ?? 0;
+        }
+
         if (targetPage > 0) {
           savedPageRef.current = 0;
           const scrollToPage = (attempts: number) => {
@@ -184,7 +192,7 @@ export function PdfViewer({
     })();
 
     return () => {
-      // Cleanup handled by next load cycle
+      // Cleanup handled by next load cycle; docs are managed by the cache
     };
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 

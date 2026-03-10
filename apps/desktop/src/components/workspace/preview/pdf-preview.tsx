@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FileTextIcon,
   SpellCheckIcon,
@@ -32,7 +32,8 @@ import { compileLatex, synctexEdit, resolveCompileTarget, formatCompileError } f
 import { ErrorBoundary } from "@/components/error-boundary";
 import { SelectionToolbar, type ToolbarAction } from "@/components/workspace/editor/selection-toolbar";
 import { save } from "@tauri-apps/plugin-dialog";
-import type { PdfTextSelection, CaptureResult } from "./pdf-viewer";
+import { PdfViewer, type PdfTextSelection, type CaptureResult } from "./pdf-viewer";
+import { resolveTexRoot } from "@/stores/document-store";
 
 type FitMode = "fit-width" | "fit-height" | null;
 
@@ -46,10 +47,6 @@ const ZOOM_OPTIONS = [
   { value: "3", label: "300%" },
   { value: "4", label: "400%" },
 ];
-
-const PdfViewer = lazy(() =>
-  import("./pdf-viewer").then((mod) => ({ default: mod.PdfViewer })),
-);
 
 export function PdfPreview() {
   const pdfData = useDocumentStore((s) => s.pdfData);
@@ -479,6 +476,9 @@ export function PdfPreview() {
         </div>
       );
     }
+    const activeFileId = useDocumentStore.getState().activeFileId;
+    const currentRootFileId = resolveTexRoot(activeFileId, files);
+
     return (
       <ErrorBoundary
         fallback={
@@ -492,29 +492,22 @@ export function PdfPreview() {
           </div>
         }
       >
-        <Suspense
-          fallback={
-            <div className="flex h-full items-center justify-center">
-              <LoaderIcon className="size-6 animate-spin text-muted-foreground" />
-            </div>
-          }
-        >
-          <PdfViewer
-            data={pdfData}
-            scale={scale}
-            onError={setPdfError}
-            onLoadSuccess={handleLoadSuccess}
-            onScaleChange={handleScaleChange}
-            onTextClick={handleTextClick}
-            onSynctexClick={handleSynctexClick}
-            onTextSelect={handleTextSelect}
-            onFirstPageSize={(w, h) => setFirstPageSize({ width: w, height: h })}
-            onContainerResize={(w, h) => setContainerSize({ width: w, height: h })}
-            captureMode={captureMode}
-            onCapture={handleCapture}
-            onCancelCapture={() => setCaptureMode(false)}
-          />
-        </Suspense>
+        <PdfViewer
+          data={pdfData}
+          scale={scale}
+          rootFileId={currentRootFileId}
+          onError={setPdfError}
+          onLoadSuccess={handleLoadSuccess}
+          onScaleChange={handleScaleChange}
+          onTextClick={handleTextClick}
+          onSynctexClick={handleSynctexClick}
+          onTextSelect={handleTextSelect}
+          onFirstPageSize={(w, h) => setFirstPageSize({ width: w, height: h })}
+          onContainerResize={(w, h) => setContainerSize({ width: w, height: h })}
+          captureMode={captureMode}
+          onCapture={handleCapture}
+          onCancelCapture={() => setCaptureMode(false)}
+        />
       </ErrorBoundary>
     );
   };

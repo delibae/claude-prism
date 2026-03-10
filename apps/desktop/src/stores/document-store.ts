@@ -15,6 +15,7 @@ import {
 } from "@/lib/tauri/fs";
 import { useHistoryStore } from "@/stores/history-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
+import { clearDocCache } from "@/lib/mupdf/pdf-doc-cache";
 
 export interface ProjectFile {
   id: string; // relativePath is the id
@@ -224,6 +225,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   },
 
   closeProject: () => {
+    clearDocCache();
     set({
       projectRoot: null,
       files: [],
