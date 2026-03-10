@@ -29,11 +29,11 @@ import { unifiedMergeView, getChunks, acceptChunk, rejectChunk } from "@codemirr
 import { latex, latexLinter } from "codemirror-lang-latex";
 import { bibtex } from "./lang-bibtex";
 import { linter, lintGutter, forEachDiagnostic, type Diagnostic } from "@codemirror/lint";
-import { useDocumentStore, resolveTexRoot, type ProjectFile } from "@/stores/document-store";
+import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
 import { useProposedChangesStore, type ProposedChange } from "@/stores/proposed-changes-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { useHistoryStore, type FileDiff } from "@/stores/history-store";
-import { compileLatex } from "@/lib/latex-compiler";
+import { compileLatex, resolveCompileTarget, formatCompileError } from "@/lib/latex-compiler";
 import { EditorToolbar } from "./editor-toolbar";
 import { SelectionToolbar, type ToolbarAction } from "./selection-toolbar";
 import { Button } from "@/components/ui/button";
@@ -275,12 +275,9 @@ export function LatexEditor() {
   compileRef.current = async () => {
     const { contentGeneration, lastCompiledGenerations, pdfData: existingPdf, files: allFiles, isCompiling: currentlyCompiling } = useDocumentStore.getState();
     if (currentlyCompiling || !projectRoot || activeFile?.type !== "tex") return;
-    const rootFile = resolveTexRoot(activeFile.id, allFiles);
-    const targetFile = rootFile !== activeFile.id
-      ? (allFiles.find((f) => f.id === rootFile)?.relativePath || activeFile.relativePath)
-      : activeFile.relativePath;
+    const { rootId, targetPath } = resolveCompileTarget(activeFile.id, allFiles);
     // Skip recompile if no edits since last successful compile of this root
-    const lastGen = lastCompiledGenerations.get(rootFile);
+    const lastGen = lastCompiledGenerations.get(rootId);
     if (existingPdf && lastGen !== undefined && contentGeneration === lastGen) return;
     useHistoryStore.getState().stopReview();
     setIsCompiling(true);
@@ -288,10 +285,10 @@ export function LatexEditor() {
       await saveAllFiles();
       // Pre-compile snapshot (fire-and-forget to avoid blocking compilation start)
       useHistoryStore.getState().createSnapshot(projectRoot, "[compile] Pre-compile").catch(() => {});
-      const data = await compileLatex(projectRoot, targetFile);
-      setPdfData(data, rootFile);
+      const data = await compileLatex(projectRoot, targetPath);
+      setPdfData(data, rootId);
     } catch (error) {
-      setCompileError(error instanceof Error ? error.message : typeof error === "string" ? error : "Compilation failed", rootFile);
+      setCompileError(formatCompileError(error), rootId);
     } finally {
       setIsCompiling(false);
     }

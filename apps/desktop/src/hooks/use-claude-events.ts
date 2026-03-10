@@ -5,11 +5,11 @@ import {
   useClaudeChatStore,
   type ClaudeStreamMessage,
 } from "@/stores/claude-chat-store";
-import { useDocumentStore, resolveTexRoot } from "@/stores/document-store";
+import { useDocumentStore } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { useProposedChangesStore } from "@/stores/proposed-changes-store";
 import { readTexFileContent } from "@/lib/tauri/fs";
-import { compileLatex } from "@/lib/latex-compiler";
+import { compileLatex, resolveCompileTarget, formatCompileError } from "@/lib/latex-compiler";
 
 /** Backend event payload shapes (include tab_id for routing) */
 interface ClaudeOutputPayload {
@@ -285,22 +285,15 @@ export function useClaudeEvents() {
       // Auto-recompile after Claude finishes
       const { projectRoot, files, activeFileId, isCompiling: alreadyCompiling } = useDocumentStore.getState();
       if (projectRoot && !alreadyCompiling) {
-        const rootId = resolveTexRoot(activeFileId, files);
-        const rootEntry = files.find((f) => f.id === rootId);
-        const targetFile = rootEntry?.type === "tex"
-          ? rootEntry
-          : files.find((f) => f.name === "document.tex" || f.name === "main.tex");
-        if (targetFile) {
-          const mainFileName = targetFile.relativePath;
+        const { rootId, targetPath } = resolveCompileTarget(activeFileId, files);
+        if (targetPath) {
           useDocumentStore.getState().setIsCompiling(true);
           try {
             await useDocumentStore.getState().saveAllFiles();
-            const pdfData = await compileLatex(projectRoot, mainFileName);
+            const pdfData = await compileLatex(projectRoot, targetPath);
             useDocumentStore.getState().setPdfData(pdfData, rootId);
           } catch (err) {
-            useDocumentStore.getState().setCompileError(
-              err instanceof Error ? err.message : typeof err === "string" ? err : "Compilation failed", rootId,
-            );
+            useDocumentStore.getState().setCompileError(formatCompileError(err), rootId);
           } finally {
             useDocumentStore.getState().setIsCompiling(false);
           }

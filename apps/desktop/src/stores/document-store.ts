@@ -291,15 +291,16 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     lastCompiledGenerations.delete(id);
     // If the deleted file was active, show the new active file's cached PDF
     const switchingActive = state.activeFileId === id;
+    const newRootId = switchingActive ? resolveTexRoot(newActiveId, newFiles) : undefined;
     set({
       files: newFiles,
       activeFileId: newActiveId,
       pdfCache,
       compileErrorCache,
       lastCompiledGenerations,
-      ...(switchingActive ? {
-        pdfData: pdfCache.get(resolveTexRoot(newActiveId, newFiles)) ?? null,
-        compileError: compileErrorCache.get(resolveTexRoot(newActiveId, newFiles)) ?? null,
+      ...(switchingActive && newRootId ? {
+        pdfData: pdfCache.get(newRootId) ?? null,
+        compileError: compileErrorCache.get(newRootId) ?? null,
       } : {}),
     });
   },
@@ -367,18 +368,20 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   setThreadOpen: (open) => set({ isThreadOpen: open }),
 
   setPdfData: (data, rootFileId?) => {
+    if (!rootFileId) {
+      set({ pdfData: data, compileError: null });
+      return;
+    }
     const s = get();
     const pdfCache = new Map(s.pdfCache);
     const compileErrorCache = new Map(s.compileErrorCache);
     const lastCompiledGenerations = new Map(s.lastCompiledGenerations);
-    if (rootFileId) {
-      if (data) {
-        pdfCache.set(rootFileId, data);
-        compileErrorCache.delete(rootFileId);
-        lastCompiledGenerations.set(rootFileId, s.contentGeneration);
-      } else {
-        pdfCache.delete(rootFileId);
-      }
+    if (data) {
+      pdfCache.set(rootFileId, data);
+      compileErrorCache.delete(rootFileId);
+      lastCompiledGenerations.set(rootFileId, s.contentGeneration);
+    } else {
+      pdfCache.delete(rootFileId);
     }
     set({
       pdfData: data,

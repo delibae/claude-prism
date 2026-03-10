@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
-import { useDocumentStore, resolveTexRoot } from "@/stores/document-store";
+import { useDocumentStore } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { HistoryPanel } from "@/components/workspace/history-panel";
-import { compileLatex, synctexEdit } from "@/lib/latex-compiler";
+import { compileLatex, synctexEdit, resolveCompileTarget, formatCompileError } from "@/lib/latex-compiler";
 import { SelectionToolbar, type ToolbarAction } from "@/components/workspace/editor/selection-toolbar";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { PdfTextSelection, CaptureResult } from "./pdf-viewer";
@@ -278,17 +278,11 @@ export function PdfPreview() {
       try {
         await saveAllFiles();
         const { files: allFiles, activeFileId } = useDocumentStore.getState();
-        const rootId = resolveTexRoot(activeFileId, allFiles);
-        const rootFileEntry = allFiles.find((f) => f.id === rootId);
-        const targetFile = rootFileEntry?.type === "tex"
-          ? rootFileEntry.relativePath
-          : (allFiles.find((f) => f.name === "document.tex" || f.name === "main.tex")?.relativePath || "document.tex");
-        const data = await compileLatex(projectRoot, targetFile);
+        const { rootId, targetPath } = resolveCompileTarget(activeFileId, allFiles);
+        const data = await compileLatex(projectRoot, targetPath);
         setPdfData(data, rootId);
       } catch (error) {
-        setCompileError(
-          error instanceof Error ? error.message : typeof error === "string" ? error : "Compilation failed",
-        );
+        setCompileError(formatCompileError(error));
       } finally {
         setIsCompiling(false);
       }
@@ -325,11 +319,7 @@ export function PdfPreview() {
     const activeFileId = state.activeFileId;
     const activeEntry = allFiles.find((f) => f.id === activeFileId);
     if (!activeEntry || activeEntry.type !== "tex") return;
-    const rootId = resolveTexRoot(activeFileId, allFiles);
-    const rootEntry = allFiles.find((f) => f.id === rootId);
-    const targetFile = rootEntry?.type === "tex"
-      ? rootEntry.relativePath
-      : (allFiles.find((f) => f.name === "document.tex" || f.name === "main.tex")?.relativePath || "document.tex");
+    const { rootId, targetPath: targetFile } = resolveCompileTarget(activeFileId, allFiles);
     // Skip recompile if no edits since last successful compile of this root
     const lastGen = state.lastCompiledGenerations.get(rootId);
     if (state.pdfData && lastGen !== undefined && state.contentGeneration === lastGen) return;
@@ -341,7 +331,7 @@ export function PdfPreview() {
       const data = await compileLatex(state.projectRoot, targetFile);
       setPdfData(data, rootId);
     } catch (error) {
-      setCompileError(error instanceof Error ? error.message : typeof error === "string" ? error : "Compilation failed", rootId);
+      setCompileError(formatCompileError(error), rootId);
     } finally {
       setIsCompiling(false);
     }
