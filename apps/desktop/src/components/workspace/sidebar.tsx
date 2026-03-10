@@ -192,6 +192,7 @@ export function Sidebar() {
   const activeFileId = useDocumentStore((s) => s.activeFileId);
   const setActiveFile = useDocumentStore((s) => s.setActiveFile);
   const deleteFile = useDocumentStore((s) => s.deleteFile);
+  const deleteFolder = useDocumentStore((s) => s.deleteFolder);
   const renameFile = useDocumentStore((s) => s.renameFile);
   const createNewFile = useDocumentStore((s) => s.createNewFile);
   const createFolder = useDocumentStore((s) => s.createFolder);
@@ -623,6 +624,7 @@ export function Sidebar() {
                         onImport={handleImport}
                         onRename={openRenameDialog}
                         onDelete={deleteFile}
+                        onDeleteFolder={deleteFolder}
                         fileCount={files.length}
                         nativeDragOver={nativeDragOver}
                       />
@@ -881,6 +883,7 @@ interface FileTreeNodeProps {
   onImport: (folder?: string) => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
+  onDeleteFolder: (folderPath: string) => void;
   fileCount: number;
   nativeDragOver?: string | null;
 }
@@ -897,6 +900,7 @@ function FileTreeNode({
   onImport,
   onRename,
   onDelete,
+  onDeleteFolder,
   fileCount,
   nativeDragOver,
 }: FileTreeNodeProps) {
@@ -942,12 +946,7 @@ function FileTreeNode({
               </ContextMenuItem>
               <ContextMenuItem
                 variant="destructive"
-                onClick={() => {
-                  const filesToDelete = node.children
-                    .filter((c) => c.type === "file" && c.file)
-                    .map((c) => c.file!.id);
-                  for (const id of filesToDelete) onDelete(id);
-                }}
+                onClick={() => onDeleteFolder(node.relativePath)}
               >
                 <Trash2Icon className="mr-2 size-4" />
                 Delete
@@ -970,6 +969,7 @@ function FileTreeNode({
               onImport={onImport}
               onRename={onRename}
               onDelete={onDelete}
+              onDeleteFolder={onDeleteFolder}
               fileCount={fileCount}
               nativeDragOver={nativeDragOver}
             />
@@ -998,10 +998,10 @@ function FileTreeNode({
             }}
           >
             {getFileIcon(file)}
-            <span className="truncate">
-              {node.name}
-              {file.isDirty && <span className="ml-1 text-muted-foreground">*</span>}
-            </span>
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            {file.isDirty && (
+              <span className="ml-auto shrink-0 size-2 rounded-full bg-blue-500" title="Modified" />
+            )}
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>

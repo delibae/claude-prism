@@ -229,6 +229,10 @@ export async function deleteFileFromDisk(absolutePath: string): Promise<void> {
   await remove(absolutePath);
 }
 
+export async function deleteFolderFromDisk(absolutePath: string): Promise<void> {
+  await remove(absolutePath, { recursive: true });
+}
+
 export async function renameFileOnDisk(
   oldPath: string,
   newPath: string,

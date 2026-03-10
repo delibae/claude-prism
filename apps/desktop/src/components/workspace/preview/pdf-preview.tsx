@@ -11,6 +11,8 @@ import {
   HistoryIcon,
   MousePointerClickIcon,
   CrosshairIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
 } from "lucide-react";
 import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
@@ -83,6 +85,10 @@ export function PdfPreview() {
 
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageInputValue, setPageInputValue] = useState<string>("1");
+  const [isEditingPage, setIsEditingPage] = useState(false);
+  const scrollToPageRef = useRef<((page: number) => void) | null>(null);
   const [scale, setScale] = useState<number>(1.0);
   const [captureMode, setCaptureMode] = useState(false);
   const [fitMode, setFitMode] = useState<FitMode>(null);
@@ -368,6 +374,29 @@ export function PdfPreview() {
     await writeFile(filePath, new Uint8Array(pdfData));
   };
 
+  const handleCurrentPageChange = useCallback((page: number) => {
+    setCurrentPage((prev) => {
+      if (prev === page) return prev;
+      if (!isEditingPage) setPageInputValue(String(page));
+      return page;
+    });
+  }, [isEditingPage]);
+
+  const goToPage = useCallback((page: number) => {
+    const clamped = Math.max(1, Math.min(numPages, page));
+    scrollToPageRef.current?.(clamped);
+  }, [numPages]);
+
+  const handlePageInputCommit = useCallback(() => {
+    setIsEditingPage(false);
+    const parsed = parseInt(pageInputValue, 10);
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= numPages) {
+      goToPage(parsed);
+    } else {
+      setPageInputValue(String(currentPage));
+    }
+  }, [pageInputValue, numPages, currentPage, goToPage]);
+
   const handleLoadSuccess = (pages: number) => setNumPages(pages);
   const handleScaleChange = (newScale: number) => { setFitMode(null); setScale(newScale); };
 
@@ -563,6 +592,8 @@ export function PdfPreview() {
                   onTextSelect={isActive ? handleTextSelect : undefined}
                   onFirstPageSize={isActive ? (w, h) => setFirstPageSize({ width: w, height: h }) : undefined}
                   onContainerResize={isActive ? (w, h) => setContainerSize({ width: w, height: h }) : undefined}
+                  onCurrentPageChange={isActive ? handleCurrentPageChange : undefined}
+                  scrollToPageRef={isActive ? scrollToPageRef : undefined}
                   captureMode={isActive ? captureMode : false}
                   onCapture={isActive ? handleCapture : undefined}
                   onCancelCapture={isActive ? () => setCaptureMode(false) : undefined}
@@ -608,7 +639,40 @@ export function PdfPreview() {
         <div className="flex items-center gap-1">
           {pdfData && (
             <>
-              <span className="mr-1.5 text-muted-foreground text-xs">{numPages} {numPages === 1 ? "page" : "pages"}</span>
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1} title="Page Up">
+                <ChevronUpIcon className="size-3.5" />
+              </Button>
+              {isEditingPage ? (
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                  className="h-6 w-8 rounded border border-border bg-background text-center text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+                  value={pageInputValue}
+                  onChange={(e) => setPageInputValue(e.target.value)}
+                  onBlur={handlePageInputCommit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handlePageInputCommit();
+                    if (e.key === "Escape") {
+                      setIsEditingPage(false);
+                      setPageInputValue(String(currentPage));
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  className="flex h-6 min-w-[2rem] items-center justify-center rounded px-1 text-xs text-muted-foreground tabular-nums hover:bg-muted"
+                  onClick={() => { setIsEditingPage(true); setPageInputValue(String(currentPage)); }}
+                  title="Click to jump to page"
+                >
+                  {currentPage}
+                </button>
+              )}
+              <span className="text-muted-foreground text-xs">/ {numPages}</span>
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= numPages} title="Page Down">
+                <ChevronDownIcon className="size-3.5" />
+              </Button>
+              <div className="mx-1 h-4 w-px bg-border" />
               <Button variant="ghost" size="icon" className="size-7" onClick={zoomOut} disabled={scale <= 0.25}><MinusIcon className="size-3.5" /></Button>
               <Button variant="ghost" size="icon" className="size-7" onClick={zoomIn} disabled={scale >= 4}><PlusIcon className="size-3.5" /></Button>
               <Select

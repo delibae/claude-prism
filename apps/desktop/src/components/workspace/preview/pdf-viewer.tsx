@@ -44,6 +44,8 @@ interface PdfViewerProps {
   onTextSelect?: (selection: PdfTextSelection | null) => void;
   onFirstPageSize?: (width: number, height: number) => void;
   onContainerResize?: (width: number, height: number) => void;
+  onCurrentPageChange?: (page: number) => void;
+  scrollToPageRef?: React.RefObject<((page: number) => void) | null>;
   captureMode?: boolean;
   onCapture?: (result: CaptureResult) => void;
   onCancelCapture?: () => void;
@@ -62,6 +64,8 @@ export function PdfViewer({
   onTextSelect,
   onFirstPageSize,
   onContainerResize,
+  onCurrentPageChange,
+  scrollToPageRef,
   captureMode = false,
   onCapture,
   onCancelCapture,
@@ -133,6 +137,18 @@ export function PdfViewer({
     return 1;
   }
 
+  /** Scroll the container so the given page is at the top (with 16px offset). */
+  function scrollToPage(container: HTMLElement, page: number): boolean {
+    const pageEl = container.querySelector(
+      `[data-page-number="${page}"]`,
+    ) as HTMLElement | null;
+    if (!pageEl) return false;
+    const containerRect = container.getBoundingClientRect();
+    const pageRect = pageEl.getBoundingClientRect();
+    container.scrollTop += pageRect.top - containerRect.top - 16;
+    return true;
+  }
+
   const prevRootFileIdRef = useRef<string | undefined>(undefined);
 
   // Save scroll position when rootFileId is about to change
@@ -170,14 +186,7 @@ export function PdfViewer({
         if (targetPage > 0) {
           requestAnimationFrame(() => {
             const container = containerRef.current;
-            const pageEl = container?.querySelector(
-              `[data-page-number="${targetPage}"]`,
-            ) as HTMLElement | null;
-            if (pageEl && container) {
-              const containerRect = container.getBoundingClientRect();
-              const pageRect = pageEl.getBoundingClientRect();
-              container.scrollTop += pageRect.top - containerRect.top - 16;
-            }
+            if (container) scrollToPage(container, targetPage);
           });
         }
       }
@@ -204,9 +213,7 @@ export function PdfViewer({
           `[data-page-number="${targetPage}"]`,
         ) as HTMLElement | null;
         if (pageEl && pageEl.clientHeight > 0) {
-          const containerRect = container.getBoundingClientRect();
-          const pageRect = pageEl.getBoundingClientRect();
-          container.scrollTop += pageRect.top - containerRect.top - 16;
+          scrollToPage(container, targetPage);
           if (contentRef.current) contentRef.current.style.minHeight = "";
         } else {
           requestAnimationFrame(() => attempt(remaining - 1));
@@ -420,6 +427,41 @@ export function PdfViewer({
       container.removeEventListener("mouseup", handleMouseUp);
     };
   }, [captureMode]);
+
+  // Track current visible page on scroll
+  const currentPageChangeRef = useRef(onCurrentPageChange);
+  currentPageChangeRef.current = onCurrentPageChange;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isActive) return;
+
+    let rafId = 0;
+    const handleScroll = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const cb = currentPageChangeRef.current;
+        if (cb) cb(getVisiblePage());
+      });
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    // Fire initial value
+    handleScroll();
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      cancelAnimationFrame(rafId);
+    };
+  }, [pageSizes, isActive]);
+
+  // Expose scrollToPage via ref
+  useEffect(() => {
+    if (!scrollToPageRef) return;
+    scrollToPageRef.current = (page: number) => {
+      const container = containerRef.current;
+      if (container) scrollToPage(container, page);
+    };
+    return () => { if (scrollToPageRef) scrollToPageRef.current = null; };
+  }, [scrollToPageRef, pageSizes]);
 
   // Dismiss selection toolbar on scroll
   useEffect(() => {

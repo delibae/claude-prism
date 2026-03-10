@@ -7,6 +7,7 @@ import {
   createFileOnDisk,
   copyFileToProject,
   deleteFileFromDisk,
+  deleteFolderFromDisk,
   renameFileOnDisk,
   getUniqueTargetName,
   createDirectory,
@@ -59,6 +60,7 @@ interface DocumentState {
   setActiveFile: (id: string) => void;
   addFile: (file: Omit<ProjectFile, "id" | "isDirty">) => string;
   deleteFile: (id: string) => void;
+  deleteFolder: (folderPath: string) => Promise<void>;
   renameFile: (id: string, name: string) => void;
   updateFileContent: (id: string, content: string) => void;
   updateImageDataUrl: (id: string, dataUrl: string) => void;
@@ -311,6 +313,63 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const newRootId = switchingActive ? resolveTexRoot(newActiveId, newFiles) : undefined;
     set({
       files: newFiles,
+      activeFileId: newActiveId,
+      pdfCache,
+      compileErrorCache,
+      lastCompiledGenerations,
+      ...(switchingActive && newRootId ? {
+        pdfData: pdfCache.get(newRootId) ?? null,
+        compileError: compileErrorCache.get(newRootId) ?? null,
+      } : {}),
+    });
+  },
+
+  deleteFolder: async (folderPath) => {
+    const state = get();
+    if (!state.projectRoot) return;
+    const prefix = folderPath + "/";
+    const filesToRemove = state.files.filter(
+      (f) => f.relativePath.startsWith(prefix),
+    );
+    const remainingFiles = state.files.filter(
+      (f) => !f.relativePath.startsWith(prefix),
+    );
+    // Must keep at least one file
+    if (remainingFiles.length === 0) return;
+
+    // Delete folder from disk (recursive)
+    try {
+      const absPath = await join(state.projectRoot, folderPath);
+      await deleteFolderFromDisk(absPath);
+    } catch (e) {
+      console.error("Failed to delete folder from disk:", e);
+    }
+
+    // Clean caches
+    const pdfCache = new Map(state.pdfCache);
+    const compileErrorCache = new Map(state.compileErrorCache);
+    const lastCompiledGenerations = new Map(state.lastCompiledGenerations);
+    for (const f of filesToRemove) {
+      pdfCache.delete(f.id);
+      compileErrorCache.delete(f.id);
+      lastCompiledGenerations.delete(f.id);
+    }
+
+    const removedIds = new Set(filesToRemove.map((f) => f.id));
+    const newActiveId = removedIds.has(state.activeFileId)
+      ? remainingFiles[0].id
+      : state.activeFileId;
+    const switchingActive = newActiveId !== state.activeFileId;
+    const newRootId = switchingActive ? resolveTexRoot(newActiveId, remainingFiles) : undefined;
+
+    // Remove folder from folders list
+    const newFolders = state.folders.filter(
+      (f) => f !== folderPath && !f.startsWith(prefix),
+    ); // include exact match since folders list contains folder paths directly
+
+    set({
+      files: remainingFiles,
+      folders: newFolders,
       activeFileId: newActiveId,
       pdfCache,
       compileErrorCache,
