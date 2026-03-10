@@ -8,6 +8,7 @@ import { WorkspaceLayout } from "@/components/workspace/workspace-layout";
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ErrorBoundary } from "@/components/error-boundary";
 import {
   ScientificSkillsOnboarding,
   shouldShowOnboarding,
@@ -93,7 +94,9 @@ export function App({ onReady }: { onReady?: () => void }) {
           data-tauri-drag-region
           className="fixed inset-x-0 top-0 z-[9999] h-[var(--titlebar-height)]"
         />
-        {projectRoot ? <WorkspaceWithClaude /> : <ProjectPicker />}
+        <ErrorBoundary>
+          {projectRoot ? <WorkspaceWithClaude /> : <ProjectPicker />}
+        </ErrorBoundary>
       </TooltipProvider>
     </ThemeProvider>
   );

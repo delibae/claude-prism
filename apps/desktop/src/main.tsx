@@ -4,6 +4,11 @@ import { App } from "./App";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./styles/globals.css";
 
+// Catch unhandled promise rejections to prevent silent failures
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("[unhandledrejection]", event.reason);
+});
+
 // On non-macOS platforms, reset titlebar height (no overlay titlebar)
 if (!navigator.userAgent.includes("Macintosh")) {
   document.documentElement.style.setProperty("--titlebar-height", "0px");

@@ -58,11 +58,24 @@ function createClient(): MupdfClient {
     console.error("[mupdf-worker] error:", event);
   };
 
+  const CALL_TIMEOUT_MS = 30_000;
+
   function call(method: string, ...args: unknown[]): Promise<any> {
     return ready.then(() => {
       return new Promise((resolve, reject) => {
         const id = nextId++;
-        pending.set(id, { resolve, reject });
+
+        const timer = setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            reject(new Error(`MuPDF worker timeout: ${method} took longer than ${CALL_TIMEOUT_MS}ms`));
+          }
+        }, CALL_TIMEOUT_MS);
+
+        pending.set(id, {
+          resolve: (value: any) => { clearTimeout(timer); resolve(value); },
+          reject: (error: Error) => { clearTimeout(timer); reject(error); },
+        });
 
         const transferables: Transferable[] = [];
         for (const arg of args) {

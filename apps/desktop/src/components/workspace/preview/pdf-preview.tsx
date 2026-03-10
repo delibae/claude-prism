@@ -29,6 +29,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { HistoryPanel } from "@/components/workspace/history-panel";
 import { compileLatex, synctexEdit, resolveCompileTarget, formatCompileError } from "@/lib/latex-compiler";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { SelectionToolbar, type ToolbarAction } from "@/components/workspace/editor/selection-toolbar";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { PdfTextSelection, CaptureResult } from "./pdf-viewer";
@@ -479,29 +480,42 @@ export function PdfPreview() {
       );
     }
     return (
-      <Suspense
+      <ErrorBoundary
         fallback={
-          <div className="flex h-full items-center justify-center">
-            <LoaderIcon className="size-6 animate-spin text-muted-foreground" />
+          <div className="flex h-full flex-col items-center justify-center gap-3 bg-muted/30 p-8">
+            <AlertCircleIcon className="size-10 text-destructive" />
+            <p className="text-sm text-muted-foreground">PDF viewer crashed. Try recompiling.</p>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCompile}>
+              <RefreshCwIcon className="size-3.5" />
+              Recompile
+            </Button>
           </div>
         }
       >
-        <PdfViewer
-          data={pdfData}
-          scale={scale}
-          onError={setPdfError}
-          onLoadSuccess={handleLoadSuccess}
-          onScaleChange={handleScaleChange}
-          onTextClick={handleTextClick}
-          onSynctexClick={handleSynctexClick}
-          onTextSelect={handleTextSelect}
-          onFirstPageSize={(w, h) => setFirstPageSize({ width: w, height: h })}
-          onContainerResize={(w, h) => setContainerSize({ width: w, height: h })}
-          captureMode={captureMode}
-          onCapture={handleCapture}
-          onCancelCapture={() => setCaptureMode(false)}
-        />
-      </Suspense>
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <LoaderIcon className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          }
+        >
+          <PdfViewer
+            data={pdfData}
+            scale={scale}
+            onError={setPdfError}
+            onLoadSuccess={handleLoadSuccess}
+            onScaleChange={handleScaleChange}
+            onTextClick={handleTextClick}
+            onSynctexClick={handleSynctexClick}
+            onTextSelect={handleTextSelect}
+            onFirstPageSize={(w, h) => setFirstPageSize({ width: w, height: h })}
+            onContainerResize={(w, h) => setContainerSize({ width: w, height: h })}
+            captureMode={captureMode}
+            onCapture={handleCapture}
+            onCancelCapture={() => setCaptureMode(false)}
+          />
+        </Suspense>
+      </ErrorBoundary>
     );
   };
 
