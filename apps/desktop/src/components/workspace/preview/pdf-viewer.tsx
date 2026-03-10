@@ -9,6 +9,11 @@ import type { PageSize } from "@/lib/mupdf/types";
 /** Module-level scroll position cache: rootFileId → page number */
 const scrollPositionCache = new Map<string, number>();
 
+/** Clear all cached scroll positions (e.g., on project close). */
+export function clearScrollPositionCache(): void {
+  scrollPositionCache.clear();
+}
+
 export interface PdfTextSelection {
   text: string;
   pageNumber: number;

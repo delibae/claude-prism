@@ -476,8 +476,7 @@ export function PdfPreview() {
         </div>
       );
     }
-    const activeFileId = useDocumentStore.getState().activeFileId;
-    const currentRootFileId = resolveTexRoot(activeFileId, files);
+    const currentRootFileId = resolveTexRoot(activeFile?.id ?? "", files);
 
     return (
       <ErrorBoundary

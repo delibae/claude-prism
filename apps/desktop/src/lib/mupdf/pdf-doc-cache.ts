@@ -4,7 +4,6 @@ import type { PageSize } from "./types";
 interface CachedDoc {
   docId: number;
   pageSizes: PageSize[];
-  fingerprint: string;
   lastAccess: number;
 }
 
@@ -54,18 +53,19 @@ export interface DocCacheResult {
 export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResult> {
   const fingerprint = computeFingerprint(data);
 
-  // Check for cache hit by fingerprint
-  for (const [key, entry] of cache) {
-    if (entry.fingerprint === fingerprint) {
-      entry.lastAccess = Date.now();
-      return { docId: entry.docId, pageSizes: entry.pageSizes, cacheHit: true };
-    }
+  // O(1) cache lookup by fingerprint
+  const cached = cache.get(fingerprint);
+  if (cached) {
+    cached.lastAccess = Date.now();
+    return { docId: cached.docId, pageSizes: cached.pageSizes, cacheHit: true };
   }
 
   // Cache miss — evict if needed, then open
   await evictOldest();
 
   const client = getMupdfClient();
+  // Always copy — the original buffer may not be transferable (e.g., from Tauri),
+  // and transfer detaches the ArrayBuffer which would corrupt the pdfCache reference.
   const buffer = data.buffer.slice(
     data.byteOffset,
     data.byteOffset + data.byteLength,
@@ -76,7 +76,6 @@ export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResul
   cache.set(fingerprint, {
     docId,
     pageSizes,
-    fingerprint,
     lastAccess: Date.now(),
   });
 
@@ -97,8 +96,9 @@ export function invalidateDoc(docId: number): void {
 /** Close all cached documents (e.g., on project close). */
 export async function clearDocCache(): Promise<void> {
   const client = getMupdfClient();
-  for (const entry of cache.values()) {
-    await client.closeDocument(entry.docId).catch(() => {});
-  }
+  const closePromises = [...cache.values()].map(
+    (entry) => client.closeDocument(entry.docId).catch(() => {}),
+  );
   cache.clear();
+  await Promise.all(closePromises);
 }
