@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   version-or-publish:
@@ -45,21 +46,27 @@ jobs:
           command: version-or-publish
           createRelease: true
 
-      - name: Create unified release tag
+      - name: Create unified release tag and trigger build
         if: steps.covector.outputs.commandRan == 'publish'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Extract version from root package.json
           VERSION=$(node -p "require('./package.json').version")
           TAG="v${VERSION}"
 
-          # Only create tag if it doesn't already exist
+          # Create tag if it doesn't already exist
           if ! git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Creating unified tag: $TAG"
             git tag "$TAG"
             git push origin "$TAG"
           else
-            echo "Tag $TAG already exists, skipping"
+            echo "Tag $TAG already exists"
           fi
+
+          # Trigger build workflow (GITHUB_TOKEN pushes don't trigger other workflows)
+          echo "Triggering Build Desktop workflow for $TAG"
+          gh workflow run "Build Desktop" --ref "$TAG"
 
       - name: Sync Cargo.lock
         if: steps.covector.outputs.commandRan == 'version'
