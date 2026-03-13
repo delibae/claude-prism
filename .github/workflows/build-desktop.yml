@@ -179,7 +179,6 @@ jobs:
           args: --target ${{ matrix.target }} ${{ contains(matrix.label, 'macos') && steps.signing.outputs.available != 'true' && '--no-sign' || '' }} ${{ contains(matrix.label, 'macos') && steps.signing.outputs.available == 'true' && '--skip-stapling' || '' }}
           tagName: ${{ github.ref_name }}
           releaseName: "ClaudePrism ${{ github.ref_name }}"
-          releaseBody: "Release is being built..."
           releaseDraft: false
           prerelease: false
 
@@ -262,148 +261,47 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate changelog and update release
+      - name: Update release notes with auto-generated changelog
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | sed -n '2p' || true)
-          REPO="${{ github.repository }}"
-          ICON_URL="https://raw.githubusercontent.com/${REPO}/main/apps/desktop/src-tauri/icons/icon.png"
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "${{ github.repository }}" \
+            --generate-notes
 
-          # Build categorized changelog
-          FEAT="" FIX="" CHORE="" OTHER=""
-          if [ -n "$PREV_TAG" ]; then
-            while IFS= read -r line; do
-              msg="${line#- }"
-              case "$msg" in
-                feat:*|feat\(*) FEAT="${FEAT}\n- ${msg}" ;;
-                fix:*|fix\(*)   FIX="${FIX}\n- ${msg}" ;;
-                chore:*|chore\(*|docs:*|docs\(*|ci:*|ci\(*|build:*|build\(*) CHORE="${CHORE}\n- ${msg}" ;;
-                *)              OTHER="${OTHER}\n- ${msg}" ;;
-              esac
-            done < <(git log --pretty=format:"- %s" "$PREV_TAG".."$TAG" --no-merges 2>/dev/null)
-            COMPARE_URL="https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
-          fi
-
-          CHANGELOG=""
-          if [ -n "$FEAT" ]; then
-            CHANGELOG="${CHANGELOG}#### New Features\n${FEAT}\n\n"
-          fi
-          if [ -n "$FIX" ]; then
-            CHANGELOG="${CHANGELOG}#### Bug Fixes\n${FIX}\n\n"
-          fi
-          if [ -n "$OTHER" ]; then
-            CHANGELOG="${CHANGELOG}#### Other Changes\n${OTHER}\n\n"
-          fi
-          if [ -n "$CHORE" ]; then
-            CHANGELOG="${CHANGELOG}<details>\n<summary>Maintenance</summary>\n\n${CHORE}\n</details>\n\n"
-          fi
-
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="- Initial release\n"
-          fi
-
-          # Get contributors for this release
-          CONTRIBUTORS=""
-          if [ -n "$PREV_TAG" ]; then
-            CONTRIBUTORS=$(git log --pretty=format:"%an" "$PREV_TAG".."$TAG" --no-merges | sort -u | while read -r name; do
-              # Try to find GitHub username from commit
-              email=$(git log --pretty=format:"%ae" --author="$name" -1 "$PREV_TAG".."$TAG")
-              gh_user=$(echo "$email" | sed -n 's/.*+\(.*\)@users.noreply.github.com/\1/p')
-              if [ -z "$gh_user" ]; then
-                gh_user=$(gh api "search/users?q=${email}+in:email" --jq '.items[0].login' 2>/dev/null || true)
-              fi
-              if [ -n "$gh_user" ]; then
-                echo "<a href=\"https://github.com/${gh_user}\"><img src=\"https://github.com/${gh_user}.png\" width=\"40\" height=\"40\" style=\"border-radius:50%\" alt=\"@${gh_user}\" /></a>"
-              else
-                echo "**${name}**"
-              fi
-            done | tr '\n' ' ')
-          fi
-          if [ -z "$CONTRIBUTORS" ]; then
-            CONTRIBUTORS="<a href=\"https://github.com/${REPO}/graphs/contributors\">View all contributors</a>"
-          fi
-
-          # Build release body
-          cat > release-body.md << BODY_EOF
-          <p align="center">
-            <img src="${ICON_URL}" width="120" height="120" alt="ClaudePrism" />
-          </p>
-
-          <h2 align="center">ClaudePrism ${TAG}</h2>
-
-          ---
-
-          ### What's Changed
-
-          $(echo -e "$CHANGELOG")
-
-          ---
-
-          ### Downloads
-
-          | Platform | Architecture | File | Install |
-          |:--------:|:------------:|:----:|:--------|
-          | **Windows** | x64 | \`.msi\` / \`.exe\` | Run the installer |
-          | **macOS** | Apple Silicon | \`.dmg\` | Open \`.dmg\` → drag to Applications |
-          | **macOS** | Any | **Homebrew** | \`brew install --cask claude-prism\` |
-          | **Linux** | x64 | \`.AppImage\` | \`chmod +x\` and run |
-          | **Linux** | x64 | \`.deb\` | \`sudo dpkg -i claude-prism_*.deb\` |
-
-          ---
-
-          ### Contributors
-
-          <p align="center">
-          ${CONTRIBUTORS}
-          </p>
-
-          ---
-
-          <p align="center">
-          $([ -n "$PREV_TAG" ] && echo "<a href=\"${COMPARE_URL}\">Full Changelog (${PREV_TAG}...${TAG})</a>" || echo "Initial Release")
-          </p>
-          BODY_EOF
-
-          gh release edit "$TAG" \
-            --repo "${REPO}" \
-            --notes-file release-body.md
-
-      - name: Update Homebrew Cask SHA256
+      - name: Update Homebrew Cask
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
+          TAP_REPO="delibae/homebrew-claude-prism"
+          CASK_PATH="Casks/claude-prism.rb"
 
-          # Download DMG files
           gh release download "$TAG" \
             --repo "${{ github.repository }}" \
             --pattern "*.dmg" \
             --dir /tmp/dmg
 
-          # Calculate SHA256
           SHA_ARM64=$(sha256sum /tmp/dmg/ClaudePrism_${VERSION}_aarch64.dmg | awk '{print $1}')
-
           echo "ARM64 SHA256: $SHA_ARM64"
 
-          # Update Cask file
-          CASK_FILE="homebrew/Casks/claude-prism.rb"
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" "$CASK_FILE"
-          sed -i "s/sha256 \".*\"/sha256 \"${SHA_ARM64}\"/" "$CASK_FILE"
+          # Fetch current cask file, update version and sha256, push back
+          gh api "repos/${TAP_REPO}/contents/${CASK_PATH}" --jq '.content' | base64 -d > /tmp/cask.rb
+          FILE_SHA=$(gh api "repos/${TAP_REPO}/contents/${CASK_PATH}" --jq '.sha')
 
-          # Commit and push
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$CASK_FILE"
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: update Homebrew Cask to ${TAG}"
-          git push origin HEAD:main
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" /tmp/cask.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA_ARM64}\"/" /tmp/cask.rb
+
+          gh api -X PUT "repos/${TAP_REPO}/contents/${CASK_PATH}" \
+            -f message="chore: update cask to v${VERSION}" \
+            -f content="$(base64 -w0 /tmp/cask.rb)" \
+            -f sha="$FILE_SHA"
