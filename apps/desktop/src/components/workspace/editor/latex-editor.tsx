@@ -51,6 +51,7 @@ import {
   TagIcon,
   CopyIcon,
   XIcon,
+  AlertTriangleIcon,
 } from "lucide-react";
 import { ClaudeChatDrawer } from "@/components/claude-chat/claude-chat-drawer";
 import { ProposedChangesPanel } from "@/components/claude-chat/proposed-changes-panel";
@@ -95,6 +96,7 @@ export function LatexEditor() {
   const activeFile = files.find((f) => f.id === activeFileId);
   const isTextFile = activeFile?.type === "tex" || activeFile?.type === "bib" || activeFile?.type === "style" || activeFile?.type === "other";
   const activeFileContent = activeFile?.content;
+  const isBinaryFile = isTextFile && activeFile?.type === "other" && !!activeFileContent && activeFileContent.includes("\0");
   const isLargeFileNotLoaded = isTextFile && activeFileContent === undefined && !!activeFile;
   const loadFileContent = useDocumentStore((s) => s.loadFileContent);
 
@@ -856,8 +858,22 @@ export function LatexEditor() {
             </div>
           </div>
         )}
+        {/* Binary file warning */}
+        {isBinaryFile && activeFile && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+            <div className="rounded-lg border border-border bg-card/50 p-6 shadow-sm max-w-md">
+              <AlertTriangleIcon className="size-8 text-amber-500 mx-auto mb-3" />
+              <p className="text-sm font-medium text-foreground mb-1">
+                {activeFile.name}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This file appears to be binary and cannot be displayed as text.
+              </p>
+            </div>
+          </div>
+        )}
         {/* Text editor content */}
-        {!isPdf && !isImage && !isLargeFileNotLoaded && (
+        {!isPdf && !isImage && !isLargeFileNotLoaded && !isBinaryFile && (
           <>
             <div ref={containerRef} className={reviewingSnapshot ? "hidden" : "absolute inset-0"} />
             {reviewingSnapshot && historyDiffResult && (
