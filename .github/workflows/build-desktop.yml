@@ -2,6 +2,11 @@ name: Build Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Upload to this release tag (e.g. v1.0.0). Leave empty for artifact-only build."
+        required: false
+        default: ""
   push:
     tags:
       - "v*"
@@ -92,13 +97,25 @@ jobs:
           tauriScript: pnpm tauri
           args: --target x86_64-pc-windows-msvc
 
-      - name: Upload to existing release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            echo "tag=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload to release
+        if: steps.tag.outputs.tag != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${{ steps.tag.outputs.tag }}"
           BUNDLE_DIR="apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
 
           # Create release if it doesn't exist yet, otherwise leave it alone
@@ -111,8 +128,8 @@ jobs:
             gh release upload "$TAG" "$file" --clobber
           done
 
-      - name: Upload artifacts (manual builds)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Upload artifacts
+        if: steps.tag.outputs.tag == ''
         uses: actions/upload-artifact@v4
         with:
           name: desktop-windows

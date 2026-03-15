@@ -9,10 +9,12 @@ interface ClaudeStatus {
   binary_path: string | null;
   version: string | null;
   account_email: string | null;
+  missing_git: boolean;
 }
 
 type SetupStatus =
   | "checking"
+  | "missing-git"
   | "not-installed"
   | "not-authenticated"
   | "ready"
@@ -110,6 +112,12 @@ export const useClaudeSetupStore = create<ClaudeSetupState>((set, get) => ({
     set({ status: "checking", error: null });
     try {
       const result = await invoke<ClaudeStatus>("check_claude_status");
+
+      // On Windows, Git for Windows is required before anything else
+      if (result.missing_git) {
+        set({ status: "missing-git", version: null, accountEmail: null });
+        return;
+      }
 
       if (!result.installed) {
         set({ status: "not-installed", version: null, accountEmail: null });
