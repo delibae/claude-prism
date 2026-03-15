@@ -546,7 +546,7 @@ export function Sidebar() {
         <div className="flex flex-col items-center">
           <span className="font-semibold text-sm">ClaudePrism</span>
           <span className="text-muted-foreground text-xs">
-            {projectRoot?.split("/").pop() || "Desktop"}
+            {projectRoot?.split(/[/\\]/).pop() || "Desktop"}
           </span>
         </div>
         <div className="absolute right-3 flex items-center gap-0.5">
