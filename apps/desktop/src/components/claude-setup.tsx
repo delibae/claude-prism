@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   DownloadIcon,
@@ -11,7 +11,10 @@ import {
   TerminalIcon,
   CircleIcon,
   ChevronRightIcon,
+  GitBranchIcon,
+  ExternalLinkIcon,
 } from "lucide-react";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/button";
 import { useClaudeSetupStore, type StepInfo } from "@/stores/claude-setup-store";
 import { cn } from "@/lib/utils";
@@ -340,6 +343,43 @@ export function ClaudeSetup() {
         >
           <RefreshCwIcon className="size-3.5" />
           {hasInstallSteps ? "Retry Installation" : "Retry"}
+        </Button>
+      </div>
+    );
+  }
+
+  if (status === "missing-git") {
+    return (
+      <div className="flex w-full flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-5 py-4">
+        <div className="flex items-center gap-2">
+          <GitBranchIcon className="size-5 shrink-0 text-amber-600" />
+          <div>
+            <p className="text-sm font-medium">Git for Windows Required</p>
+            <p className="text-xs text-muted-foreground">
+              Claude Code needs Git for Windows (git-bash) to work.
+              Please install it first, then click "I've installed Git".
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full gap-2"
+          onClick={() => {
+            shellOpen("https://git-scm.com/downloads/win");
+          }}
+        >
+          <ExternalLinkIcon className="size-3.5" />
+          Download Git for Windows
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="w-full gap-2 text-muted-foreground"
+          onClick={checkStatus}
+        >
+          <RefreshCwIcon className="size-3.5" />
+          I've installed Git
         </Button>
       </div>
     );

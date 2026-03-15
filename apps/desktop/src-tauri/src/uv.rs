@@ -235,6 +235,20 @@ pub async fn install_uv(window: WebviewWindow) -> Result<(), String> {
             || key == "HTTPS_PROXY"
             || key == "NO_PROXY"
             || key == "ALL_PROXY"
+            // Windows-essential variables
+            || key == "USERPROFILE"
+            || key == "LOCALAPPDATA"
+            || key == "APPDATA"
+            || key == "TEMP"
+            || key == "TMP"
+            || key == "SystemRoot"
+            || key == "WINDIR"
+            || key == "PROGRAMFILES"
+            || key == "PROGRAMFILES(X86)"
+            || key == "COMMONPROGRAMFILES"
+            || key == "SystemDrive"
+            || key == "COMPUTERNAME"
+            || key == "USERNAME"
         {
             cmd.env(&key, &value);
         }

@@ -492,10 +492,56 @@ pub struct ClaudeStatus {
     pub binary_path: Option<String>,
     pub version: Option<String>,
     pub account_email: Option<String>,
+    /// Windows only: true when Git for Windows (git-bash) is not found.
+    /// Claude Code requires git-bash to function on Windows.
+    pub missing_git: bool,
+}
+
+/// Check whether Git for Windows (git-bash) is available on Windows.
+#[cfg(target_os = "windows")]
+fn is_git_bash_available() -> bool {
+    // 1. User-specified override
+    if let Ok(p) = std::env::var("CLAUDE_CODE_GIT_BASH_PATH") {
+        if PathBuf::from(&p).exists() {
+            return true;
+        }
+    }
+
+    // 2. Common install locations
+    let candidates = [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ];
+    for path in &candidates {
+        if PathBuf::from(path).exists() {
+            return true;
+        }
+    }
+
+    // 3. git on PATH → derive bash.exe location
+    if let Ok(git_path) = which::which("git") {
+        // git.exe is typically at Git/cmd/git.exe → bash.exe at Git/bin/bash.exe
+        if let Some(cmd_dir) = git_path.parent() {
+            if let Some(git_root) = cmd_dir.parent() {
+                if git_root.join("bin").join("bash.exe").exists() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 4. bash directly on PATH
+    which::which("bash").is_ok()
 }
 
 #[tauri::command]
 pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
+    // On Windows, check for Git for Windows first — Claude Code requires it.
+    #[cfg(target_os = "windows")]
+    let missing_git = !is_git_bash_available();
+    #[cfg(not(target_os = "windows"))]
+    let missing_git = false;
+
     // Try to find binary
     let binary_path = match find_claude_binary() {
         Ok(path) => path,
@@ -506,6 +552,7 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
                 binary_path: None,
                 version: None,
                 account_email: None,
+                missing_git,
             });
         }
     };
@@ -520,13 +567,15 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
             Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
         }
         _ => {
-            // Binary found but doesn't work (bare "claude" fallback or broken install)
+            // Binary found but doesn't work — on Windows this is often because
+            // Git for Windows is missing (Claude Code needs git-bash).
             return Ok(ClaudeStatus {
                 installed: false,
                 authenticated: false,
                 binary_path: None,
                 version: None,
                 account_email: None,
+                missing_git,
             });
         }
     };
@@ -561,6 +610,7 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
         binary_path: Some(binary_path),
         version,
         account_email,
+        missing_git,
     })
 }
 
