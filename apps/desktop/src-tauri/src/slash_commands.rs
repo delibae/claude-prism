@@ -91,7 +91,7 @@ fn extract_command_info(file_path: &Path, base_path: &Path) -> Option<(String, O
         .to_string_lossy()
         .to_string();
 
-    let components: Vec<&str> = path_without_ext.split('/').collect();
+    let components: Vec<&str> = path_without_ext.split(['/', '\\']).collect();
 
     if components.is_empty() {
         return None;

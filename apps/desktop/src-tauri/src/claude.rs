@@ -7,6 +7,11 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
+/// Windows CREATE_NO_WINDOW flag to prevent console windows from flashing
+/// when spawning child processes (e.g. Claude CLI, cmd.exe, node.exe).
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Clone)]
 pub struct ClaudeProcessState {
     pub processes: Arc<Mutex<HashMap<String, Child>>>,
@@ -26,6 +31,9 @@ fn find_claude_binary() -> Result<String, String> {
     // 1. Check the native installer's default location first
     //    (GUI apps often don't have ~/.local/bin in PATH)
     if let Some(home) = dirs::home_dir() {
+        #[cfg(target_os = "windows")]
+        let native_path = home.join(".local").join("bin").join("claude.exe");
+        #[cfg(not(target_os = "windows"))]
         let native_path = home.join(".local").join("bin").join("claude");
         if native_path.exists() {
             return Ok(native_path.to_string_lossy().to_string());
@@ -137,6 +145,58 @@ fn find_claude_binary() -> Result<String, String> {
     Ok("claude".to_string())
 }
 
+/// Strip ANSI escape sequences from CLI output before sending to the frontend.
+/// Handles CSI sequences (e.g. colors, cursor), OSC sequences, and private mode
+/// sequences like `\x1b[?2026h` emitted by modern CLIs.
+fn strip_ansi(s: &str) -> Cow<'_, str> {
+    if !s.contains('\x1b') {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            match chars.peek() {
+                // CSI: ESC [ ... (letter)
+                Some('[') => {
+                    chars.next();
+                    // consume until final byte (ASCII letter or ~)
+                    while let Some(&ch) = chars.peek() {
+                        chars.next();
+                        if ch.is_ascii_alphabetic() || ch == '~' {
+                            break;
+                        }
+                    }
+                }
+                // OSC: ESC ] ... (ST or BEL)
+                Some(']') => {
+                    chars.next();
+                    while let Some(&ch) = chars.peek() {
+                        chars.next();
+                        if ch == '\x07' {
+                            break;
+                        }
+                        if ch == '\x1b' {
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                    }
+                }
+                // Two-character sequences: ESC ( , ESC ) , etc.
+                Some(&ch) if ch.is_ascii_alphabetic() || ch == '(' || ch == ')' => {
+                    chars.next();
+                }
+                _ => {}
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
 /// Strip interior nul bytes that would cause Command::spawn() to fail.
 /// This can happen when prompts contain clipboard artifacts or encoding issues.
 /// Returns a borrowed reference when no nul bytes are present (zero-alloc fast path).
@@ -186,8 +246,10 @@ fn resolve_cmd_to_node(program: &str) -> (String, Vec<String>) {
 fn new_sync_command(program: &str) -> std::process::Command {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         let (resolved, prefix) = resolve_cmd_to_node(program);
         let mut c = std::process::Command::new(&resolved);
+        c.creation_flags(CREATE_NO_WINDOW);
         if !prefix.is_empty() {
             c.args(&prefix);
         }
@@ -205,8 +267,10 @@ fn create_command(program: &str, args: Vec<String>, cwd: &str, effort_level: Opt
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
+        use std::os::windows::process::CommandExt;
         let (resolved, prefix) = resolve_cmd_to_node(clean_program.as_ref());
         let mut c = Command::new(&resolved);
+        c.creation_flags(CREATE_NO_WINDOW);
         if !prefix.is_empty() {
             c.args(&prefix);
         }
@@ -621,7 +685,9 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
     };
     #[cfg(target_os = "windows")]
     let mut cmd = {
+        use std::os::windows::process::CommandExt;
         let mut c = tokio::process::Command::new("powershell");
+        c.creation_flags(CREATE_NO_WINDOW);
         c.args(["-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"]);
         c
     };
@@ -629,6 +695,10 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
     cmd.stderr(std::process::Stdio::piped());
 
     // Inherit essential environment variables, ensuring ~/.local/bin is in PATH
+    #[cfg(target_os = "windows")]
+    let path_sep = ";";
+    #[cfg(not(target_os = "windows"))]
+    let path_sep = ":";
     for (key, value) in std::env::vars() {
         if key == "PATH" {
             // Prepend ~/.local/bin so the installer sees it in PATH
@@ -636,7 +706,7 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
                 let local_bin = home.join(".local").join("bin");
                 let local_bin_str = local_bin.to_string_lossy();
                 if !value.contains(local_bin_str.as_ref()) {
-                    cmd.env("PATH", format!("{}:{}", local_bin_str, value));
+                    cmd.env("PATH", format!("{}{}{}", local_bin_str, path_sep, value));
                 } else {
                     cmd.env("PATH", &value);
                 }
@@ -674,7 +744,8 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
     let stdout_task = tokio::spawn(async move {
         let mut lines = stdout_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = win_stdout.emit("install-output", &line);
+            let clean = strip_ansi(&line);
+            let _ = win_stdout.emit("install-output", clean.as_ref());
         }
     });
 
@@ -683,7 +754,8 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
     let stderr_task = tokio::spawn(async move {
         let mut lines = stderr_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = win_stderr.emit("install-error", &line);
+            let clean = strip_ansi(&line);
+            let _ = win_stderr.emit("install-error", clean.as_ref());
         }
     });
 
@@ -720,8 +792,10 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
+        use std::os::windows::process::CommandExt;
         let (resolved, prefix) = resolve_cmd_to_node(&binary_path);
         let mut c = tokio::process::Command::new(&resolved);
+        c.creation_flags(CREATE_NO_WINDOW);
         if !prefix.is_empty() {
             c.args(&prefix);
         }
@@ -771,7 +845,8 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
     let stdout_task = tokio::spawn(async move {
         let mut lines = stdout_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = win_stdout.emit("login-output", &line);
+            let clean = strip_ansi(&line);
+            let _ = win_stdout.emit("login-output", clean.as_ref());
         }
     });
 
@@ -780,7 +855,8 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
     let stderr_task = tokio::spawn(async move {
         let mut lines = stderr_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = win_stderr.emit("login-error", &line);
+            let clean = strip_ansi(&line);
+            let _ = win_stderr.emit("login-error", clean.as_ref());
         }
     });
 

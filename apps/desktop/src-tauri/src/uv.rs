@@ -2,6 +2,11 @@ use std::path::PathBuf;
 use tauri::{Emitter, WebviewWindow};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+/// Windows CREATE_NO_WINDOW flag to prevent console windows from flashing
+/// when spawning child processes (e.g. uv, powershell, python).
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 // ─── Binary Discovery ───
 
 /// Discover the uv binary on the system.
@@ -132,9 +137,14 @@ pub async fn check_uv_status() -> Result<UvStatus, String> {
     };
 
     // Verify binary actually works by running --version
-    let version_output = std::process::Command::new(&binary_path)
-        .arg("--version")
-        .output();
+    let mut version_cmd = std::process::Command::new(&binary_path);
+    version_cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        version_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let version_output = version_cmd.output();
 
     let version = match version_output {
         Ok(output) if output.status.success() => {
@@ -197,7 +207,9 @@ pub async fn install_uv(window: WebviewWindow) -> Result<(), String> {
     };
     #[cfg(target_os = "windows")]
     let mut cmd = {
+        use std::os::windows::process::CommandExt;
         let mut c = tokio::process::Command::new("powershell");
+        c.creation_flags(CREATE_NO_WINDOW);
         c.args([
             "-NoProfile",
             "-Command",
@@ -291,9 +303,15 @@ pub async fn setup_project_venv(project_path: String) -> Result<VenvInfo, String
     let uv_bin = find_uv_binary().map_err(|e| format!("uv not found: {}", e))?;
 
     // Create venv: uv venv <project_path>/.venv
-    let output = tokio::process::Command::new(&uv_bin)
-        .args(["venv", &venv_dir.to_string_lossy()])
-        .current_dir(project)
+    let mut venv_cmd = tokio::process::Command::new(&uv_bin);
+    venv_cmd.args(["venv", &venv_dir.to_string_lossy()]);
+    venv_cmd.current_dir(project);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        venv_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = venv_cmd
         .output()
         .await
         .map_err(|e| format!("Failed to create venv: {}", e))?;
@@ -327,11 +345,17 @@ pub async fn uv_add_packages(
     let mut args = vec!["pip".to_string(), "install".to_string()];
     args.extend(packages);
 
-    let output = tokio::process::Command::new(&uv_bin)
-        .args(&args)
-        .current_dir(&project_path)
-        .env("VIRTUAL_ENV", &venv_dir)
-        .env("PATH", path_with_venv(&venv_dir))
+    let mut pip_cmd = tokio::process::Command::new(&uv_bin);
+    pip_cmd.args(&args);
+    pip_cmd.current_dir(&project_path);
+    pip_cmd.env("VIRTUAL_ENV", &venv_dir);
+    pip_cmd.env("PATH", path_with_venv(&venv_dir));
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        pip_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = pip_cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run uv pip install: {}", e))?;
@@ -365,11 +389,17 @@ pub async fn uv_run_command(
     let program = parts.first().ok_or("Empty command")?;
     let args = parts.get(1..).unwrap_or_default();
 
-    let output = tokio::process::Command::new(program)
-        .args(args)
-        .current_dir(&project_path)
-        .env("VIRTUAL_ENV", &venv_dir)
-        .env("PATH", path_with_venv(&venv_dir))
+    let mut run_cmd = tokio::process::Command::new(program);
+    run_cmd.args(args);
+    run_cmd.current_dir(&project_path);
+    run_cmd.env("VIRTUAL_ENV", &venv_dir);
+    run_cmd.env("PATH", path_with_venv(&venv_dir));
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        run_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = run_cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run command: {}", e))?;
