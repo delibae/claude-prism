@@ -738,7 +738,7 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         let mut c = tokio::process::Command::new("powershell");
         c.creation_flags(CREATE_NO_WINDOW);
-        c.args(["-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"]);
+        c.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm https://claude.ai/install.ps1 | iex"]);
         c
     };
     cmd.stdout(std::process::Stdio::piped());

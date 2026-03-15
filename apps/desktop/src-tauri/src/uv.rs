@@ -26,8 +26,10 @@ fn find_uv_binary() -> Result<String, String> {
         ];
         #[cfg(target_os = "windows")]
         let user_paths = vec![
+            // uv's default install location (same as Claude Code)
+            home.join(".local").join("bin").join("uv.exe"),
             home.join(".cargo").join("bin").join("uv.exe"),
-            // uv's default Windows install location
+            // %LOCALAPPDATA%\uv\bin\uv.exe
             PathBuf::from(
                 std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
                     home.join("AppData").join("Local").to_string_lossy().to_string()
@@ -212,6 +214,7 @@ pub async fn install_uv(window: WebviewWindow) -> Result<(), String> {
         c.creation_flags(CREATE_NO_WINDOW);
         c.args([
             "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
             "-Command",
             "irm https://astral.sh/uv/install.ps1 | iex",
         ]);

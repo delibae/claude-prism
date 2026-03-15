@@ -631,8 +631,8 @@ export function PdfPreview() {
   };
 
   return (
-    <div ref={previewContainerRef} className="relative flex h-full flex-col bg-muted/50">
-      <div className="flex items-center overflow-hidden border-border border-b bg-background px-2 pt-[var(--titlebar-height)] h-[calc(40px+var(--titlebar-height))]">
+    <div ref={previewContainerRef} className="@container/pv relative flex h-full flex-col bg-muted/50">
+      <div className="flex shrink-0 items-center border-border border-b bg-background px-2 pt-[var(--titlebar-height)] h-[calc(40px+var(--titlebar-height))]">
         <div className="flex items-center gap-1">
           {isSaving && (
             <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1">
@@ -727,31 +727,30 @@ export function PdfPreview() {
               <Button
                 variant={captureMode ? "default" : "secondary"}
                 size="sm"
-                className={`h-7 gap-1.5 px-2.5 text-xs ${
+                className={`h-7 gap-1.5 px-2 text-xs ${
                   captureMode
                     ? "ring-2 ring-primary/30"
                     : "bg-foreground text-background hover:bg-foreground/90"
                 }`}
                 onClick={() => setCaptureMode(!captureMode)}
+                title={`Capture & Ask (${navigator.userAgent.includes("Mac") ? "⌘X" : "Ctrl+X"})`}
               >
-                <CrosshairIcon className="size-3.5" />
-                Capture & Ask
-                <kbd className="pointer-events-none ml-0.5 rounded border border-background/30 bg-background/20 px-1.5 py-0.5 text-xs font-medium leading-none text-background">
+                <CrosshairIcon className="size-3.5 shrink-0" />
+                <span className="hidden @[36rem]/pv:inline">Capture & Ask</span>
+                <kbd className="pointer-events-none ml-0.5 hidden rounded border border-background/30 bg-background/20 px-1 py-0.5 text-[10px] font-medium leading-none text-background @[36rem]/pv:inline">
                   {navigator.userAgent.includes("Mac") ? "⌘X" : "Ctrl+X"}
                 </kbd>
               </Button>
               <div className="mx-1 h-4 w-px bg-border" />
-              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2.5 text-xs" onClick={handleExport} title="Export PDF">
+              <Button variant="ghost" size="icon" className="size-7" onClick={handleExport} title="Export PDF">
                 <DownloadIcon className="size-3.5" />
-                Export
               </Button>
             </>
           )}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2.5 text-xs" title="History">
+              <Button variant="ghost" size="icon" className="size-7" title="History">
                 <HistoryIcon className="size-3.5" />
-                History
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-96">
