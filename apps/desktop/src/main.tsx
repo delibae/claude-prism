@@ -11,8 +11,8 @@ window.addEventListener("unhandledrejection", (event) => {
 
 // Platform-specific titlebar height adjustments
 if (navigator.userAgent.includes("Windows")) {
-  // Windows overlay titlebar is ~32px (title + window controls)
-  document.documentElement.style.setProperty("--titlebar-height", "32px");
+  // Windows overlay titlebar is ~12px (title + window controls)
+  document.documentElement.style.setProperty("--titlebar-height", "12px");
   document.documentElement.style.setProperty("--traffic-light-width", "0px");
 } else if (!navigator.userAgent.includes("Macintosh")) {
   // Linux and others: no overlay titlebar
