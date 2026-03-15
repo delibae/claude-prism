@@ -129,7 +129,6 @@ fn set_macos_app_icon() {
 
     let icon_bytes = include_bytes!("../icons/icon.png");
 
-    // We're in the setup callback which runs on the main thread
     if let Some(mtm) = MainThreadMarker::new() {
         unsafe {
             let data = NSData::with_bytes(icon_bytes);
@@ -234,9 +233,6 @@ pub fn run() {
         .manage(latex::LatexCompilerState::default())
         .manage(zotero::ZoteroOAuthState::default())
         .setup(|_app| {
-            #[cfg(target_os = "macos")]
-            set_macos_app_icon();
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -292,6 +288,13 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         match event {
+            // Set the dock icon after the app is fully initialized.
+            // Doing this in setup() causes SIGBUS on first launch from signed
+            // binaries due to Gatekeeper App Translocation (#38).
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Ready => {
+                set_macos_app_icon();
+            }
             tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. } => {
                 // Kill Claude process associated with this window
                 let claude_state = app_handle.state::<claude::ClaudeProcessState>();
