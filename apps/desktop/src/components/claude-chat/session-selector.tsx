@@ -46,12 +46,11 @@ export function SessionSelector() {
   const loadSessions = useCallback(async () => {
     if (!projectRoot) return;
     setIsLoading(true);
-    log.debug("loading sessions for projectRoot: " + projectRoot);
+    log.debug(`loading sessions for projectRoot: ${projectRoot}`);
     try {
-      const result = await invoke<ClaudeSessionInfo[]>(
-        "list_claude_sessions",
-        { projectPath: projectRoot },
-      );
+      const result = await invoke<ClaudeSessionInfo[]>("list_claude_sessions", {
+        projectPath: projectRoot,
+      });
       log.debug("loaded sessions", { count: result.length });
       setSessions(result);
     } catch (err) {
@@ -75,7 +74,7 @@ export function SessionSelector() {
     (sid: string) => {
       if (isStreaming) return;
       if (sid === sessionId) return;
-      log.debug("selecting session: " + sid);
+      log.debug(`selecting session: ${sid}`);
       resumeSession(sid);
     },
     [isStreaming, sessionId, resumeSession],
@@ -119,7 +118,7 @@ export function SessionSelector() {
             <Loader2Icon className="size-4 animate-spin text-muted-foreground" />
           </div>
         ) : sessions.length === 0 ? (
-          <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+          <div className="px-2 py-4 text-center text-muted-foreground text-sm">
             No previous sessions
           </div>
         ) : (
@@ -132,7 +131,7 @@ export function SessionSelector() {
             >
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm">{session.title}</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-muted-foreground text-xs">
                   {formatRelativeTime(session.last_modified)}
                 </span>
               </div>

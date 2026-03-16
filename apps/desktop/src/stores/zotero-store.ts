@@ -26,7 +26,10 @@ export interface CollectionSyncInfo {
 }
 
 /** Synced collections scoped per project path */
-type ProjectSyncedCollections = Record<string, Record<string, CollectionSyncInfo>>;
+type ProjectSyncedCollections = Record<
+  string,
+  Record<string, CollectionSyncInfo>
+>;
 
 interface ZoteroState {
   // Persisted
@@ -51,7 +54,10 @@ interface ZoteroState {
   disconnect: () => void;
   revalidate: () => Promise<void>;
   loadCollections: () => Promise<void>;
-  importCollectionToBib: (collectionKey: string | null, name: string) => Promise<void>;
+  importCollectionToBib: (
+    collectionKey: string | null,
+    name: string,
+  ) => Promise<void>;
   syncCollectionBib: (collectionKey: string | null) => Promise<void>;
   removeCollection: (collectionKey: string | null) => void;
 }
@@ -62,7 +68,10 @@ function storeKey(collectionKey: string | null): string {
 }
 
 function sanitizeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_\-\s]/g, "").replace(/\s+/g, "-").toLowerCase();
+  return name
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .replace(/\s+/g, "-")
+    .toLowerCase();
 }
 
 /** Parse a .bib file into a map of citekey → full entry string */
@@ -205,15 +214,22 @@ export const useZoteroStore = create<ZoteroState>()(
         set({ isSyncing: sk, syncProgress: null, error: null });
 
         try {
-          const result = await importCollection(apiKey, userID, collectionKey, (loaded, total) => {
-            set({ syncProgress: { loaded, total } });
-          });
+          const result = await importCollection(
+            apiKey,
+            userID,
+            collectionKey,
+            (loaded, total) => {
+              set({ syncProgress: { loaded, total } });
+            },
+          );
 
           // Determine .bib file name
           const bibFileName = `${sanitizeFileName(name)}.bib`;
 
           // Check if this .bib file already exists in the project
-          const existingFile = docStore.files.find((f) => f.name === bibFileName);
+          const existingFile = docStore.files.find(
+            (f) => f.name === bibFileName,
+          );
           if (existingFile) {
             docStore.updateFileContent(existingFile.id, result.bibtex);
           } else {
@@ -272,15 +288,22 @@ export const useZoteroStore = create<ZoteroState>()(
         const syncInfo = projectColls[sk];
         if (!syncInfo) return;
 
-        const bibFile = docStore.files.find((f) => f.name === syncInfo.bibFileName);
+        const bibFile = docStore.files.find(
+          (f) => f.name === syncInfo.bibFileName,
+        );
         if (!bibFile) return;
 
         set({ isSyncing: sk, syncProgress: null, error: null });
 
         try {
           const result = await syncCollection(
-            apiKey, userID, collectionKey, syncInfo.libraryVersion,
-            (loaded, total) => { set({ syncProgress: { loaded, total } }); },
+            apiKey,
+            userID,
+            collectionKey,
+            syncInfo.libraryVersion,
+            (loaded, total) => {
+              set({ syncProgress: { loaded, total } });
+            },
           );
 
           if (collectionKey) {
@@ -294,7 +317,7 @@ export const useZoteroStore = create<ZoteroState>()(
                 newKeyMap[entry.key] = entry.citekey;
               }
             }
-            const updatedContent = entries.join("\n\n") + "\n";
+            const updatedContent = `${entries.join("\n\n")}\n`;
             docStore.updateFileContent(bibFile.id, updatedContent);
 
             set((s) => {
@@ -338,7 +361,7 @@ export const useZoteroStore = create<ZoteroState>()(
               }
             }
 
-            const updatedContent = Array.from(entries.values()).join("\n\n") + "\n";
+            const updatedContent = `${Array.from(entries.values()).join("\n\n")}\n`;
             docStore.updateFileContent(bibFile.id, updatedContent);
 
             set((s) => {

@@ -19,9 +19,7 @@ interface ProposedChangesState {
   changes: ProposedChange[];
 
   // Actions
-  addChange: (
-    change: Omit<ProposedChange, "timestamp">
-  ) => void;
+  addChange: (change: Omit<ProposedChange, "timestamp">) => void;
   resolveChange: (id: string) => void;
   keepChange: (id: string) => void;
   undoChange: (id: string) => Promise<void>;
@@ -54,10 +52,7 @@ export const useProposedChangesStore = create<ProposedChangesState>()(
           return { changes: newChanges };
         }
         return {
-          changes: [
-            ...state.changes,
-            { ...change, timestamp: Date.now() },
-          ],
+          changes: [...state.changes, { ...change, timestamp: Date.now() }],
         };
       });
     },
@@ -79,8 +74,8 @@ export const useProposedChangesStore = create<ProposedChangesState>()(
         .getState()
         .files.find((f) => f.relativePath === change.filePath);
       if (file?.content != null) {
-        writeTexFileContent(change.absolutePath, file.content).catch(
-          (err) => log.error("Failed to write kept change", { error: String(err) }),
+        writeTexFileContent(change.absolutePath, file.content).catch((err) =>
+          log.error("Failed to write kept change", { error: String(err) }),
         );
       }
 
@@ -128,5 +123,5 @@ export const useProposedChangesStore = create<ProposedChangesState>()(
     getChangeForFile: (relativePath) => {
       return get().changes.find((c) => c.filePath === relativePath);
     },
-  })
+  }),
 );

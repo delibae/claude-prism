@@ -14,19 +14,32 @@ export function useKeyboardShortcuts() {
         });
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "n") {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "n"
+      ) {
         e.preventDefault();
         invoke("create_new_window").catch(console.error);
       }
 
       // Cmd+X (macOS) / Ctrl+X (others): Capture & Ask
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x" && !e.shiftKey && !e.altKey) {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === "x" &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("toggle-capture-mode"));
       }
 
       // Cmd+Shift+D (macOS) / Ctrl+Shift+D (others): Open debug window
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "d") {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "d"
+      ) {
         e.preventDefault();
         invoke("open_debug_window").catch(console.error);
       }

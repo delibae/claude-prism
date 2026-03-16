@@ -1,6 +1,10 @@
 // ─── Template Data Architecture ───
 
-export type TemplateCategory = "academic" | "professional" | "creative" | "starter";
+export type TemplateCategory =
+  | "academic"
+  | "professional"
+  | "creative"
+  | "starter";
 
 export type TemplateSubcategory =
   | "papers"
@@ -59,7 +63,10 @@ export const SUBCATEGORY_LABELS: Record<TemplateSubcategory, string> = {
   blank: "Blank",
 };
 
-export const CATEGORY_SUBCATEGORIES: Record<TemplateCategory, TemplateSubcategory[]> = {
+export const CATEGORY_SUBCATEGORIES: Record<
+  TemplateCategory,
+  TemplateSubcategory[]
+> = {
   academic: ["papers", "theses", "presentations", "posters"],
   professional: ["cv", "letters", "reports"],
   creative: ["books", "newsletters"],
@@ -75,7 +82,15 @@ const TEMPLATES: TemplateDefinition[] = [
     description: "Academic paper with abstract, sections, and references",
     category: "academic",
     subcategory: "papers",
-    tags: ["article", "research", "journal", "academic", "science", "abstract", "bibliography"],
+    tags: [
+      "article",
+      "research",
+      "journal",
+      "academic",
+      "science",
+      "abstract",
+      "bibliography",
+    ],
     icon: "FileText",
     documentClass: "article",
     mainFileName: "main.tex",
@@ -338,7 +353,13 @@ Barret Zoph and Quoc~V Le.
     description: "Two-column IEEE conference format with standard sections",
     category: "academic",
     subcategory: "papers",
-    tags: ["ieee", "conference", "two-column", "engineering", "computer science"],
+    tags: [
+      "ieee",
+      "conference",
+      "two-column",
+      "engineering",
+      "computer science",
+    ],
     icon: "FileText",
     documentClass: "IEEEtran",
     mainFileName: "main.tex",
@@ -3197,7 +3218,7 @@ export const BIB_TEMPLATE = `% Add your references here
 
 // ─── Registry API ───
 
-let _templates = TEMPLATES;
+const _templates = TEMPLATES;
 
 export function getAllTemplates(): TemplateDefinition[] {
   return _templates;
@@ -3207,7 +3228,9 @@ export function getTemplateById(id: string): TemplateDefinition | undefined {
   return _templates.find((t) => t.id === id);
 }
 
-export function getTemplatesByCategory(category: TemplateCategory): TemplateDefinition[] {
+export function getTemplatesByCategory(
+  category: TemplateCategory,
+): TemplateDefinition[] {
   return _templates.filter((t) => t.category === category);
 }
 

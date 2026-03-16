@@ -19,7 +19,8 @@ function bonusFor(prev: string, curr: string): number {
   if (prev === "/") return SCORE_MATCH_SLASH;
   if (prev === "-" || prev === "_" || prev === " ") return SCORE_MATCH_WORD;
   if (prev === ".") return SCORE_MATCH_DOT;
-  if (prev === prev.toLowerCase() && curr === curr.toUpperCase()) return SCORE_MATCH_CAPITAL;
+  if (prev === prev.toLowerCase() && curr === curr.toUpperCase())
+    return SCORE_MATCH_CAPITAL;
   return 0;
 }
 
@@ -52,12 +53,15 @@ function fuzzyScore(query: string, candidate: string): number {
       if (qLower[i] === cLower[j]) {
         let score = 0;
         if (i === 0) {
-          score = j === 0
-            ? SCORE_MATCH_CONSECUTIVE
-            : Math.max(SCORE_MAX_LEADING_GAP, SCORE_GAP_LEADING * j) + bonusFor(candidate[j - 1], candidate[j]);
+          score =
+            j === 0
+              ? SCORE_MATCH_CONSECUTIVE
+              : Math.max(SCORE_MAX_LEADING_GAP, SCORE_GAP_LEADING * j) +
+                bonusFor(candidate[j - 1], candidate[j]);
         } else if (j > 0) {
           const consecutive = D[i - 1][j - 1] + SCORE_MATCH_CONSECUTIVE;
-          const boundary = M[i - 1][j - 1] + bonusFor(candidate[j - 1], candidate[j]);
+          const boundary =
+            M[i - 1][j - 1] + bonusFor(candidate[j - 1], candidate[j]);
           score = Math.max(consecutive, boundary);
         }
         D[i][j] = score;
@@ -127,7 +131,7 @@ function scoreCommand(cmd: FakeCmd, q: string): number {
 
   // Description: only substring (contains) match to avoid false positives
   let descScore = -Infinity;
-  if (cmd.description && cmd.description.toLowerCase().includes(q.toLowerCase())) {
+  if (cmd.description?.toLowerCase().includes(q.toLowerCase())) {
     descScore = q.length * 0.3;
   }
 
@@ -140,20 +144,76 @@ function scoreCommand(cmd: FakeCmd, q: string): number {
 // ─── Test data ───
 
 const COMMANDS: FakeCmd[] = [
-  { name: "biorxiv-database", full_command: "/biorxiv-database", description: "Efficient database search tool for bioRxiv preprint server." },
-  { name: "biopython", full_command: "/biopython", description: "Comprehensive molecular biology toolkit." },
-  { name: "bioservices", full_command: "/bioservices", description: "Unified Python interface to 40+ bioinformatics services." },
-  { name: "cbioportal-database", full_command: "/cbioportal-database", description: "Query cBioPortal for cancer genomics data." },
-  { name: "scikit-bio", full_command: "/scikit-bio", description: "Biological data toolkit." },
-  { name: "scvi-tools", full_command: "/scvi-tools", description: "Deep generative models for single-cell omics." },
-  { name: "vaex", full_command: "/vaex", description: "Large tabular datasets." },
-  { name: "deepchem", full_command: "/deepchem", description: "Molecular ML with diverse featurizers." },
-  { name: "market-research-reports", full_command: "/market-research-reports", description: "Market research reports." },
-  { name: "matlab", full_command: "/matlab", description: "MATLAB and GNU Octave." },
-  { name: "scanpy", full_command: "/scanpy", description: "scRNA-seq analysis." },
-  { name: "phylogenetics", full_command: "/phylogenetics", description: "Phylogenetic trees." },
-  { name: "perplexity-search", full_command: "/perplexity-search", description: "AI-powered web searches." },
-  { name: "latchbio-integration", full_command: "/latchbio-integration", description: "Latch platform for bioinformatics." },
+  {
+    name: "biorxiv-database",
+    full_command: "/biorxiv-database",
+    description: "Efficient database search tool for bioRxiv preprint server.",
+  },
+  {
+    name: "biopython",
+    full_command: "/biopython",
+    description: "Comprehensive molecular biology toolkit.",
+  },
+  {
+    name: "bioservices",
+    full_command: "/bioservices",
+    description: "Unified Python interface to 40+ bioinformatics services.",
+  },
+  {
+    name: "cbioportal-database",
+    full_command: "/cbioportal-database",
+    description: "Query cBioPortal for cancer genomics data.",
+  },
+  {
+    name: "scikit-bio",
+    full_command: "/scikit-bio",
+    description: "Biological data toolkit.",
+  },
+  {
+    name: "scvi-tools",
+    full_command: "/scvi-tools",
+    description: "Deep generative models for single-cell omics.",
+  },
+  {
+    name: "vaex",
+    full_command: "/vaex",
+    description: "Large tabular datasets.",
+  },
+  {
+    name: "deepchem",
+    full_command: "/deepchem",
+    description: "Molecular ML with diverse featurizers.",
+  },
+  {
+    name: "market-research-reports",
+    full_command: "/market-research-reports",
+    description: "Market research reports.",
+  },
+  {
+    name: "matlab",
+    full_command: "/matlab",
+    description: "MATLAB and GNU Octave.",
+  },
+  {
+    name: "scanpy",
+    full_command: "/scanpy",
+    description: "scRNA-seq analysis.",
+  },
+  {
+    name: "phylogenetics",
+    full_command: "/phylogenetics",
+    description: "Phylogenetic trees.",
+  },
+  {
+    name: "perplexity-search",
+    full_command: "/perplexity-search",
+    description: "AI-powered web searches.",
+  },
+  {
+    name: "latchbio-integration",
+    full_command: "/latchbio-integration",
+    description: "Latch platform for bioinformatics.",
+  },
 ];
 
 function search(q: string): { name: string; score: number }[] {

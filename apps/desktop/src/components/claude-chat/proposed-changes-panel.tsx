@@ -27,7 +27,7 @@ export const ProposedChangesPanel: FC<ProposedChangesPanelProps> = ({
       <div className="flex items-center gap-2 text-sm">
         <span className="font-medium text-foreground">Proposed Changes</span>
         {totalChanges > 1 && (
-          <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">
+          <span className="rounded bg-violet-500/15 px-1.5 py-0.5 font-medium text-violet-600 text-xs dark:text-violet-400">
             {changeIndex + 1}/{totalChanges} files
           </span>
         )}
@@ -39,7 +39,7 @@ export const ProposedChangesPanel: FC<ProposedChangesPanelProps> = ({
       <div className="flex items-center gap-1.5">
         <button
           onClick={onKeep}
-          className="flex items-center gap-1 rounded-md bg-green-600/20 px-2.5 py-1 text-green-400 text-xs hover:bg-green-600/30 transition-colors"
+          className="flex items-center gap-1 rounded-md bg-green-600/20 px-2.5 py-1 text-green-400 text-xs transition-colors hover:bg-green-600/30"
         >
           <Check className="size-3.5" />
           Keep All
@@ -49,7 +49,7 @@ export const ProposedChangesPanel: FC<ProposedChangesPanelProps> = ({
         </button>
         <button
           onClick={onUndo}
-          className="flex items-center gap-1 rounded-md bg-red-600/20 px-2.5 py-1 text-red-400 text-xs hover:bg-red-600/30 transition-colors"
+          className="flex items-center gap-1 rounded-md bg-red-600/20 px-2.5 py-1 text-red-400 text-xs transition-colors hover:bg-red-600/30"
         >
           <X className="size-3.5" />
           Undo All

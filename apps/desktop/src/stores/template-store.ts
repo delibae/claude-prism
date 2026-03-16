@@ -4,7 +4,6 @@ import {
   type TemplateDefinition,
   getAllTemplates,
   searchTemplates,
-  getTemplatesByCategory,
 } from "@/lib/template-registry";
 
 interface TemplateState {

@@ -38,7 +38,9 @@ export function getTemplatePdfUrl(templateId: string): string {
 /**
  * Load the static PDF and render page 1 as a thumbnail data URL.
  */
-export async function generateThumbnail(templateId: string): Promise<string | null> {
+export async function generateThumbnail(
+  templateId: string,
+): Promise<string | null> {
   const cached = thumbnailCache.get(templateId);
   if (cached) return cached;
 
@@ -68,7 +70,9 @@ export async function generateThumbnail(templateId: string): Promise<string | nu
       notify();
       return dataUrl;
     } catch (err) {
-      log.warn(`Failed to load preview for ${templateId}`, { error: String(err) });
+      log.warn(`Failed to load preview for ${templateId}`, {
+        error: String(err),
+      });
       failedIds.add(templateId);
       notify();
       return null;

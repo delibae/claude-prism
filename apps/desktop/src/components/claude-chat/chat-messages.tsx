@@ -1,6 +1,10 @@
 import { type FC, memo, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircleIcon } from "lucide-react";
-import { useClaudeChatStore, type ClaudeStreamMessage, type ContentBlock } from "@/stores/claude-chat-store";
+import {
+  useClaudeChatStore,
+  type ClaudeStreamMessage,
+  type ContentBlock,
+} from "@/stores/claude-chat-store";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { ThinkingWidget, ToolWidget } from "./tool-widgets";
 
@@ -22,14 +26,25 @@ const StreamingIndicator: FC = memo(() => {
   return (
     <div className="flex items-center gap-1.5 px-1 py-1.5 text-muted-foreground">
       <div className="flex gap-0.5">
-        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "0ms" }} />
-        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "150ms" }} />
-        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50" style={{ animationDelay: "300ms" }} />
+        <span
+          className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50"
+          style={{ animationDelay: "0ms" }}
+        />
+        <span
+          className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50"
+          style={{ animationDelay: "150ms" }}
+        />
+        <span
+          className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50"
+          style={{ animationDelay: "300ms" }}
+        />
       </div>
       <span className="text-sm">
         Thinking...
         {elapsed >= 3 && (
-          <span className="ml-1 text-xs text-muted-foreground/60">{elapsed}s</span>
+          <span className="ml-1 text-muted-foreground/60 text-xs">
+            {elapsed}s
+          </span>
         )}
       </span>
     </div>
@@ -76,11 +91,16 @@ export const ChatMessages: FC = () => {
 
     return messages.filter((msg) => {
       if (msg.type === "system" && msg.subtype === "init") return false;
-      if (msg.type !== "user" && msg.type !== "assistant" && msg.type !== "result") return false;
+      if (
+        msg.type !== "user" &&
+        msg.type !== "assistant" &&
+        msg.type !== "result"
+      )
+        return false;
       if (msg.type === "user" && msg.message?.content) {
         if (Array.isArray(msg.message.content)) {
           const hasOnlyToolResults = msg.message.content.every(
-            (b: any) => b.type === "tool_result"
+            (b: any) => b.type === "tool_result",
           );
           if (hasOnlyToolResults) return false;
         }
@@ -113,7 +133,8 @@ export const ChatMessages: FC = () => {
   const handleScroll = () => {
     if (!viewportRef.current) return;
     const el = viewportRef.current;
-    const isAtBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 50;
+    const isAtBottom =
+      Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 50;
     if (!isAtBottom) {
       userHasScrolledRef.current = true;
       shouldAutoScrollRef.current = false;
@@ -136,11 +157,7 @@ export const ChatMessages: FC = () => {
       )}
 
       {displayMessages.map((msg, idx) => (
-        <MessageBubble
-          key={idx}
-          message={msg}
-          toolResultMap={toolResultMap}
-        />
+        <MessageBubble key={idx} message={msg} toolResultMap={toolResultMap} />
       ))}
 
       {isStreaming && <StreamingIndicator />}
@@ -191,13 +208,13 @@ const UserMessage: FC<{ message: ClaudeStreamMessage }> = ({ message }) => {
   // Lint multi:  "[Lint errors in FILE]\n- FILE:LINE — MSG\n...\n\nPrompt"
   // Compile:     "[Compilation errors]\n- error1\n- error2\n...\n\nPrompt"
   const lintSingleMatch = bodyText.match(
-    /^\[Lint error in ([^\]]+)\]\n\[Error: ([^\]]+)\]\n\n([\s\S]*)$/
+    /^\[Lint error in ([^\]]+)\]\n\[Error: ([^\]]+)\]\n\n([\s\S]*)$/,
   );
   const lintMultiMatch = bodyText.match(
-    /^\[Lint errors in ([^\]]+)\]\n((?:- .+\n?)+)\n([\s\S]*)$/
+    /^\[Lint errors in ([^\]]+)\]\n((?:- .+\n?)+)\n([\s\S]*)$/,
   );
   const compileErrorMatch = bodyText.match(
-    /^\[Compilation errors\]\n((?:- .+\n?)+)\n([\s\S]*)$/
+    /^\[Compilation errors\]\n((?:- .+\n?)+)\n([\s\S]*)$/,
   );
 
   // Shared error block renderer
@@ -209,14 +226,18 @@ const UserMessage: FC<{ message: ClaudeStreamMessage }> = ({ message }) => {
     <div className="flex w-full flex-col items-end py-1.5">
       <div className="max-w-[85%] rounded-xl bg-muted px-3 py-2 text-foreground text-sm">
         <div className="mb-2 rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-2">
-          <div className="mb-1.5 text-xs font-medium text-red-400">{title}</div>
+          <div className="mb-1.5 font-medium text-red-400 text-xs">{title}</div>
           <div className="space-y-1">
             {errors.map((e, i) => (
               <div key={i} className="flex items-start gap-1.5">
                 <AlertCircleIcon className="mt-0.5 size-3 shrink-0 text-red-400/70" />
-                <span className="flex-1 text-xs text-foreground/80">{e.message}</span>
+                <span className="flex-1 text-foreground/80 text-xs">
+                  {e.message}
+                </span>
                 {e.location && (
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{e.location}</span>
+                  <span className="shrink-0 font-mono text-muted-foreground text-xs">
+                    {e.location}
+                  </span>
                 )}
               </div>
             ))}
@@ -238,18 +259,26 @@ const UserMessage: FC<{ message: ClaudeStreamMessage }> = ({ message }) => {
 
   if (lintMultiMatch) {
     const [, fileName, errorLines, prompt] = lintMultiMatch;
-    const errors = errorLines.trim().split("\n").map((line) => {
-      const m = line.match(/^- (.+?):(\d+) — (.+)$/);
-      return m ? { message: m[3], location: `${m[1]}:${m[2]}` } : { message: line.replace(/^- /, "") };
-    });
+    const errors = errorLines
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const m = line.match(/^- (.+?):(\d+) — (.+)$/);
+        return m
+          ? { message: m[3], location: `${m[1]}:${m[2]}` }
+          : { message: line.replace(/^- /, "") };
+      });
     return renderErrorBlock(`Lint Errors — ${fileName}`, errors, prompt);
   }
 
   if (compileErrorMatch) {
     const [, errorLines, prompt] = compileErrorMatch;
-    const errors = errorLines.trim().split("\n").map((line) => ({
-      message: line.replace(/^- /, ""),
-    }));
+    const errors = errorLines
+      .trim()
+      .split("\n")
+      .map((line) => ({
+        message: line.replace(/^- /, ""),
+      }));
     return renderErrorBlock(
       `Compilation ${errors.length === 1 ? "Error" : "Errors"}`,
       errors,
@@ -261,7 +290,7 @@ const UserMessage: FC<{ message: ClaudeStreamMessage }> = ({ message }) => {
     <div className="flex w-full flex-col items-end py-1.5">
       <div className="max-w-[85%] rounded-xl bg-muted px-3 py-1.5 text-foreground text-sm">
         {contextLabel && (
-          <span className="mb-1 inline-flex items-center rounded-md bg-background/60 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+          <span className="mb-1 inline-flex items-center rounded-md bg-background/60 px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
             {contextLabel}
           </span>
         )}
@@ -288,7 +317,7 @@ const AssistantMessage: FC<{
     (block) =>
       (block.type === "text" && block.text) ||
       (block.type === "thinking" && block.thinking) ||
-      (block.type === "tool_use" && block.id)
+      (block.type === "tool_use" && block.id),
   );
 
   if (!hasRenderableContent) return null;
@@ -317,13 +346,7 @@ const AssistantMessage: FC<{
           }
           if (block.type === "tool_use" && block.id) {
             const result = toolResultMap.get(block.id);
-            return (
-              <ToolWidget
-                key={idx}
-                toolUse={block}
-                toolResult={result}
-              />
-            );
+            return <ToolWidget key={idx} toolUse={block} toolResult={result} />;
           }
           return null;
         })}

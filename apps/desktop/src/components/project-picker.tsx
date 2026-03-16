@@ -12,8 +12,6 @@ import {
   SparklesIcon,
   CheckCircle2Icon,
   CircleIcon,
-  TerminalIcon,
-  FlaskConicalIcon,
   DownloadIcon,
   Loader2Icon,
   RefreshCwIcon,
@@ -80,10 +78,7 @@ export function ProjectPicker() {
 
   if (wizardMode) {
     return (
-      <ProjectWizard
-        mode={wizardMode}
-        onBack={() => setWizardMode(null)}
-      />
+      <ProjectWizard mode={wizardMode} onBack={() => setWizardMode(null)} />
     );
   }
 
@@ -106,7 +101,9 @@ export function ProjectPicker() {
 
         {!isClaudeReady ? <ClaudeSetup /> : <EnvironmentStatus />}
 
-        <div className={`flex w-full gap-3 ${!isClaudeReady ? "pointer-events-none opacity-50" : ""}`}>
+        <div
+          className={`flex w-full gap-3 ${!isClaudeReady ? "pointer-events-none opacity-50" : ""}`}
+        >
           <Button
             onClick={() => setShowModeDialog(true)}
             size="lg"
@@ -174,9 +171,7 @@ export function ProjectPicker() {
         <DialogContent showCloseButton={false} className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
-            <DialogDescription>
-              How would you like to start?
-            </DialogDescription>
+            <DialogDescription>How would you like to start?</DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 pt-2">
             <button
@@ -192,7 +187,7 @@ export function ProjectPicker() {
                   Pick a template and let AI help you get started
                 </p>
               </div>
-              <span className="rounded-full bg-foreground/8 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <span className="rounded-full bg-foreground/8 px-2 py-0.5 font-medium text-[10px] text-muted-foreground">
                 Recommended
               </span>
             </button>
@@ -238,7 +233,7 @@ function EnvironmentStatus() {
   const _finishUvInstall = useUvSetupStore((s) => s._finishInstall);
 
   const [skillsStatus, setSkillsStatus] = useState<SkillsStatus | null>(null);
-  const [skillsInstalling, setSkillsInstalling] = useState(false);
+  const [skillsInstalling, _setSkillsInstalling] = useState(false);
   const [showSkillsOnboarding, setShowSkillsOnboarding] = useState(false);
 
   const checkSkills = useCallback(async () => {
@@ -268,21 +263,24 @@ function EnvironmentStatus() {
   }, [_finishUvInstall]);
 
   // Lazy load skills onboarding
-  const [OnboardingComponent, setOnboardingComponent] = useState<React.ComponentType<{
-    onClose: () => void;
-  }> | null>(null);
+  const [OnboardingComponent, setOnboardingComponent] =
+    useState<React.ComponentType<{
+      onClose: () => void;
+    }> | null>(null);
 
   useEffect(() => {
     if (showSkillsOnboarding && !OnboardingComponent) {
-      import("@/components/scientific-skills/scientific-skills-onboarding").then(
-        (mod) => setOnboardingComponent(() => mod.ScientificSkillsOnboarding)
+      import(
+        "@/components/scientific-skills/scientific-skills-onboarding"
+      ).then((mod) =>
+        setOnboardingComponent(() => mod.ScientificSkillsOnboarding),
       );
     }
   }, [showSkillsOnboarding, OnboardingComponent]);
 
   return (
     <>
-      <div className="flex w-full flex-col rounded-xl border border-border bg-muted/30 px-4 py-3 gap-2">
+      <div className="flex w-full flex-col gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3">
         {/* Claude Code — always ready here */}
         <StatusRow
           ok={true}
@@ -298,7 +296,7 @@ function EnvironmentStatus() {
             uvInstalling
               ? "Installing..."
               : uvStatus === "ready"
-                ? uvVersion ?? "Installed"
+                ? (uvVersion ?? "Installed")
                 : uvStatus === "checking"
                   ? "Checking..."
                   : "Not installed"
@@ -325,7 +323,10 @@ function EnvironmentStatus() {
           }
           action={
             !skillsStatus?.installed && !skillsInstalling
-              ? { label: "Install", onClick: () => setShowSkillsOnboarding(true) }
+              ? {
+                  label: "Install",
+                  onClick: () => setShowSkillsOnboarding(true),
+                }
               : undefined
           }
         />
@@ -355,7 +356,7 @@ function StatusRow({
   action?: { label: string; onClick?: () => void; loading?: boolean };
 }) {
   return (
-    <div className="flex items-center gap-2.5 min-w-0">
+    <div className="flex min-w-0 items-center gap-2.5">
       {ok ? (
         <CheckCircle2Icon className="size-3.5 shrink-0 text-foreground" />
       ) : (
@@ -363,20 +364,20 @@ function StatusRow({
       )}
       <span
         className={cn(
-          "text-sm shrink-0",
-          ok ? "text-foreground" : "text-muted-foreground"
+          "shrink-0 text-sm",
+          ok ? "text-foreground" : "text-muted-foreground",
         )}
       >
         {label}
       </span>
-      <span className="text-xs text-muted-foreground truncate min-w-0 flex-1">
+      <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
         {detail}
       </span>
       {action && (
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-xs shrink-0"
+          className="h-6 shrink-0 px-2 text-xs"
           onClick={action.onClick}
           disabled={action.loading}
         >
@@ -412,16 +413,16 @@ function VersionBadge({
       return (
         <button
           onClick={onInstall}
-          className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
+          className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-primary text-xs transition-colors hover:bg-primary/20"
         >
-          <ArrowUpCircleIcon className="size-3.5" />
-          v{updateStatus.version} available — click to update
+          <ArrowUpCircleIcon className="size-3.5" />v{updateStatus.version}{" "}
+          available — click to update
         </button>
       );
 
     case "downloading":
       return (
-        <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-muted-foreground text-xs">
           <Loader2Icon className="size-3.5 animate-spin" />
           Downloading... {updateStatus.percent}%
         </div>
@@ -429,7 +430,7 @@ function VersionBadge({
 
     case "installing":
       return (
-        <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-muted-foreground text-xs">
           <Loader2Icon className="size-3.5 animate-spin" />
           Installing...
         </div>
@@ -437,7 +438,7 @@ function VersionBadge({
 
     case "ready":
       return (
-        <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-3 py-1 text-xs text-green-600">
+        <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-3 py-1 text-green-600 text-xs">
           <CheckCircle2Icon className="size-3.5" />
           Update complete — restarting...
         </div>
@@ -445,15 +446,15 @@ function VersionBadge({
 
     case "checking":
       return (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2Icon className="size-3 animate-spin" />
-          v{version} — checking for updates...
+        <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+          <Loader2Icon className="size-3 animate-spin" />v{version} — checking
+          for updates...
         </div>
       );
 
     case "error":
       return (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
           <span>v{version}</span>
           <span className="mx-0.5">·</span>
           <button
@@ -468,7 +469,7 @@ function VersionBadge({
 
     case "up-to-date":
       return (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
           <span>v{version}</span>
           <span className="mx-0.5">·</span>
           <button
@@ -483,7 +484,7 @@ function VersionBadge({
 
     default:
       return (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
           <span>v{version}</span>
           <span className="mx-0.5">·</span>
           <button

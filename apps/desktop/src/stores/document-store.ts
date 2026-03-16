@@ -51,7 +51,9 @@ export function getPdfBytes(rootFileId: string): Uint8Array | undefined {
 
 /** Get the current active PDF bytes (convenience for components that don't know the rootId). */
 export function getCurrentPdfBytes(): Uint8Array | null {
-  return _currentPdfRootId ? (_pdfBytesCache.get(_currentPdfRootId) ?? null) : null;
+  return _currentPdfRootId
+    ? (_pdfBytesCache.get(_currentPdfRootId) ?? null)
+    : null;
 }
 
 /** Check if any PDF data exists for the current root. */
@@ -114,11 +116,21 @@ interface DocumentState {
   saveFile: (id: string) => Promise<void>;
   saveAllFiles: () => Promise<void>;
   saveCurrentFile: () => Promise<void>;
-  createNewFile: (name: string, type: "tex" | "image", folder?: string) => Promise<void>;
+  createNewFile: (
+    name: string,
+    type: "tex" | "image",
+    folder?: string,
+  ) => Promise<void>;
   createFolder: (name: string, parentFolder?: string) => Promise<void>;
-  importFiles: (sourcePaths: string[], targetFolder?: string) => Promise<string[]>;
+  importFiles: (
+    sourcePaths: string[],
+    targetFolder?: string,
+  ) => Promise<string[]>;
   moveFile: (fileId: string, targetFolder: string | null) => Promise<void>;
-  moveFolder: (folderPath: string, targetFolder: string | null) => Promise<void>;
+  moveFolder: (
+    folderPath: string,
+    targetFolder: string | null,
+  ) => Promise<void>;
   reloadFile: (relativePath: string) => Promise<void>;
   refreshFiles: () => Promise<void>;
   /** Load content for a file that was skipped during project open (large file). */
@@ -149,7 +161,9 @@ export function resolveTexRoot(fileId: string, files: ProjectFile[]): string {
     if (match) {
       const rootPath = match[1].trim();
       // Try matching by relative path first, then by filename
-      const target = files.find((f) => f.relativePath === rootPath) ?? files.find((f) => f.name === rootPath);
+      const target =
+        files.find((f) => f.relativePath === rootPath) ??
+        files.find((f) => f.name === rootPath);
       if (target) return target.id;
     }
   }
@@ -166,7 +180,11 @@ function migratePdfBytesKey(oldKey: string, newKey: string) {
 }
 
 /** Re-key a Map entry when a file is renamed/moved. */
-function migrateCacheKey<V>(map: Map<string, V>, oldKey: string, newKey: string): Map<string, V> {
+function migrateCacheKey<V>(
+  map: Map<string, V>,
+  oldKey: string,
+  newKey: string,
+): Map<string, V> {
   if (!map.has(oldKey)) return map;
   const copy = new Map(map);
   const val = copy.get(oldKey)!;
@@ -186,7 +204,9 @@ function scheduleAutoSave() {
     const store = storeRef;
     if (!store) return;
     const state = store.getState();
-    const dirtyFiles = state.files.filter((f) => f.isDirty && f.content != null);
+    const dirtyFiles = state.files.filter(
+      (f) => f.isDirty && f.content != null,
+    );
     if (dirtyFiles.length > 0) {
       await state.saveAllFiles();
     }
@@ -214,7 +234,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
   openProject: async (rootPath: string) => {
     log.info(`Opening project: ${rootPath}`);
-    const { files: fsFiles, folders: fsFolders } = await scanProjectFolder(rootPath);
+    const { files: fsFiles, folders: fsFolders } =
+      await scanProjectFolder(rootPath);
     const projectFiles: ProjectFile[] = [];
 
     for (const f of fsFiles) {
@@ -229,8 +250,14 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       };
 
       // Load content for text-based files (skip large non-essential files)
-      if (f.type === "tex" || f.type === "bib" || f.type === "style" || f.type === "other") {
-        const isLargeNonEssential = f.type === "other" && f.fileSize > LARGE_FILE_THRESHOLD;
+      if (
+        f.type === "tex" ||
+        f.type === "bib" ||
+        f.type === "style" ||
+        f.type === "other"
+      ) {
+        const isLargeNonEssential =
+          f.type === "other" && f.fileSize > LARGE_FILE_THRESHOLD;
         if (!isLargeNonEssential) {
           try {
             pf.content = await readTexFileContent(f.absolutePath);
@@ -259,8 +286,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
     // Find the main tex file
     const mainTex =
-      projectFiles.find((f) => f.name === "main.tex" || f.name === "document.tex") ||
-      projectFiles.find((f) => f.type === "tex");
+      projectFiles.find(
+        (f) => f.name === "main.tex" || f.name === "document.tex",
+      ) || projectFiles.find((f) => f.type === "tex");
 
     clearPdfBytesCache();
     set({
@@ -364,7 +392,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     lastCompiledGenerations.delete(id);
     // If the deleted file was active, show the new active file's cached PDF
     const switchingActive = state.activeFileId === id;
-    const newRootId = switchingActive ? resolveTexRoot(newActiveId, newFiles) : undefined;
+    const newRootId = switchingActive
+      ? resolveTexRoot(newActiveId, newFiles)
+      : undefined;
     if (switchingActive && newRootId) {
       _currentPdfRootId = _pdfBytesCache.has(newRootId) ? newRootId : null;
     }
@@ -374,18 +404,20 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       compileErrorCache,
       lastCompiledGenerations,
       ...(switchingActive ? { pdfRevision: s.pdfRevision + 1 } : {}),
-      ...(switchingActive && newRootId ? {
-        compileError: compileErrorCache.get(newRootId) ?? null,
-      } : {}),
+      ...(switchingActive && newRootId
+        ? {
+            compileError: compileErrorCache.get(newRootId) ?? null,
+          }
+        : {}),
     }));
   },
 
   deleteFolder: async (folderPath) => {
     const state = get();
     if (!state.projectRoot) return;
-    const prefix = folderPath + "/";
-    const filesToRemove = state.files.filter(
-      (f) => f.relativePath.startsWith(prefix),
+    const prefix = `${folderPath}/`;
+    const filesToRemove = state.files.filter((f) =>
+      f.relativePath.startsWith(prefix),
     );
     const remainingFiles = state.files.filter(
       (f) => !f.relativePath.startsWith(prefix),
@@ -415,7 +447,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       ? remainingFiles[0].id
       : state.activeFileId;
     const switchingActive = newActiveId !== state.activeFileId;
-    const newRootId = switchingActive ? resolveTexRoot(newActiveId, remainingFiles) : undefined;
+    const newRootId = switchingActive
+      ? resolveTexRoot(newActiveId, remainingFiles)
+      : undefined;
     if (switchingActive && newRootId) {
       _currentPdfRootId = _pdfBytesCache.has(newRootId) ? newRootId : null;
     }
@@ -432,9 +466,11 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       compileErrorCache,
       lastCompiledGenerations,
       ...(switchingActive ? { pdfRevision: s.pdfRevision + 1 } : {}),
-      ...(switchingActive && newRootId ? {
-        compileError: compileErrorCache.get(newRootId) ?? null,
-      } : {}),
+      ...(switchingActive && newRootId
+        ? {
+            compileError: compileErrorCache.get(newRootId) ?? null,
+          }
+        : {}),
     }));
   },
 
@@ -457,8 +493,16 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     }
     migratePdfBytesKey(id, newRelativePath);
     set((s) => {
-      const compileErrorCache = migrateCacheKey(s.compileErrorCache, id, newRelativePath);
-      const lastCompiledGenerations = migrateCacheKey(s.lastCompiledGenerations, id, newRelativePath);
+      const compileErrorCache = migrateCacheKey(
+        s.compileErrorCache,
+        id,
+        newRelativePath,
+      );
+      const lastCompiledGenerations = migrateCacheKey(
+        s.lastCompiledGenerations,
+        id,
+        newRelativePath,
+      );
       const isActive = s.activeFileId === id;
       return {
         files: s.files.map((f) =>
@@ -491,9 +535,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
   updateImageDataUrl: (id, dataUrl) => {
     set((state) => ({
-      files: state.files.map((f) =>
-        f.id === id ? { ...f, dataUrl } : f,
-      ),
+      files: state.files.map((f) => (f.id === id ? { ...f, dataUrl } : f)),
     }));
   },
 
@@ -524,10 +566,16 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
           lastCompiledGenerations,
         }));
       } else {
-        set((prev) => ({ pdfRevision: prev.pdfRevision + 1, compileError: null }));
+        set((prev) => ({
+          pdfRevision: prev.pdfRevision + 1,
+          compileError: null,
+        }));
       }
     } else {
-      set((prev) => ({ pdfRevision: prev.pdfRevision + 1, compileError: null }));
+      set((prev) => ({
+        pdfRevision: prev.pdfRevision + 1,
+        compileError: null,
+      }));
     }
   },
 
@@ -555,7 +603,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   insertAtCursor: (text) => {
     const state = get();
     const activeFile = getActiveFile(state);
-    if (!activeFile || (activeFile.type === "image" || activeFile.type === "pdf"))
+    if (!activeFile || activeFile.type === "image" || activeFile.type === "pdf")
       return;
 
     const content = activeFile.content ?? "";
@@ -576,7 +624,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   replaceSelection: (start, end, text) => {
     const state = get();
     const activeFile = getActiveFile(state);
-    if (!activeFile || (activeFile.type === "image" || activeFile.type === "pdf"))
+    if (!activeFile || activeFile.type === "image" || activeFile.type === "pdf")
       return;
 
     const content = activeFile.content ?? "";
@@ -595,7 +643,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   findAndReplace: (find, replace) => {
     const state = get();
     const activeFile = getActiveFile(state);
-    if (!activeFile || (activeFile.type === "image" || activeFile.type === "pdf"))
+    if (!activeFile || activeFile.type === "image" || activeFile.type === "pdf")
       return false;
 
     const content = activeFile.content ?? "";
@@ -621,15 +669,15 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
     await writeTexFileContent(file.absolutePath, file.content);
     set((s) => ({
-      files: s.files.map((f) =>
-        f.id === id ? { ...f, isDirty: false } : f,
-      ),
+      files: s.files.map((f) => (f.id === id ? { ...f, isDirty: false } : f)),
     }));
   },
 
   saveAllFiles: async () => {
     const state = get();
-    const dirtyFiles = state.files.filter((f) => f.isDirty && f.content != null);
+    const dirtyFiles = state.files.filter(
+      (f) => f.isDirty && f.content != null,
+    );
     const results = await Promise.allSettled(
       dirtyFiles.map((f) => writeTexFileContent(f.absolutePath, f.content!)),
     );
@@ -653,7 +701,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     // Manual save → immediate snapshot
     if (state.projectRoot) {
       try {
-        await useHistoryStore.getState().createSnapshot(state.projectRoot, "[manual] Save");
+        await useHistoryStore
+          .getState()
+          .createSnapshot(state.projectRoot, "[manual] Save");
       } catch {
         // Snapshot failure should not break save
       }
@@ -670,7 +720,11 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       ? `\\documentclass{article}\n\n\\begin{document}\n\n% Your content here\n\n\\end{document}\n`
       : "";
 
-    const fullPath = await createFileOnDisk(state.projectRoot, relativePath, content);
+    const fullPath = await createFileOnDisk(
+      state.projectRoot,
+      relativePath,
+      content,
+    );
 
     set((s) => ({
       files: [
@@ -709,9 +763,15 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     for (const sourcePath of sourcePaths) {
       // Handle both Unix (/) and Windows (\) path separators
       const fileName = sourcePath.split(/[/\\]/).pop() || sourcePath;
-      const targetName = targetFolder ? `${targetFolder}/${fileName}` : fileName;
+      const targetName = targetFolder
+        ? `${targetFolder}/${fileName}`
+        : fileName;
       // copyFileToProject returns the actual (possibly deduplicated) relative path
-      const actualName = await copyFileToProject(state.projectRoot, sourcePath, targetName);
+      const actualName = await copyFileToProject(
+        state.projectRoot,
+        sourcePath,
+        targetName,
+      );
       importedPaths.push(actualName);
     }
     await state.refreshFiles();
@@ -723,26 +783,46 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const file = state.files.find((f) => f.id === fileId);
     if (!file || !state.projectRoot) return;
 
-    const desiredPath = targetFolder ? `${targetFolder}/${file.name}` : file.name;
+    const desiredPath = targetFolder
+      ? `${targetFolder}/${file.name}`
+      : file.name;
     if (desiredPath === file.relativePath) return;
 
     // Auto-deduplicate if a file with the same name exists in the target
-    const newRelativePath = await getUniqueTargetName(state.projectRoot, desiredPath);
+    const newRelativePath = await getUniqueTargetName(
+      state.projectRoot,
+      desiredPath,
+    );
     const newAbsPath = await join(state.projectRoot, newRelativePath);
     await renameFileOnDisk(file.absolutePath, newAbsPath);
 
     const newName = newRelativePath.split("/").pop() || file.name;
     migratePdfBytesKey(fileId, newRelativePath);
     set((s) => {
-      const compileErrorCache = migrateCacheKey(s.compileErrorCache, fileId, newRelativePath);
-      const lastCompiledGenerations = migrateCacheKey(s.lastCompiledGenerations, fileId, newRelativePath);
+      const compileErrorCache = migrateCacheKey(
+        s.compileErrorCache,
+        fileId,
+        newRelativePath,
+      );
+      const lastCompiledGenerations = migrateCacheKey(
+        s.lastCompiledGenerations,
+        fileId,
+        newRelativePath,
+      );
       return {
         files: s.files.map((f) =>
           f.id === fileId
-            ? { ...f, name: newName, relativePath: newRelativePath, absolutePath: newAbsPath, id: newRelativePath }
+            ? {
+                ...f,
+                name: newName,
+                relativePath: newRelativePath,
+                absolutePath: newAbsPath,
+                id: newRelativePath,
+              }
             : f,
         ),
-        activeFileId: s.activeFileId === fileId ? newRelativePath : s.activeFileId,
+        activeFileId:
+          s.activeFileId === fileId ? newRelativePath : s.activeFileId,
         compileErrorCache,
         lastCompiledGenerations,
       };
@@ -754,10 +834,12 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     if (!state.projectRoot) return;
 
     const folderName = folderPath.split("/").pop()!;
-    const newFolderPath = targetFolder ? `${targetFolder}/${folderName}` : folderName;
+    const newFolderPath = targetFolder
+      ? `${targetFolder}/${folderName}`
+      : folderName;
     if (newFolderPath === folderPath) return;
     // Prevent moving a folder into itself
-    if (newFolderPath.startsWith(folderPath + "/")) return;
+    if (newFolderPath.startsWith(`${folderPath}/`)) return;
 
     const oldAbsPath = await join(state.projectRoot, folderPath);
     const newAbsPath = await join(state.projectRoot, newFolderPath);
@@ -787,7 +869,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const { projectRoot, files, activeFileId } = get();
     if (!projectRoot) return;
 
-    const { files: fsFiles, folders: fsFolders } = await scanProjectFolder(projectRoot);
+    const { files: fsFiles, folders: fsFolders } =
+      await scanProjectFolder(projectRoot);
     const existingMap = new Map(files.map((f) => [f.relativePath, f]));
     const diskPaths = new Set(fsFiles.map((f) => f.relativePath));
 
@@ -802,13 +885,24 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
           merged.push(existing);
         } else {
           const updated = { ...existing, fileSize: fsFile.fileSize };
-          if (updated.type === "tex" || updated.type === "bib" || updated.type === "style" || updated.type === "other") {
-            const isLargeNonEssential = updated.type === "other" && fsFile.fileSize > LARGE_FILE_THRESHOLD;
+          if (
+            updated.type === "tex" ||
+            updated.type === "bib" ||
+            updated.type === "style" ||
+            updated.type === "other"
+          ) {
+            const isLargeNonEssential =
+              updated.type === "other" &&
+              fsFile.fileSize > LARGE_FILE_THRESHOLD;
             // Only reload if it was previously loaded (not a skipped large file)
             if (!isLargeNonEssential || updated.content !== undefined) {
               try {
-                updated.content = await readTexFileContent(updated.absolutePath);
-              } catch { /* keep previous content */ }
+                updated.content = await readTexFileContent(
+                  updated.absolutePath,
+                );
+              } catch {
+                /* keep previous content */
+              }
             }
           }
           merged.push(updated);
@@ -824,15 +918,28 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
           isDirty: false,
           fileSize: fsFile.fileSize,
         };
-        const isLargeNonEssential = pf.type === "other" && fsFile.fileSize > LARGE_FILE_THRESHOLD;
-        if (pf.type === "tex" || pf.type === "bib" || pf.type === "style" || (pf.type === "other" && !isLargeNonEssential)) {
+        const isLargeNonEssential =
+          pf.type === "other" && fsFile.fileSize > LARGE_FILE_THRESHOLD;
+        if (
+          pf.type === "tex" ||
+          pf.type === "bib" ||
+          pf.type === "style" ||
+          (pf.type === "other" && !isLargeNonEssential)
+        ) {
           try {
             pf.content = await readTexFileContent(pf.absolutePath);
-          } catch { /* skip unreadable */ }
-        } else if (pf.type === "image" && fsFile.fileSize <= LARGE_FILE_THRESHOLD) {
+          } catch {
+            /* skip unreadable */
+          }
+        } else if (
+          pf.type === "image" &&
+          fsFile.fileSize <= LARGE_FILE_THRESHOLD
+        ) {
           try {
             pf.dataUrl = await readImageAsDataUrl(pf.absolutePath);
-          } catch { /* skip unreadable */ }
+          } catch {
+            /* skip unreadable */
+          }
         }
         // PDF files and large files are loaded on-demand
         merged.push(pf);
@@ -848,7 +955,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
     const newActiveId = merged.some((f) => f.id === activeFileId)
       ? activeFileId
-      : merged[0]?.id ?? "";
+      : (merged[0]?.id ?? "");
 
     set((s) => ({
       files: merged,
@@ -897,9 +1004,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const state = get();
     set({
       files: state.files.map((f) =>
-        f.id === state.activeFileId
-          ? { ...f, content, isDirty: true }
-          : f,
+        f.id === state.activeFileId ? { ...f, content, isDirty: true } : f,
       ),
       contentGeneration: state.contentGeneration + 1,
     });

@@ -24,7 +24,10 @@ methods.countPages = (docId: number): number => {
   return doc.countPages();
 };
 
-methods.getPageSize = (docId: number, pageIndex: number): { width: number; height: number } => {
+methods.getPageSize = (
+  docId: number,
+  pageIndex: number,
+): { width: number; height: number } => {
   const doc = documentMap.get(docId)!;
   const page = doc.loadPage(pageIndex);
   const bounds = page.getBounds();
@@ -34,7 +37,9 @@ methods.getPageSize = (docId: number, pageIndex: number): { width: number; heigh
   };
 };
 
-methods.getAllPageSizes = (docId: number): { width: number; height: number }[] => {
+methods.getAllPageSizes = (
+  docId: number,
+): { width: number; height: number }[] => {
   const doc = documentMap.get(docId)!;
   const count = doc.countPages();
   const sizes: { width: number; height: number }[] = [];
@@ -49,7 +54,11 @@ methods.getAllPageSizes = (docId: number): { width: number; height: number }[] =
   return sizes;
 };
 
-methods.drawPage = (docId: number, pageIndex: number, dpi: number): ImageData => {
+methods.drawPage = (
+  docId: number,
+  pageIndex: number,
+  dpi: number,
+): ImageData => {
   const doc = documentMap.get(docId)!;
   const page = doc.loadPage(pageIndex);
   const scale = dpi / 72;
@@ -85,13 +94,21 @@ methods.getPageText = (docId: number, pageIndex: number): unknown => {
       bbox: block.bbox,
       lines: (block.lines || []).map((line: any) => {
         let text = "";
-        let font = { name: "", family: "", size: 12, weight: "normal", style: "normal" };
+        let font = {
+          name: "",
+          family: "",
+          size: 12,
+          weight: "normal",
+          style: "normal",
+        };
         let baselineY = 0;
 
         const spans = line.spans || [];
         if (spans.length > 0) {
           text = spans
-            .map((span: any) => (span.chars || []).map((ch: any) => ch.c).join(""))
+            .map((span: any) =>
+              (span.chars || []).map((ch: any) => ch.c).join(""),
+            )
             .join("");
 
           const firstSpan = spans[0];
@@ -162,7 +179,11 @@ methods.getPageLinks = (docId: number, pageIndex: number): unknown[] => {
   });
 };
 
-methods.renderThumbnail = (docId: number, pageIndex: number, targetWidth: number): ArrayBuffer => {
+methods.renderThumbnail = (
+  docId: number,
+  pageIndex: number,
+  targetWidth: number,
+): ArrayBuffer => {
   const doc = documentMap.get(docId)!;
   const page = doc.loadPage(pageIndex);
   const bounds = page.getBounds();
@@ -177,7 +198,7 @@ methods.renderThumbnail = (docId: number, pageIndex: number, targetWidth: number
 };
 
 // RPC message handler
-onmessage = (event: MessageEvent) => {
+self.onmessage = (event: MessageEvent) => {
   const [func, id, args] = event.data as [string, number, unknown[]];
   try {
     const result = methods[func](...args);

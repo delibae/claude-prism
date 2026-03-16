@@ -111,13 +111,17 @@ describe("useProposedChangesStore", () => {
         newContent: "b",
         toolName: "Edit",
       });
-      const change = useProposedChangesStore.getState().getChangeForFile("main.tex");
+      const change = useProposedChangesStore
+        .getState()
+        .getChangeForFile("main.tex");
       expect(change).toBeDefined();
       expect(change!.id).toBe("tool-1");
     });
 
     it("returns undefined for unknown file", () => {
-      const change = useProposedChangesStore.getState().getChangeForFile("nonexistent.tex");
+      const change = useProposedChangesStore
+        .getState()
+        .getChangeForFile("nonexistent.tex");
       expect(change).toBeUndefined();
     });
   });

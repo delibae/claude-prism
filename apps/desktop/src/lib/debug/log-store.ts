@@ -58,7 +58,12 @@ function _pushEntry(entry: LogEntry) {
 interface LogStore {
   /** Incremented on each log/clear — subscribers use this to know when to re-read. */
   version: number;
-  log: (level: LogLevel, source: string, message: string, data?: unknown) => void;
+  log: (
+    level: LogLevel,
+    source: string,
+    message: string,
+    data?: unknown,
+  ) => void;
   getEntries: () => readonly LogEntry[];
   getFilteredLogs: (opts?: {
     level?: LogLevel;
@@ -94,7 +99,7 @@ export const useLogStore = create<LogStore>((set) => ({
     // Forward warn/error to Rust stderr via existing js_log command
     if (level === "warn" || level === "error") {
       const prefix = level === "error" ? "ERROR" : "WARN";
-      const msg = `[${prefix}][${source}] ${message}${data ? " " + JSON.stringify(data) : ""}`;
+      const msg = `[${prefix}][${source}] ${message}${data ? ` ${JSON.stringify(data)}` : ""}`;
       invoke("js_log", { msg }).catch(() => {});
     }
   },
@@ -172,11 +177,14 @@ export function getGpuRenderer(): string {
   if (_gpuRendererCache !== null) return _gpuRendererCache;
   try {
     const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    const gl =
+      canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
     if (gl && gl instanceof WebGLRenderingContext) {
       const ext = gl.getExtension("WEBGL_debug_renderer_info");
       if (ext) {
-        _gpuRendererCache = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string;
+        _gpuRendererCache = gl.getParameter(
+          ext.UNMASKED_RENDERER_WEBGL,
+        ) as string;
         return _gpuRendererCache;
       }
     }

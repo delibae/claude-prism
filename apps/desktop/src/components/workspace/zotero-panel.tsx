@@ -37,21 +37,23 @@ const MYLIB_KEY = "__my_library__";
 
 export function ZoteroPanel() {
   const isAuthenticated = useZoteroStore((s) => s.isAuthenticated);
-  const username = useZoteroStore((s) => s.username);
+  const _username = useZoteroStore((s) => s.username);
   const isValidating = useZoteroStore((s) => s.isValidating);
   const isSyncing = useZoteroStore((s) => s.isSyncing);
   const syncProgress = useZoteroStore((s) => s.syncProgress);
   const projectRoot = useDocumentStore((s) => s.projectRoot);
   const allSyncedCollections = useZoteroStore((s) => s.syncedCollections);
-  const syncedCollections = projectRoot ? (allSyncedCollections[projectRoot] ?? {}) : {};
+  const syncedCollections = projectRoot
+    ? (allSyncedCollections[projectRoot] ?? {})
+    : {};
   const error = useZoteroStore((s) => s.error);
   const collections = useZoteroStore((s) => s.collections);
   const isLoadingCollections = useZoteroStore((s) => s.isLoadingCollections);
   const connectWithOAuth = useZoteroStore((s) => s.connectWithOAuth);
   const cancelConnect = useZoteroStore((s) => s.cancelConnect);
-  const disconnect = useZoteroStore((s) => s.disconnect);
+  const _disconnect = useZoteroStore((s) => s.disconnect);
   const revalidate = useZoteroStore((s) => s.revalidate);
-  const loadCollections = useZoteroStore((s) => s.loadCollections);
+  const _loadCollections = useZoteroStore((s) => s.loadCollections);
   const importCollectionToBib = useZoteroStore((s) => s.importCollectionToBib);
   const syncCollectionBib = useZoteroStore((s) => s.syncCollectionBib);
   const removeCollection = useZoteroStore((s) => s.removeCollection);
@@ -88,7 +90,7 @@ export function ZoteroPanel() {
 
             {/* Syncing progress */}
             {isSyncing && (
-              <div className="mx-2 mb-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+              <div className="mx-2 mb-0.5 flex items-center gap-1 text-muted-foreground text-xs">
                 <LoaderIcon className="size-3 animate-spin" />
                 {syncProgress
                   ? `${syncProgress.loaded}/${syncProgress.total}`
@@ -114,7 +116,7 @@ export function ZoteroPanel() {
             )}
 
             {isLoadingCollections ? (
-              <div className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1 px-2 py-1 text-muted-foreground text-xs">
                 <LoaderIcon className="size-3 animate-spin" />
                 Loading...
               </div>
@@ -173,7 +175,9 @@ export function ZoteroHeader() {
             onClick={loadCollections}
             title="Refresh"
           >
-            <RefreshCwIcon className={cn("size-3.5", isLoadingCollections && "animate-spin")} />
+            <RefreshCwIcon
+              className={cn("size-3.5", isLoadingCollections && "animate-spin")}
+            />
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -184,7 +188,9 @@ export function ZoteroHeader() {
             <DropdownMenuContent align="end" className="w-44">
               <div className="flex items-center gap-2 px-2 py-1">
                 <UserIcon className="size-3.5 text-muted-foreground" />
-                <span className="truncate text-xs text-muted-foreground">{username}</span>
+                <span className="truncate text-muted-foreground text-xs">
+                  {username}
+                </span>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={disconnect}>
@@ -219,7 +225,7 @@ function NotConnectedView({
       <div className="flex size-8 items-center justify-center rounded-full bg-muted">
         <LinkIcon className="size-4 text-muted-foreground" />
       </div>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
         Connect Zotero to import references.
       </p>
       {isValidating ? (
@@ -228,22 +234,32 @@ function NotConnectedView({
             <LoaderIcon className="size-3 animate-spin" />
             Authorizing...
           </div>
-          <button className="text-[10px] text-muted-foreground underline" onClick={onCancel}>
+          <button
+            className="text-[10px] text-muted-foreground underline"
+            onClick={onCancel}
+          >
             Cancel
           </button>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-1">
-          <Button size="sm" className="h-6 gap-1 text-[11px]" onClick={onConnect}>
+          <Button
+            size="sm"
+            className="h-6 gap-1 text-[11px]"
+            onClick={onConnect}
+          >
             <ExternalLinkIcon className="size-3" />
             Connect
           </Button>
-          <button className="text-[10px] text-muted-foreground underline" onClick={onApiKey}>
+          <button
+            className="text-[10px] text-muted-foreground underline"
+            onClick={onApiKey}
+          >
             API key
           </button>
         </div>
       )}
-      {error && <p className="text-destructive text-[10px]">{error}</p>}
+      {error && <p className="text-[10px] text-destructive">{error}</p>}
     </div>
   );
 }
@@ -251,7 +267,7 @@ function NotConnectedView({
 // ─── Collection Row ───
 
 function CollectionRow({
-  collectionKey,
+  collectionKey: _collectionKey,
   name,
   icon,
   itemCount,
@@ -280,16 +296,18 @@ function CollectionRow({
       <span className="shrink-0 text-muted-foreground">{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
-          <span className="truncate text-sm text-foreground">{name}</span>
-          {isSynced && <CheckIcon className="size-2.5 shrink-0 text-muted-foreground" />}
+          <span className="truncate text-foreground text-sm">{name}</span>
+          {isSynced && (
+            <CheckIcon className="size-2.5 shrink-0 text-muted-foreground" />
+          )}
         </div>
         {isSynced && (
-          <p className="truncate text-xs leading-none text-muted-foreground">
+          <p className="truncate text-muted-foreground text-xs leading-none">
             {syncInfo.bibFileName}
           </p>
         )}
         {!isSynced && itemCount !== undefined && (
-          <p className="text-xs leading-none text-muted-foreground">
+          <p className="text-muted-foreground text-xs leading-none">
             {itemCount} items
           </p>
         )}
@@ -394,7 +412,10 @@ function ZoteroApiKeyDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleConnect} disabled={!apiKey.trim() || isValidating}>
+          <Button
+            onClick={handleConnect}
+            disabled={!apiKey.trim() || isValidating}
+          >
             {isValidating ? "Validating..." : "Connect"}
           </Button>
         </DialogFooter>

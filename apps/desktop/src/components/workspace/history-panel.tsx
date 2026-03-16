@@ -45,20 +45,24 @@ function snapshotTypeLabel(message: string): string {
   if (message.startsWith("[auto]")) return "Auto-save";
   if (message.startsWith("[manual]")) return "Save";
   if (message.startsWith("[compile]")) return "Compile";
-  if (message.startsWith("[claude]")) return message.includes("Before") ? "Before Claude" : "After Claude";
+  if (message.startsWith("[claude]"))
+    return message.includes("Before") ? "Before Claude" : "After Claude";
   if (message.startsWith("[restore]")) return "Restore";
   if (message.startsWith("[init]")) return "Initial";
   return message;
 }
 
 function snapshotTypeBadgeColor(message: string): string {
-  if (message.startsWith("[claude]")) return "bg-violet-500/15 text-violet-600 dark:text-violet-400";
-  if (message.startsWith("[restore]")) return "bg-amber-500/15 text-amber-600 dark:text-amber-400";
-  if (message.startsWith("[manual]")) return "bg-blue-500/15 text-blue-600 dark:text-blue-400";
-  if (message.startsWith("[compile]")) return "bg-green-500/15 text-green-600 dark:text-green-400";
+  if (message.startsWith("[claude]"))
+    return "bg-violet-500/15 text-violet-600 dark:text-violet-400";
+  if (message.startsWith("[restore]"))
+    return "bg-amber-500/15 text-amber-600 dark:text-amber-400";
+  if (message.startsWith("[manual]"))
+    return "bg-blue-500/15 text-blue-600 dark:text-blue-400";
+  if (message.startsWith("[compile]"))
+    return "bg-green-500/15 text-green-600 dark:text-green-400";
   return "bg-muted text-muted-foreground";
 }
-
 
 // ─── Panel ───
 
@@ -114,7 +118,9 @@ export function HistoryPanel({ maxHeight }: { maxHeight?: string }) {
   // Init history when project opens
   useEffect(() => {
     if (!projectRoot) return;
-    init(projectRoot).then(() => loadSnapshots(projectRoot)).catch(console.error);
+    init(projectRoot)
+      .then(() => loadSnapshots(projectRoot))
+      .catch(console.error);
   }, [projectRoot, init, loadSnapshots]);
 
   // Infinite scroll
@@ -147,7 +153,6 @@ export function HistoryPanel({ maxHeight }: { maxHeight?: string }) {
     [projectRoot, linearSnapshots, reviewingSnapshot, loadDiff, startReview],
   );
 
-
   const handleRestore = useCallback(
     async (snapshotId: string) => {
       if (!projectRoot) return;
@@ -179,7 +184,9 @@ export function HistoryPanel({ maxHeight }: { maxHeight?: string }) {
   if (!projectRoot) {
     return (
       <div className="flex flex-col items-center gap-2 px-3 py-4 text-center">
-        <p className="text-xs text-muted-foreground">Open a project to view history.</p>
+        <p className="text-muted-foreground text-xs">
+          Open a project to view history.
+        </p>
       </div>
     );
   }
@@ -199,7 +206,7 @@ export function HistoryPanel({ maxHeight }: { maxHeight?: string }) {
         onScroll={handleScroll}
       >
         {linearSnapshots.length === 0 && !isLoading ? (
-          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+          <div className="px-3 py-4 text-center text-muted-foreground text-xs">
             No history yet
           </div>
         ) : (
@@ -213,7 +220,9 @@ export function HistoryPanel({ maxHeight }: { maxHeight?: string }) {
                 onClick={() => handleClick(snap)}
                 onRestore={() => handleRestore(snap.id)}
                 onAddLabel={() => openLabelDialog(snap.id)}
-                onRemoveLabel={(label) => projectRoot && removeLabel(projectRoot, label)}
+                onRemoveLabel={(label) =>
+                  projectRoot && removeLabel(projectRoot, label)
+                }
                 onCopySha={() => navigator.clipboard.writeText(snap.id)}
               />
             ))}
@@ -238,13 +247,19 @@ export function HistoryPanel({ maxHeight }: { maxHeight?: string }) {
               placeholder="e.g. Draft v1"
               value={labelValue}
               onChange={(e) => setLabelValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddLabel(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAddLabel();
+              }}
               autoFocus
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLabelDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddLabel} disabled={!labelValue.trim()}>Add</Button>
+            <Button variant="outline" onClick={() => setLabelDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddLabel} disabled={!labelValue.trim()}>
+              Add
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -289,13 +304,13 @@ function SnapshotRow({
             <div className="flex items-center gap-1">
               <span
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-xs leading-tight font-medium",
+                  "rounded px-1.5 py-0.5 font-medium text-xs leading-tight",
                   snapshotTypeBadgeColor(snapshot.message),
                 )}
               >
                 {snapshotTypeLabel(snapshot.message)}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-muted-foreground text-xs">
                 {formatRelativeTime(snapshot.timestamp)}
               </span>
             </div>
@@ -306,14 +321,17 @@ function SnapshotRow({
                 {snapshot.labels.map((label) => (
                   <span
                     key={label}
-                    className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-600 dark:text-amber-400"
+                    className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600 text-xs dark:text-amber-400"
                   >
                     <TagIcon className="size-2" />
                     {label}
                     <button
                       aria-label={`Remove label ${label}`}
                       className="ml-0.5 rounded-sm opacity-0 hover:text-destructive group-hover:opacity-100"
-                      onClick={(e) => { e.stopPropagation(); onRemoveLabel(label); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveLabel(label);
+                      }}
                     >
                       <XIcon className="size-2" />
                     </button>
@@ -324,8 +342,10 @@ function SnapshotRow({
 
             {/* Changed files summary */}
             {hasFiles && (
-              <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                {snapshot.changed_files.map((f) => f.split("/").pop()).join(", ")}
+              <div className="mt-0.5 truncate text-muted-foreground text-xs">
+                {snapshot.changed_files
+                  .map((f) => f.split("/").pop())
+                  .join(", ")}
               </div>
             )}
           </div>
@@ -349,4 +369,3 @@ function SnapshotRow({
     </ContextMenu>
   );
 }
-

@@ -65,7 +65,9 @@ function WorkspaceWithClaude() {
     if (!initialized) return;
     // Delay to let ClaudeChatDrawer mount and register event listeners
     const timer = setTimeout(() => {
-      const prompt = useClaudeChatStore.getState().consumePendingInitialPrompt();
+      const prompt = useClaudeChatStore
+        .getState()
+        .consumePendingInitialPrompt();
       if (prompt) {
         useClaudeChatStore.getState().sendPrompt(prompt);
       }
@@ -90,7 +92,6 @@ export function App({ onReady }: { onReady?: () => void }) {
 
   // Register global keyboard shortcuts (Cmd+S, Cmd+N) at the app level
   useKeyboardShortcuts();
-
 
   useEffect(() => {
     onReady?.();

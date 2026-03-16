@@ -31,14 +31,32 @@ interface HistoryState {
   reviewingSnapshot: SnapshotInfo | null;
 
   init: (projectRoot: string) => Promise<void>;
-  createSnapshot: (projectRoot: string, message: string) => Promise<SnapshotInfo | null>;
+  createSnapshot: (
+    projectRoot: string,
+    message: string,
+  ) => Promise<SnapshotInfo | null>;
   loadSnapshots: (projectRoot: string) => Promise<void>;
   loadMoreSnapshots: (projectRoot: string) => Promise<void>;
   selectSnapshot: (id: string | null) => void;
-  loadDiff: (projectRoot: string, fromId: string, toId: string) => Promise<void>;
-  getFileAt: (projectRoot: string, snapshotId: string, filePath: string) => Promise<string>;
-  restoreSnapshot: (projectRoot: string, snapshotId: string) => Promise<SnapshotInfo>;
-  addLabel: (projectRoot: string, snapshotId: string, label: string) => Promise<void>;
+  loadDiff: (
+    projectRoot: string,
+    fromId: string,
+    toId: string,
+  ) => Promise<void>;
+  getFileAt: (
+    projectRoot: string,
+    snapshotId: string,
+    filePath: string,
+  ) => Promise<string>;
+  restoreSnapshot: (
+    projectRoot: string,
+    snapshotId: string,
+  ) => Promise<SnapshotInfo>;
+  addLabel: (
+    projectRoot: string,
+    snapshotId: string,
+    label: string,
+  ) => Promise<void>;
   removeLabel: (projectRoot: string, label: string) => Promise<void>;
   startReview: (snapshot: SnapshotInfo) => void;
   stopReview: () => void;
@@ -65,7 +83,7 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
   },
 
   init: async (projectRoot) => {
-    log.debug("Initializing history for " + projectRoot);
+    log.debug(`Initializing history for ${projectRoot}`);
     await invoke("history_init", { projectRoot });
   },
 

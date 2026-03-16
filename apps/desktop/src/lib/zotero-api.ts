@@ -82,7 +82,9 @@ function extractCitekey(bibtex: string): string {
   return match ? match[1] : "";
 }
 
-export async function validateApiKey(apiKey: string): Promise<ZoteroCredentials> {
+export async function validateApiKey(
+  apiKey: string,
+): Promise<ZoteroCredentials> {
   const response = await zoteroFetch(apiKey, "/keys/current");
   const data = await response.json();
   return {
@@ -98,7 +100,10 @@ export async function fetchCollections(
   apiKey: string,
   userID: string,
 ): Promise<ZoteroCollection[]> {
-  const response = await zoteroFetch(apiKey, `/users/${userID}/collections?format=json`);
+  const response = await zoteroFetch(
+    apiKey,
+    `/users/${userID}/collections?format=json`,
+  );
   const data = (await response.json()) as {
     key: string;
     data: { key: string; name: string; parentCollection: string | false };
@@ -146,7 +151,9 @@ export async function importCollection(
 
     if (start === 0) {
       total = Number(response.headers.get("Total-Results") ?? 0);
-      libraryVersion = Number(response.headers.get("Last-Modified-Version") ?? 0);
+      libraryVersion = Number(
+        response.headers.get("Last-Modified-Version") ?? 0,
+      );
     }
 
     const items = (await response.json()) as { key: string; bibtex?: string }[];
@@ -191,13 +198,19 @@ export async function syncCollection(
 
   // For a specific collection, re-fetch all items and diff against keyMap
   // (Zotero API doesn't support `since` scoped to a collection)
-  const result = await importCollection(apiKey, userID, collectionKey, onProgress);
+  const result = await importCollection(
+    apiKey,
+    userID,
+    collectionKey,
+    onProgress,
+  );
 
   return {
     updatedEntries: Object.entries(result.keyMap).map(([key, citekey]) => {
       // Extract the bibtex for this citekey from the full bibtex string
       const bibtexEntries = result.bibtex.split(/\n(?=@)/);
-      const entry = bibtexEntries.find((e) => extractCitekey(e) === citekey) ?? "";
+      const entry =
+        bibtexEntries.find((e) => extractCitekey(e) === citekey) ?? "";
       return { key, citekey, bibtex: entry };
     }),
     deletedKeys: [],
@@ -225,11 +238,16 @@ async function syncFullLibrary(
       limit: String(limit),
       start: String(start),
     });
-    const response = await zoteroFetch(apiKey, `/users/${userID}/items/top?${params}`);
+    const response = await zoteroFetch(
+      apiKey,
+      `/users/${userID}/items/top?${params}`,
+    );
 
     if (start === 0) {
       total = Number(response.headers.get("Total-Results") ?? 0);
-      newVersion = Number(response.headers.get("Last-Modified-Version") ?? lastVersion);
+      newVersion = Number(
+        response.headers.get("Last-Modified-Version") ?? lastVersion,
+      );
     }
 
     const items = (await response.json()) as { key: string; bibtex?: string }[];
@@ -256,7 +274,9 @@ async function syncFullLibrary(
   const deletedKeys = deleted.items ?? [];
 
   if (!newVersion || newVersion === lastVersion) {
-    newVersion = Number(deletedResponse.headers.get("Last-Modified-Version") ?? lastVersion);
+    newVersion = Number(
+      deletedResponse.headers.get("Last-Modified-Version") ?? lastVersion,
+    );
   }
 
   return { updatedEntries, deletedKeys, libraryVersion: newVersion };

@@ -80,7 +80,9 @@ export function EditorToolbar({
   const [editors, setEditors] = useState<EditorInfo[]>([]);
 
   useEffect(() => {
-    invoke<EditorInfo[]>("detect_editors").then(setEditors).catch(() => {});
+    invoke<EditorInfo[]>("detect_editors")
+      .then(setEditors)
+      .catch(() => {});
   }, []);
 
   const openInEditor = useCallback(
@@ -130,7 +132,7 @@ export function EditorToolbar({
 
   if (fileType === "image") {
     return (
-      <div className="flex items-center justify-between border-border border-b bg-muted/30 px-2 pt-[var(--titlebar-height)] h-[calc(36px+var(--titlebar-height))]">
+      <div className="flex h-[calc(36px+var(--titlebar-height))] items-center justify-between border-border border-b bg-muted/30 px-2 pt-[var(--titlebar-height)]">
         <div className="flex items-center gap-1">
           <ImageIcon className="size-4 text-muted-foreground" />
           <span className="font-medium text-muted-foreground text-sm">
@@ -224,7 +226,7 @@ export function EditorToolbar({
   }
 
   return (
-    <div className="flex items-center gap-1 border-border border-b bg-muted/30 px-2 pt-[var(--titlebar-height)] h-[calc(36px+var(--titlebar-height))]">
+    <div className="flex h-[calc(36px+var(--titlebar-height))] items-center gap-1 border-border border-b bg-muted/30 px-2 pt-[var(--titlebar-height)]">
       <FileTextIcon className="size-4 text-muted-foreground" />
       <span className="mr-2 font-medium text-muted-foreground text-sm">
         {fileName}

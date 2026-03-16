@@ -2,7 +2,10 @@ import { useCallback, useRef, useEffect, useState } from "react";
 import { LoaderIcon } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { getCachedDocument, getOrOpenDocument } from "@/lib/mupdf/pdf-doc-cache";
+import {
+  getCachedDocument,
+  getOrOpenDocument,
+} from "@/lib/mupdf/pdf-doc-cache";
 import { MupdfPage } from "./mupdf-page";
 import { createLogger } from "@/lib/debug/logger";
 import { APP_VISIBILITY_RESTORED } from "@/lib/debug/log-store";
@@ -99,7 +102,8 @@ export function PdfViewer({
   useEffect(() => {
     const handleRestore = () => setFocusGen((g) => g + 1);
     window.addEventListener(APP_VISIBILITY_RESTORED, handleRestore);
-    return () => window.removeEventListener(APP_VISIBILITY_RESTORED, handleRestore);
+    return () =>
+      window.removeEventListener(APP_VISIBILITY_RESTORED, handleRestore);
   }, []);
 
   // Keep-alive scroll save/restore
@@ -127,7 +131,9 @@ export function PdfViewer({
   }, [isActive]);
 
   // Capture drag state
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null);
   const [dragPageNum, setDragPageNum] = useState(0);
 
@@ -181,8 +187,17 @@ export function PdfViewer({
       data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer);
 
     // Validate PDF header — must start with %PDF-
-    if (pdfData.length < 5 || pdfData[0] !== 0x25 || pdfData[1] !== 0x50 || pdfData[2] !== 0x44 || pdfData[3] !== 0x46) {
-      log.error("Invalid PDF data: missing %PDF- header", { length: pdfData.length, firstBytes: Array.from(pdfData.slice(0, 16)) });
+    if (
+      pdfData.length < 5 ||
+      pdfData[0] !== 0x25 ||
+      pdfData[1] !== 0x50 ||
+      pdfData[2] !== 0x44 ||
+      pdfData[3] !== 0x46
+    ) {
+      log.error("Invalid PDF data: missing %PDF- header", {
+        length: pdfData.length,
+        firstBytes: Array.from(pdfData.slice(0, 16)),
+      });
       setLoading(false);
       onError?.("Invalid PDF data received. Try recompiling the document.");
       return;
@@ -241,7 +256,10 @@ export function PdfViewer({
       setLoading(false);
 
       if (isFirstLoad.current && syncResult.pageSizes.length > 0) {
-        onFirstPageSize?.(syncResult.pageSizes[0].width, syncResult.pageSizes[0].height);
+        onFirstPageSize?.(
+          syncResult.pageSizes[0].width,
+          syncResult.pageSizes[0].height,
+        );
       }
       isFirstLoad.current = false;
       onLoadSuccess?.(syncResult.pageSizes.length);
@@ -296,7 +314,10 @@ export function PdfViewer({
           const next = new Set(prev);
           for (const entry of entries) {
             const el = entry.target as HTMLElement;
-            const pageNum = parseInt(el.getAttribute("data-page-number") || "0", 10);
+            const pageNum = parseInt(
+              el.getAttribute("data-page-number") || "0",
+              10,
+            );
             if (pageNum === 0) continue;
             if (entry.isIntersecting) {
               next.add(pageNum);
@@ -345,7 +366,10 @@ export function PdfViewer({
       const pageEl = target.closest(".mupdf-page") as HTMLElement | null;
       if (!pageEl) return;
 
-      const pageNum = parseInt(pageEl.getAttribute("data-page-number") || "0", 10);
+      const pageNum = parseInt(
+        pageEl.getAttribute("data-page-number") || "0",
+        10,
+      );
       if (pageNum === 0) return;
 
       const rect = pageEl.getBoundingClientRect();
@@ -472,7 +496,9 @@ export function PdfViewer({
       const container = containerRef.current;
       if (container) scrollToPage(container, page);
     };
-    return () => { if (scrollToPageRef) scrollToPageRef.current = null; };
+    return () => {
+      if (scrollToPageRef) scrollToPageRef.current = null;
+    };
   }, [scrollToPageRef, pageSizes]);
 
   // Dismiss selection toolbar on scroll
@@ -562,7 +588,11 @@ export function PdfViewer({
         return;
       }
 
-      if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:")) {
+      if (
+        href.startsWith("http://") ||
+        href.startsWith("https://") ||
+        href.startsWith("mailto:")
+      ) {
         ask(`Open in browser?\n${href}`, {
           title: "External Link",
           kind: "info",
@@ -602,7 +632,10 @@ export function PdfViewer({
       const target = e.target as HTMLElement;
       const pageEl = target.closest(".mupdf-page") as HTMLElement | null;
       if (!pageEl) return;
-      const pageNum = parseInt(pageEl.getAttribute("data-page-number") || "0");
+      const pageNum = parseInt(
+        pageEl.getAttribute("data-page-number") || "0",
+        10,
+      );
       if (!pageNum) return;
       setDragPageNum(pageNum);
       setDragStart({ x: e.clientX, y: e.clientY });
@@ -639,7 +672,9 @@ export function PdfViewer({
       const pageEl = containerRef.current?.querySelector(
         `.mupdf-page[data-page-number="${dragPageNum}"]`,
       ) as HTMLElement | null;
-      const sourceCanvas = pageEl?.querySelector("canvas") as HTMLCanvasElement | null;
+      const sourceCanvas = pageEl?.querySelector(
+        "canvas",
+      ) as HTMLCanvasElement | null;
       if (!pageEl || !sourceCanvas) {
         setDragStart(null);
         setDragEnd(null);
@@ -692,10 +727,7 @@ export function PdfViewer({
     (e: React.MouseEvent) => {
       if (!onTextClick) return;
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === "text" &&
-        target.closest(".mupdf-text-layer")
-      ) {
+      if (target.tagName === "text" && target.closest(".mupdf-text-layer")) {
         const text = target.textContent?.trim();
         if (text && text.length > 2) {
           onTextClick(text);

@@ -9,7 +9,11 @@ interface StepInfo {
   status: StepStatus;
 }
 
-function advanceSteps(steps: StepInfo[], targetId: string, order: string[]): StepInfo[] {
+function advanceSteps(
+  steps: StepInfo[],
+  targetId: string,
+  order: string[],
+): StepInfo[] {
   const targetIdx = order.indexOf(targetId);
   return steps.map((s) => {
     const thisIdx = order.indexOf(s.id);

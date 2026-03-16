@@ -39,7 +39,19 @@ function resetStores() {
     error: null,
     totalInputTokens: 0,
     totalOutputTokens: 0,
-    tabs: [{ id: "tab-default", title: "New Chat", sessionId: null, messages: [], isStreaming: false, error: null, totalInputTokens: 0, totalOutputTokens: 0, draft: { input: "", pinnedContexts: [] } }],
+    tabs: [
+      {
+        id: "tab-default",
+        title: "New Chat",
+        sessionId: null,
+        messages: [],
+        isStreaming: false,
+        error: null,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        draft: { input: "", pinnedContexts: [] },
+      },
+    ],
     activeTabId: "tab-default",
     _cancelledByUser: false,
   });
@@ -72,7 +84,9 @@ describe("Multi-tab merge triggers", () => {
       chat.setActiveTab(tabB);
 
       // Proposed change should still be visible — it's file-scoped, not tab-scoped
-      const change = useProposedChangesStore.getState().getChangeForFile("main.tex");
+      const change = useProposedChangesStore
+        .getState()
+        .getChangeForFile("main.tex");
       expect(change).toBeDefined();
       expect(change!.id).toBe("tool-from-tab-a");
       expect(change!.newContent).toBe("edited by tab A");
@@ -162,9 +176,30 @@ describe("Multi-tab merge triggers", () => {
     it("three sequential edits to the same file all preserve the original baseline", () => {
       const store = useProposedChangesStore.getState();
 
-      store.addChange({ id: "edit-1", filePath: "doc.tex", absolutePath: "/project/doc.tex", oldContent: "baseline", newContent: "v1", toolName: "Edit" });
-      store.addChange({ id: "edit-2", filePath: "doc.tex", absolutePath: "/project/doc.tex", oldContent: "v1", newContent: "v2", toolName: "Edit" });
-      store.addChange({ id: "edit-3", filePath: "doc.tex", absolutePath: "/project/doc.tex", oldContent: "v2", newContent: "v3", toolName: "MultiEdit" });
+      store.addChange({
+        id: "edit-1",
+        filePath: "doc.tex",
+        absolutePath: "/project/doc.tex",
+        oldContent: "baseline",
+        newContent: "v1",
+        toolName: "Edit",
+      });
+      store.addChange({
+        id: "edit-2",
+        filePath: "doc.tex",
+        absolutePath: "/project/doc.tex",
+        oldContent: "v1",
+        newContent: "v2",
+        toolName: "Edit",
+      });
+      store.addChange({
+        id: "edit-3",
+        filePath: "doc.tex",
+        absolutePath: "/project/doc.tex",
+        oldContent: "v2",
+        newContent: "v3",
+        toolName: "MultiEdit",
+      });
 
       const { changes } = useProposedChangesStore.getState();
       expect(changes).toHaveLength(1);
@@ -182,13 +217,17 @@ describe("Multi-tab merge triggers", () => {
 
       // Tab A starts streaming
       useClaudeChatStore.setState((s) => ({
-        tabs: s.tabs.map((t) => t.id === "tab-default" ? { ...t, isStreaming: true } : t),
+        tabs: s.tabs.map((t) =>
+          t.id === "tab-default" ? { ...t, isStreaming: true } : t,
+        ),
         isStreaming: s.activeTabId === "tab-default",
       }));
 
       // Tab B can also be streaming independently
       useClaudeChatStore.setState((s) => ({
-        tabs: s.tabs.map((t) => t.id === tabB ? { ...t, isStreaming: true } : t),
+        tabs: s.tabs.map((t) =>
+          t.id === tabB ? { ...t, isStreaming: true } : t,
+        ),
         isStreaming: s.activeTabId === tabB,
       }));
 
@@ -205,7 +244,9 @@ describe("Multi-tab merge triggers", () => {
 
       // Mark tab A as streaming
       useClaudeChatStore.setState((s) => ({
-        tabs: s.tabs.map((t) => t.id === "tab-default" ? { ...t, isStreaming: true } : t),
+        tabs: s.tabs.map((t) =>
+          t.id === "tab-default" ? { ...t, isStreaming: true } : t,
+        ),
       }));
 
       // User is viewing tab B (active), but message is for tab A
@@ -221,7 +262,9 @@ describe("Multi-tab merge triggers", () => {
       const tabBState = state.tabs.find((t) => t.id === tabB)!;
 
       expect(tabAState.messages).toHaveLength(1);
-      expect(tabAState.messages[0].message?.content?.[0].text).toBe("Hello from stream");
+      expect(tabAState.messages[0].message?.content?.[0].text).toBe(
+        "Hello from stream",
+      );
       expect(tabBState.messages).toHaveLength(0);
 
       // Top-level projected messages should reflect the active tab (tab B) — empty
@@ -257,7 +300,9 @@ describe("Multi-tab merge triggers", () => {
       chat._setStreaming("tab-default", false);
 
       const state = useClaudeChatStore.getState();
-      expect(state.tabs.find((t) => t.id === "tab-default")!.isStreaming).toBe(false);
+      expect(state.tabs.find((t) => t.id === "tab-default")!.isStreaming).toBe(
+        false,
+      );
       expect(state.tabs.find((t) => t.id === tabB)!.isStreaming).toBe(true);
     });
 
@@ -327,7 +372,9 @@ describe("Multi-tab merge triggers", () => {
       chat.setActiveTab(tabB);
 
       expect(useProposedChangesStore.getState().changes).toHaveLength(1);
-      expect(useProposedChangesStore.getState().changes[0].newContent).toBe("after");
+      expect(useProposedChangesStore.getState().changes[0].newContent).toBe(
+        "after",
+      );
     });
 
     it("keepAll clears all changes regardless of which tab is active", () => {
@@ -335,12 +382,20 @@ describe("Multi-tab merge triggers", () => {
       const tabB = chat.createTab();
 
       useProposedChangesStore.getState().addChange({
-        id: "edit-1", filePath: "main.tex", absolutePath: "/project/main.tex",
-        oldContent: "old-main", newContent: "new-main", toolName: "Edit",
+        id: "edit-1",
+        filePath: "main.tex",
+        absolutePath: "/project/main.tex",
+        oldContent: "old-main",
+        newContent: "new-main",
+        toolName: "Edit",
       });
       useProposedChangesStore.getState().addChange({
-        id: "edit-2", filePath: "refs.bib", absolutePath: "/project/refs.bib",
-        oldContent: "old-bib", newContent: "new-bib", toolName: "Write",
+        id: "edit-2",
+        filePath: "refs.bib",
+        absolutePath: "/project/refs.bib",
+        oldContent: "old-bib",
+        newContent: "new-bib",
+        toolName: "Write",
       });
 
       chat.setActiveTab(tabB);
@@ -368,7 +423,9 @@ describe("Multi-tab merge triggers", () => {
       chat.closeTab(tabB);
 
       expect(useProposedChangesStore.getState().changes).toHaveLength(1);
-      expect(useProposedChangesStore.getState().changes[0].id).toBe("from-tab-b");
+      expect(useProposedChangesStore.getState().changes[0].id).toBe(
+        "from-tab-b",
+      );
     });
 
     it("creating a new tab does not clear existing proposed changes", () => {

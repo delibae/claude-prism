@@ -19,7 +19,15 @@ import { tags } from "@lezer/highlight";
 
 interface BibState {
   /** Current parsing context */
-  context: "top" | "entryType" | "citationKey" | "fields" | "fieldName" | "fieldSep" | "fieldValue" | "comment";
+  context:
+    | "top"
+    | "entryType"
+    | "citationKey"
+    | "fields"
+    | "fieldName"
+    | "fieldSep"
+    | "fieldValue"
+    | "comment";
   /** Brace nesting depth inside a field value */
   braceDepth: number;
   /** Whether currently inside a quoted string value */

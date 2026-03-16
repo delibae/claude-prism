@@ -15,14 +15,20 @@ import {
 export function ThumbnailPaper({ color }: { color: string }) {
   return (
     <div className="flex h-full w-full flex-col items-center px-4 py-3">
-      <div className="mb-1.5 h-1.5 w-12 rounded-full" style={{ backgroundColor: color }} />
+      <div
+        className="mb-1.5 h-1.5 w-12 rounded-full"
+        style={{ backgroundColor: color }}
+      />
       <div className="mb-3 h-1 w-8 rounded-full bg-muted-foreground/20" />
       <div className="mb-2 w-full rounded-sm bg-muted-foreground/8 p-1.5">
         <div className="mb-1 h-0.5 w-full rounded-full bg-muted-foreground/15" />
         <div className="mb-1 h-0.5 w-full rounded-full bg-muted-foreground/15" />
         <div className="h-0.5 w-3/4 rounded-full bg-muted-foreground/15" />
       </div>
-      <div className="mb-1.5 h-1 w-10 self-start rounded-full" style={{ backgroundColor: color, opacity: 0.6 }} />
+      <div
+        className="mb-1.5 h-1 w-10 self-start rounded-full"
+        style={{ backgroundColor: color, opacity: 0.6 }}
+      />
       <div className="mb-1 h-0.5 w-full rounded-full bg-muted-foreground/12" />
       <div className="mb-1 h-0.5 w-full rounded-full bg-muted-foreground/12" />
       <div className="mb-1 h-0.5 w-11/12 rounded-full bg-muted-foreground/12" />
@@ -35,11 +41,17 @@ export function ThumbnailSlides({ color }: { color: string }) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-3 py-2">
       <div className="flex w-full flex-1 flex-col items-center justify-center rounded-sm border border-muted-foreground/10 bg-muted-foreground/5 p-1">
-        <div className="mb-0.5 h-1 w-10 rounded-full" style={{ backgroundColor: color }} />
+        <div
+          className="mb-0.5 h-1 w-10 rounded-full"
+          style={{ backgroundColor: color }}
+        />
         <div className="h-0.5 w-6 rounded-full bg-muted-foreground/20" />
       </div>
       <div className="flex w-full flex-1 flex-col rounded-sm border border-muted-foreground/10 bg-muted-foreground/5 p-1">
-        <div className="mb-0.5 h-0.5 w-6 rounded-full" style={{ backgroundColor: color, opacity: 0.6 }} />
+        <div
+          className="mb-0.5 h-0.5 w-6 rounded-full"
+          style={{ backgroundColor: color, opacity: 0.6 }}
+        />
         <div className="mb-0.5 h-0.5 w-full rounded-full bg-muted-foreground/12" />
         <div className="h-0.5 w-3/4 rounded-full bg-muted-foreground/12" />
       </div>
@@ -47,7 +59,7 @@ export function ThumbnailSlides({ color }: { color: string }) {
   );
 }
 
-export function ThumbnailPoster({ color }: { color: string }) {
+export function ThumbnailPoster({ color: _color }: { color: string }) {
   return (
     <div className="flex h-full w-full flex-col px-2 py-2">
       <div className="mb-2 h-1 w-10 self-center rounded-full bg-muted-foreground/20" />
@@ -70,7 +82,7 @@ export function ThumbnailPoster({ color }: { color: string }) {
 export function ThumbnailBlank(_props: { color: string }) {
   return (
     <div className="flex h-full w-full items-center justify-center">
-      <div className="text-muted-foreground/20 text-xs font-medium">Empty</div>
+      <div className="font-medium text-muted-foreground/20 text-xs">Empty</div>
     </div>
   );
 }
@@ -86,11 +98,13 @@ export const THUMBNAIL_MAP: Record<string, React.FC<{ color: string }>> = {
   "letter-formal": ThumbnailPaper,
   "report-technical": ThumbnailPaper,
   "book-standard": ThumbnailPaper,
-  "newsletter": ThumbnailPaper,
-  "blank": ThumbnailBlank,
+  newsletter: ThumbnailPaper,
+  blank: ThumbnailBlank,
 };
 
-export function getFallbackThumbnail(template: TemplateDefinition): React.FC<{ color: string }> {
+export function getFallbackThumbnail(
+  template: TemplateDefinition,
+): React.FC<{ color: string }> {
   return THUMBNAIL_MAP[template.id] || ThumbnailPaper;
 }
 
@@ -104,14 +118,12 @@ export function TemplateCard({ template }: TemplateCardProps) {
   const openPreview = useTemplateStore((s) => s.openPreview);
   const FallbackThumbnail = getFallbackThumbnail(template);
 
-  const thumbnailUrl = useSyncExternalStore(
-    subscribeThumbnails,
-    () => getThumbnail(template.id),
+  const thumbnailUrl = useSyncExternalStore(subscribeThumbnails, () =>
+    getThumbnail(template.id),
   );
 
-  const failed = useSyncExternalStore(
-    subscribeThumbnails,
-    () => isThumbnailFailed(template.id),
+  const failed = useSyncExternalStore(subscribeThumbnails, () =>
+    isThumbnailFailed(template.id),
   );
 
   useEffect(() => {
@@ -149,7 +161,7 @@ export function TemplateCard({ template }: TemplateCardProps) {
       </div>
       <div className="mt-2 px-0.5">
         <div className="font-medium text-sm leading-tight">{template.name}</div>
-        <div className="mt-0.5 text-muted-foreground text-xs leading-snug line-clamp-2">
+        <div className="mt-0.5 line-clamp-2 text-muted-foreground text-xs leading-snug">
           {template.description}
         </div>
       </div>

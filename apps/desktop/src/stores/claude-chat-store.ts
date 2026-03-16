@@ -59,7 +59,12 @@ export interface ClaudeStreamMessage {
 
 export interface TabDraft {
   input: string;
-  pinnedContexts: { label: string; filePath: string; selectedText: string; imageDataUrl?: string }[];
+  pinnedContexts: {
+    label: string;
+    filePath: string;
+    selectedText: string;
+    imageDataUrl?: string;
+  }[];
 }
 
 export interface TabState {
@@ -149,9 +154,24 @@ interface ClaudeChatState {
   consumePendingInitialPrompt: () => string | null;
 
   /** Pending attachments from external sources (e.g. PDF capture) */
-  pendingAttachments: { label: string; filePath: string; selectedText: string; imageDataUrl?: string }[];
-  addPendingAttachment: (attachment: { label: string; filePath: string; selectedText: string; imageDataUrl?: string }) => void;
-  consumePendingAttachments: () => { label: string; filePath: string; selectedText: string; imageDataUrl?: string }[];
+  pendingAttachments: {
+    label: string;
+    filePath: string;
+    selectedText: string;
+    imageDataUrl?: string;
+  }[];
+  addPendingAttachment: (attachment: {
+    label: string;
+    filePath: string;
+    selectedText: string;
+    imageDataUrl?: string;
+  }) => void;
+  consumePendingAttachments: () => {
+    label: string;
+    filePath: string;
+    selectedText: string;
+    imageDataUrl?: string;
+  }[];
 
   /** Currently selected model (passed per-prompt to Claude CLI) */
   selectedModel: "sonnet" | "opus" | "haiku" | "opusplan";
@@ -162,7 +182,10 @@ interface ClaudeChatState {
   setEffortLevel: (level: "low" | "medium" | "high") => void;
 
   // Actions
-  sendPrompt: (userPrompt: string, contextOverride?: { label: string; filePath: string; selectedText: string }) => Promise<void>;
+  sendPrompt: (
+    userPrompt: string,
+    contextOverride?: { label: string; filePath: string; selectedText: string },
+  ) => Promise<void>;
   cancelExecution: () => Promise<void>;
   clearMessages: () => void;
   newSession: () => void;
@@ -233,7 +256,10 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
   anyStreaming: () => get().tabs.some((t) => t.isStreaming),
 
-  sendPrompt: async (userPrompt: string, contextOverride?: { label: string; filePath: string; selectedText: string }) => {
+  sendPrompt: async (
+    userPrompt: string,
+    contextOverride?: { label: string; filePath: string; selectedText: string },
+  ) => {
     const state = get();
     const { activeTabId } = state;
     const activeTab = state.tabs.find((t) => t.id === activeTabId);
@@ -243,7 +269,11 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     const { sessionId, selectedModel, effortLevel } = state;
 
     const sendStart = performance.now();
-    log.info("sendPrompt start", { sessionId: !!sessionId, hasContext: !!contextOverride, tab: activeTabId });
+    log.info("sendPrompt start", {
+      sessionId: !!sessionId,
+      hasContext: !!contextOverride,
+      tab: activeTabId,
+    });
 
     const docState = useDocumentStore.getState();
     const projectPath = docState.projectRoot;
@@ -253,7 +283,9 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     }
 
     // Compute context label for display in chat history
-    const activeFile = docState.files.find((f) => f.id === docState.activeFileId);
+    const activeFile = docState.files.find(
+      (f) => f.id === docState.activeFileId,
+    );
     let contextLabel: string | null = null;
 
     if (contextOverride) {
@@ -287,7 +319,10 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
     set((s) => {
       const tabUpdates: Partial<TabState> = {
-        messages: [...(s.tabs.find((t) => t.id === activeTabId)?.messages ?? []), userMessage],
+        messages: [
+          ...(s.tabs.find((t) => t.id === activeTabId)?.messages ?? []),
+          userMessage,
+        ],
         isStreaming: true,
         error: null,
       };
@@ -309,9 +344,13 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     if (projectPath) {
       try {
         log.debug("creating snapshot...");
-        await useHistoryStore.getState().createSnapshot(projectPath, "[claude] Before Claude edit");
+        await useHistoryStore
+          .getState()
+          .createSnapshot(projectPath, "[claude] Before Claude edit");
         log.debug("snapshot done");
-      } catch { /* snapshot failure should not block Claude */ }
+      } catch {
+        /* snapshot failure should not block Claude */
+      }
     }
 
     // Build prompt with full context for Claude
@@ -335,7 +374,10 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
       }
       prompt = `${ctx}\n\n${userPrompt}`;
     }
-    log.info("invoking CLI", { promptLength: prompt.length, mode: sessionId ? "resume" : "new" });
+    log.info("invoking CLI", {
+      promptLength: prompt.length,
+      mode: sessionId ? "resume" : "new",
+    });
 
     try {
       if (sessionId) {
@@ -358,13 +400,20 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
           effortLevel,
         });
       }
-      log.info(`sendPrompt complete in ${(performance.now() - sendStart).toFixed(0)}ms`);
+      log.info(
+        `sendPrompt complete in ${(performance.now() - sendStart).toFixed(0)}ms`,
+      );
     } catch (err: any) {
-      log.error(`sendPrompt failed after ${(performance.now() - sendStart).toFixed(0)}ms`, { error: String(err) });
-      set((s) => applyTabUpdate(s, activeTabId, {
-        isStreaming: false,
-        error: err?.message || String(err),
-      }));
+      log.error(
+        `sendPrompt failed after ${(performance.now() - sendStart).toFixed(0)}ms`,
+        { error: String(err) },
+      );
+      set((s) =>
+        applyTabUpdate(s, activeTabId, {
+          isStreaming: false,
+          error: err?.message || String(err),
+        }),
+      );
     }
   },
 
@@ -381,26 +430,30 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
   clearMessages: () => {
     const { activeTabId } = get();
-    set((s) => applyTabUpdate(s, activeTabId, {
-      messages: [],
-      error: null,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-    }));
+    set((s) =>
+      applyTabUpdate(s, activeTabId, {
+        messages: [],
+        error: null,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+      }),
+    );
   },
 
   newSession: () => {
     log.info("Starting new session");
     const { activeTabId } = get();
-    set((s) => applyTabUpdate(s, activeTabId, {
-      messages: [],
-      sessionId: null,
-      error: null,
-      isStreaming: false,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      title: "New Chat",
-    }));
+    set((s) =>
+      applyTabUpdate(s, activeTabId, {
+        messages: [],
+        sessionId: null,
+        error: null,
+        isStreaming: false,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        title: "New Chat",
+      }),
+    );
   },
 
   resumeSession: async (sessionId: string) => {
@@ -409,14 +462,16 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     const projectPath = useDocumentStore.getState().projectRoot;
 
     // Reset state with new session ID
-    set((s) => applyTabUpdate(s, activeTabId, {
-      messages: [],
-      sessionId,
-      error: null,
-      isStreaming: false,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-    }));
+    set((s) =>
+      applyTabUpdate(s, activeTabId, {
+        messages: [],
+        sessionId,
+        error: null,
+        isStreaming: false,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+      }),
+    );
 
     // Load session history from JSONL file
     if (projectPath) {
@@ -515,7 +570,7 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
   saveDraft: (tabId: string, draft: TabDraft) => {
     set((s) => ({
-      tabs: s.tabs.map((t) => t.id === tabId ? { ...t, draft } : t),
+      tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, draft } : t)),
     }));
   },
 

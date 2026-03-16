@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImageIcon, CheckIcon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { toast } from "sonner";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
@@ -50,9 +50,17 @@ export function ImagePreview({
 
   // Crop state
   const [cropRect, setCropRect] = useState<CropRect | null>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [activeHandle, setActiveHandle] = useState<HandleId | "move" | null>(null);
-  const [handleDragStart, setHandleDragStart] = useState<{ x: number; y: number; rect: CropRect } | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const [activeHandle, setActiveHandle] = useState<HandleId | "move" | null>(
+    null,
+  );
+  const [handleDragStart, setHandleDragStart] = useState<{
+    x: number;
+    y: number;
+    rect: CropRect;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Reset crop rect when exiting crop mode
@@ -121,18 +129,15 @@ export function ImagePreview({
   }, [scale, onScaleChange, cropMode]);
 
   // Get coordinates relative to the displayed image
-  const getImageRelativeCoords = useCallback(
-    (e: React.MouseEvent) => {
-      const img = imgRef.current;
-      if (!img) return null;
-      const rect = img.getBoundingClientRect();
-      return {
-        x: Math.max(0, Math.min(rect.width, e.clientX - rect.left)),
-        y: Math.max(0, Math.min(rect.height, e.clientY - rect.top)),
-      };
-    },
-    [],
-  );
+  const getImageRelativeCoords = useCallback((e: React.MouseEvent) => {
+    const img = imgRef.current;
+    if (!img) return null;
+    const rect = img.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(rect.width, e.clientX - rect.left)),
+      y: Math.max(0, Math.min(rect.height, e.clientY - rect.top)),
+    };
+  }, []);
 
   // --- Crop drag: new selection ---
   const handleCropMouseDown = useCallback(
@@ -151,7 +156,11 @@ export function ImagePreview({
           coords.y <= cropRect.y + cropRect.h
         ) {
           setActiveHandle("move");
-          setHandleDragStart({ x: coords.x, y: coords.y, rect: { ...cropRect } });
+          setHandleDragStart({
+            x: coords.x,
+            y: coords.y,
+            rect: { ...cropRect },
+          });
           e.preventDefault();
           return;
         }
@@ -230,11 +239,21 @@ export function ImagePreview({
         setCropRect({ x, y, w, h });
       }
     },
-    [cropMode, dragStart, activeHandle, handleDragStart, getImageRelativeCoords],
+    [
+      cropMode,
+      dragStart,
+      activeHandle,
+      handleDragStart,
+      getImageRelativeCoords,
+    ],
   );
 
   const handleCropMouseUp = useCallback(() => {
-    if (dragStart && cropRect && (cropRect.w < MIN_CROP_SIZE || cropRect.h < MIN_CROP_SIZE)) {
+    if (
+      dragStart &&
+      cropRect &&
+      (cropRect.w < MIN_CROP_SIZE || cropRect.h < MIN_CROP_SIZE)
+    ) {
       setCropRect(null);
     }
     setDragStart(null);
@@ -328,14 +347,18 @@ export function ImagePreview({
   // Use dataUrl if available (in-memory), otherwise fall back to asset URL (large images)
   const imageSrc = file.dataUrl || getAssetUrl(file.absolutePath);
   // Crop requires dataUrl (canvas manipulation needs same-origin data)
-  const canCrop = !!file.dataUrl;
+  const _canCrop = !!file.dataUrl;
 
   return (
     <div
       ref={containerRef}
       tabIndex={-1}
       className="relative h-full overflow-auto bg-muted/50 p-4 outline-none"
-      style={cropMode ? { cursor: cropRect && !dragStart ? "default" : "crosshair" } : undefined}
+      style={
+        cropMode
+          ? { cursor: cropRect && !dragStart ? "default" : "crosshair" }
+          : undefined
+      }
       onMouseMove={cropMode ? handleCropMouseMove : undefined}
       onMouseUp={cropMode ? handleCropMouseUp : undefined}
       onMouseLeave={cropMode ? handleCropMouseUp : undefined}
@@ -348,7 +371,10 @@ export function ImagePreview({
       )}
 
       {/* Wrapper width = scale * 100% of container → CSS handles fit, no JS needed */}
-      <div className="relative" style={{ width: `${scale * 100}%`, margin: "0 auto" }}>
+      <div
+        className="relative"
+        style={{ width: `${scale * 100}%`, margin: "0 auto" }}
+      >
         <img
           ref={imgRef}
           src={imageSrc}
@@ -363,13 +389,40 @@ export function ImagePreview({
           <>
             {/* Dark overlay: 4 divs around the crop area */}
             {/* Top */}
-            <div className="pointer-events-none absolute z-10 bg-black/50" style={{ left: 0, top: 0, right: 0, height: cropRect.y }} />
+            <div
+              className="pointer-events-none absolute z-10 bg-black/50"
+              style={{ left: 0, top: 0, right: 0, height: cropRect.y }}
+            />
             {/* Bottom */}
-            <div className="pointer-events-none absolute z-10 bg-black/50" style={{ left: 0, top: cropRect.y + cropRect.h, right: 0, bottom: 0 }} />
+            <div
+              className="pointer-events-none absolute z-10 bg-black/50"
+              style={{
+                left: 0,
+                top: cropRect.y + cropRect.h,
+                right: 0,
+                bottom: 0,
+              }}
+            />
             {/* Left */}
-            <div className="pointer-events-none absolute z-10 bg-black/50" style={{ left: 0, top: cropRect.y, width: cropRect.x, height: cropRect.h }} />
+            <div
+              className="pointer-events-none absolute z-10 bg-black/50"
+              style={{
+                left: 0,
+                top: cropRect.y,
+                width: cropRect.x,
+                height: cropRect.h,
+              }}
+            />
             {/* Right */}
-            <div className="pointer-events-none absolute z-10 bg-black/50" style={{ left: cropRect.x + cropRect.w, top: cropRect.y, right: 0, height: cropRect.h }} />
+            <div
+              className="pointer-events-none absolute z-10 bg-black/50"
+              style={{
+                left: cropRect.x + cropRect.w,
+                top: cropRect.y,
+                right: 0,
+                height: cropRect.h,
+              }}
+            />
 
             {/* Crop border */}
             <div
@@ -388,7 +441,11 @@ export function ImagePreview({
                 const coords = getImageRelativeCoords(e);
                 if (!coords) return;
                 setActiveHandle("move");
-                setHandleDragStart({ x: coords.x, y: coords.y, rect: { ...cropRect } });
+                setHandleDragStart({
+                  x: coords.x,
+                  y: coords.y,
+                  rect: { ...cropRect },
+                });
               }}
             >
               {/* Resize handles */}
@@ -397,8 +454,18 @@ export function ImagePreview({
                   key={h.id}
                   className="absolute z-20 size-2.5 rounded-sm border border-gray-400 bg-white shadow-sm"
                   style={{
-                    left: h.x === 0 ? -5 : h.x === 0.5 ? "calc(50% - 5px)" : "calc(100% - 5px)",
-                    top: h.y === 0 ? -5 : h.y === 0.5 ? "calc(50% - 5px)" : "calc(100% - 5px)",
+                    left:
+                      h.x === 0
+                        ? -5
+                        : h.x === 0.5
+                          ? "calc(50% - 5px)"
+                          : "calc(100% - 5px)",
+                    top:
+                      h.y === 0
+                        ? -5
+                        : h.y === 0.5
+                          ? "calc(50% - 5px)"
+                          : "calc(100% - 5px)",
                     cursor: h.cursor,
                   }}
                   onMouseDown={(e) => handleHandleMouseDown(e, h.id)}

@@ -9,7 +9,11 @@ import { useDocumentStore } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { useProposedChangesStore } from "@/stores/proposed-changes-store";
 import { readTexFileContent } from "@/lib/tauri/fs";
-import { compileLatex, resolveCompileTarget, formatCompileError } from "@/lib/latex-compiler";
+import {
+  compileLatex,
+  resolveCompileTarget,
+  formatCompileError,
+} from "@/lib/latex-compiler";
 import { createLogger } from "@/lib/debug/logger";
 
 const log = createLogger("claude-event");
@@ -138,34 +142,56 @@ export function useClaudeEvents() {
       lastMsgTimeRef.current.set(tabId, now);
 
       // Log ALL message types with gap detection
-      const contentTypes = msg.message?.content?.map((b: any) => b.type).join(",") ?? "";
+      const contentTypes =
+        msg.message?.content?.map((b: any) => b.type).join(",") ?? "";
       const gapWarning = Number(gap) > 10 ? ` GAP ${gap}s` : "";
-      log.debug(`[${tabId}] ${elapsed(tabId)} #${count} type=${msg.type} sub=${msg.subtype ?? ""} content=[${contentTypes}] gap=${gap}s${gapWarning}`);
+      log.debug(
+        `[${tabId}] ${elapsed(tabId)} #${count} type=${msg.type} sub=${msg.subtype ?? ""} content=[${contentTypes}] gap=${gap}s${gapWarning}`,
+      );
 
       if (msg.type === "assistant") {
-        const thinkingBlock = msg.message?.content?.find((b: any) => b.type === "thinking");
+        const thinkingBlock = msg.message?.content?.find(
+          (b: any) => b.type === "thinking",
+        );
         if (thinkingBlock) {
-          log.debug(`[${tabId}] ${elapsed(tabId)} thinking: ${(thinkingBlock.thinking || "").slice(0, 100)}`);
+          log.debug(
+            `[${tabId}] ${elapsed(tabId)} thinking: ${(thinkingBlock.thinking || "").slice(0, 100)}`,
+          );
         }
-        const textBlock = msg.message?.content?.find((b: any) => b.type === "text");
+        const textBlock = msg.message?.content?.find(
+          (b: any) => b.type === "text",
+        );
         if (textBlock?.text) {
-          log.debug(`[${tabId}] ${elapsed(tabId)} text: ${textBlock.text.slice(0, 100)}`);
+          log.debug(
+            `[${tabId}] ${elapsed(tabId)} text: ${textBlock.text.slice(0, 100)}`,
+          );
         }
-        const toolBlock = msg.message?.content?.find((b: any) => b.type === "tool_use");
+        const toolBlock = msg.message?.content?.find(
+          (b: any) => b.type === "tool_use",
+        );
         if (toolBlock) {
-          log.debug(`[${tabId}] ${elapsed(tabId)} tool_use: ${toolBlock.name} ${toolBlock.input?.file_path ?? ""}`);
+          log.debug(
+            `[${tabId}] ${elapsed(tabId)} tool_use: ${toolBlock.name} ${toolBlock.input?.file_path ?? ""}`,
+          );
         }
       }
       if (msg.type === "user" && msg.message?.content) {
         for (const block of msg.message.content) {
           if (block.type === "tool_result") {
-            const preview = typeof block.content === "string" ? block.content.slice(0, 80) : JSON.stringify(block.content)?.slice(0, 80);
-            log.debug(`[${tabId}] ${elapsed(tabId)} tool_result: id=${block.tool_use_id} err=${block.is_error ?? false} len=${preview?.length ?? 0}`);
+            const preview =
+              typeof block.content === "string"
+                ? block.content.slice(0, 80)
+                : JSON.stringify(block.content)?.slice(0, 80);
+            log.debug(
+              `[${tabId}] ${elapsed(tabId)} tool_result: id=${block.tool_use_id} err=${block.is_error ?? false} len=${preview?.length ?? 0}`,
+            );
           }
         }
       }
       if (msg.type === "result") {
-        log.info(`[${tabId}] ${elapsed(tabId)} result cost=$${msg.cost_usd} api=${msg.duration_api_ms}ms total=${msg.duration_ms}ms`);
+        log.info(
+          `[${tabId}] ${elapsed(tabId)} result cost=$${msg.cost_usd} api=${msg.duration_api_ms}ms total=${msg.duration_ms}ms`,
+        );
       }
 
       // Extract session_id from system:init
@@ -177,10 +203,17 @@ export function useClaudeEvents() {
       if ((msg as any).type === "rate_limit_event") {
         const info = (msg as any).rate_limit_info;
         if (info) {
-          const resetsAt = info.resetsAt ? new Date(info.resetsAt * 1000).toLocaleTimeString() : "unknown";
-          log.warn(`[${tabId}] rate_limit: status=${info.status} type=${info.rateLimitType} resets=${resetsAt} overage=${info.overageStatus}`);
+          const resetsAt = info.resetsAt
+            ? new Date(info.resetsAt * 1000).toLocaleTimeString()
+            : "unknown";
+          log.warn(
+            `[${tabId}] rate_limit: status=${info.status} type=${info.rateLimitType} resets=${resetsAt} overage=${info.overageStatus}`,
+          );
           if (info.status !== "allowed") {
-            chatStore._setError(tabId, `Rate limited (${info.rateLimitType}). Resets at ${resetsAt}`);
+            chatStore._setError(
+              tabId,
+              `Rate limited (${info.rateLimitType}). Resets at ${resetsAt}`,
+            );
           }
         }
         return; // rate_limit_event is informational — do not append to messages
@@ -240,7 +273,9 @@ export function useClaudeEvents() {
           (b: any) => b.type === "tool_use" && b.name === "AskUserQuestion",
         );
         if (hasAskUser) {
-          log.info(`[${tabId}] ${elapsed(tabId)} AskUserQuestion detected — cancelling process for user input`);
+          log.info(
+            `[${tabId}] ${elapsed(tabId)} AskUserQuestion detected — cancelling process for user input`,
+          );
           cancelledForAskRef.current.set(tabId, true);
           invoke("cancel_claude_execution", { tabId }).catch(() => {});
         }
@@ -251,18 +286,31 @@ export function useClaudeEvents() {
       const { tab_id: tabId, success } = payload;
       const count = msgCountRef.current.get(tabId) ?? 0;
 
-      log.info(`[${tabId}] complete success=${success} (${count} messages) cancelledForAsk=${cancelledForAskRef.current.get(tabId) ?? false}`);
+      log.info(
+        `[${tabId}] complete success=${success} (${count} messages) cancelledForAsk=${cancelledForAskRef.current.get(tabId) ?? false}`,
+      );
       const chatStore = useClaudeChatStore.getState();
 
       // Guard against duplicate complete events
       const tab = chatStore.tabs.find((t) => t.id === tabId);
       if (!tab?.isStreaming) {
-        log.warn(`[${tabId}] ignoring duplicate complete event (not streaming)`);
+        log.warn(
+          `[${tabId}] ignoring duplicate complete event (not streaming)`,
+        );
         return;
       }
 
-      if (!success && count > 0 && !tab.error && !cancelledForAskRef.current.get(tabId) && !chatStore._cancelledByUser) {
-        chatStore._setError(tabId, "Claude process exited unexpectedly. This may be due to rate limiting or an API error.");
+      if (
+        !success &&
+        count > 0 &&
+        !tab.error &&
+        !cancelledForAskRef.current.get(tabId) &&
+        !chatStore._cancelledByUser
+      ) {
+        chatStore._setError(
+          tabId,
+          "Claude process exited unexpectedly. This may be due to rate limiting or an API error.",
+        );
       }
 
       // Clean up per-tab state
@@ -276,7 +324,9 @@ export function useClaudeEvents() {
       const projectPath = useDocumentStore.getState().projectRoot;
       if (projectPath) {
         try {
-          await useHistoryStore.getState().createSnapshot(projectPath, "[claude] After Claude edit");
+          await useHistoryStore
+            .getState()
+            .createSnapshot(projectPath, "[claude] After Claude edit");
         } catch {
           // snapshot failure should not break the flow
         }
@@ -286,7 +336,12 @@ export function useClaudeEvents() {
       await docStore.refreshFiles();
 
       // Auto-recompile after Claude finishes
-      const { projectRoot, files, activeFileId, isCompiling: alreadyCompiling } = useDocumentStore.getState();
+      const {
+        projectRoot,
+        files,
+        activeFileId,
+        isCompiling: alreadyCompiling,
+      } = useDocumentStore.getState();
       if (projectRoot && !alreadyCompiling) {
         const resolved = resolveCompileTarget(activeFileId, files);
         if (resolved) {
@@ -298,7 +353,9 @@ export function useClaudeEvents() {
             const pdfData = await compileLatex(projectRoot, targetPath);
             useDocumentStore.getState().setPdfData(pdfData, rootId);
           } catch (err) {
-            useDocumentStore.getState().setCompileError(formatCompileError(err), rootId);
+            useDocumentStore
+              .getState()
+              .setCompileError(formatCompileError(err), rootId);
           } finally {
             useDocumentStore.getState().setIsCompiling(false);
           }
@@ -321,7 +378,10 @@ export function useClaudeEvents() {
           if (!cancelled) handleStreamMessage(event.payload);
         },
       );
-      if (cancelled) { unlistenOutput(); return; }
+      if (cancelled) {
+        unlistenOutput();
+        return;
+      }
       listenersRef.current.push(unlistenOutput);
 
       const unlistenComplete = await listen<ClaudeCompletePayload>(
@@ -330,7 +390,10 @@ export function useClaudeEvents() {
           if (!cancelled) handleComplete(event.payload);
         },
       );
-      if (cancelled) { unlistenComplete(); return; }
+      if (cancelled) {
+        unlistenComplete();
+        return;
+      }
       listenersRef.current.push(unlistenComplete);
 
       const unlistenError = await listen<ClaudeErrorPayload>(
@@ -339,13 +402,21 @@ export function useClaudeEvents() {
           if (!cancelled) {
             const { tab_id: tabId, data: payload } = event.payload;
             log.warn(`[${tabId}] stderr: ${payload}`);
-            if (payload.includes("Error") || payload.includes("error") || payload.includes("ECONNREFUSED") || payload.includes("timeout")) {
+            if (
+              payload.includes("Error") ||
+              payload.includes("error") ||
+              payload.includes("ECONNREFUSED") ||
+              payload.includes("timeout")
+            ) {
               log.error(`[${tabId}] CRITICAL: ${payload}`);
             }
           }
         },
       );
-      if (cancelled) { unlistenError(); return; }
+      if (cancelled) {
+        unlistenError();
+        return;
+      }
       listenersRef.current.push(unlistenError);
     })();
 

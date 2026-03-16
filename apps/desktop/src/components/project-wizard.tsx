@@ -22,15 +22,41 @@ import { useProjectStore } from "@/stores/project-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { exists, join } from "@/lib/tauri/fs";
-import { getTemplateById, getTemplateSkeleton, BIB_TEMPLATE } from "@/lib/template-registry";
+import {
+  getTemplateById,
+  getTemplateSkeleton,
+  BIB_TEMPLATE,
+} from "@/lib/template-registry";
 import { TemplateGallery } from "@/components/template-gallery";
 import { DEFAULT_CLAUDE_MD } from "@/lib/default-claude-md";
 
 // ─── Helpers ───
 
 function randomProjectName(): string {
-  const adjectives = ["swift", "bright", "calm", "bold", "keen", "warm", "pure", "vast", "deep", "fair"];
-  const nouns = ["paper", "draft", "thesis", "note", "study", "essay", "report", "brief", "folio", "opus"];
+  const adjectives = [
+    "swift",
+    "bright",
+    "calm",
+    "bold",
+    "keen",
+    "warm",
+    "pure",
+    "vast",
+    "deep",
+    "fair",
+  ];
+  const nouns = [
+    "paper",
+    "draft",
+    "thesis",
+    "note",
+    "study",
+    "essay",
+    "report",
+    "brief",
+    "folio",
+    "opus",
+  ];
   const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
   const noun = nouns[Math.floor(Math.random() * nouns.length)];
   const id = Math.random().toString(36).slice(2, 6);
@@ -52,8 +78,13 @@ export function ProjectWizard({ mode, onBack }: ProjectWizardProps) {
   if (mode === "template") {
     return (
       <div className="flex h-full flex-col bg-background">
-        <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pt-[var(--titlebar-height)] h-[calc(48px+var(--titlebar-height))]">
-          <Button variant="ghost" size="icon" className="size-7 rounded-lg" onClick={onBack}>
+        <div className="flex h-[calc(48px+var(--titlebar-height))] shrink-0 items-center gap-3 border-border/60 border-b px-4 pt-[var(--titlebar-height)]">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 rounded-lg"
+            onClick={onBack}
+          >
             <ArrowLeftIcon className="size-4" />
           </Button>
           <span className="font-semibold text-sm">Choose a Template</span>
@@ -100,15 +131,22 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
     if (lastProjectFolder) {
       setProjectFolder(lastProjectFolder);
     } else {
-      homeDir().then((home) => join(home, "Documents", "ClaudePrism")).then((dir) => {
-        mkdir(dir, { recursive: true }).catch(() => {});
-        setProjectFolder(dir);
-      }).catch(() => {});
+      homeDir()
+        .then((home) => join(home, "Documents", "ClaudePrism"))
+        .then((dir) => {
+          mkdir(dir, { recursive: true }).catch(() => {});
+          setProjectFolder(dir);
+        })
+        .catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChooseFolder = useCallback(async () => {
-    const selected = await open({ directory: true, multiple: false, title: "Choose Location for New Project" });
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose Location for New Project",
+    });
     if (selected) {
       setProjectFolder(selected);
       setLastProjectFolder(selected);
@@ -119,14 +157,33 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
     const selected = await open({
       multiple: true,
       title: "Add Reference Files",
-      filters: [{
-        name: "Documents & Images",
-        extensions: ["pdf", "tex", "bib", "txt", "md", "png", "jpg", "jpeg", "gif", "svg", "csv", "tsv", "json"],
-      }],
+      filters: [
+        {
+          name: "Documents & Images",
+          extensions: [
+            "pdf",
+            "tex",
+            "bib",
+            "txt",
+            "md",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "svg",
+            "csv",
+            "tsv",
+            "json",
+          ],
+        },
+      ],
     });
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
-      setAttachments((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+      setAttachments((prev) => [
+        ...prev,
+        ...paths.filter((p) => !prev.includes(p)),
+      ]);
     }
   }, []);
 
@@ -150,16 +207,25 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
           setIsDragOver(false);
           const paths = (event.payload as { paths: string[] }).paths;
           if (paths?.length > 0) {
-            setAttachments((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+            setAttachments((prev) => [
+              ...prev,
+              ...paths.filter((p) => !prev.includes(p)),
+            ]);
           }
         } else if (type === "leave") {
           setIsDragOver(false);
         }
       })
-      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
       .catch(() => {});
 
-    return () => { cancelled = true; unlisten?.(); };
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   const handleCreate = async () => {
@@ -197,10 +263,13 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
       }
 
       if (purpose.trim()) {
-        const attachmentNames = attachments.map((p) => p.split("/").pop()).filter(Boolean);
-        const attachmentSection = attachmentNames.length > 0
-          ? `\n### Reference Files\n${attachmentNames.map((n) => `- \`${n}\``).join("\n")}\n\nPlease review them and incorporate relevant information.\n`
-          : "";
+        const attachmentNames = attachments
+          .map((p) => p.split("/").pop())
+          .filter(Boolean);
+        const attachmentSection =
+          attachmentNames.length > 0
+            ? `\n### Reference Files\n${attachmentNames.map((n) => `- \`${n}\``).join("\n")}\n\nPlease review them and incorporate relevant information.\n`
+            : "";
 
         const prompt = [
           `## New ${template.name} Project`,
@@ -228,7 +297,9 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
       await openProject(projectPath);
 
       if (attachments.length > 0) {
-        await useDocumentStore.getState().importFiles(attachments, "attachments");
+        await useDocumentStore
+          .getState()
+          .importFiles(attachments, "attachments");
       }
     } catch (err) {
       console.error("Failed to create project:", err);
@@ -242,8 +313,13 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pt-[var(--titlebar-height)] h-[calc(48px+var(--titlebar-height))]">
-        <Button variant="ghost" size="icon" className="size-7 rounded-lg" onClick={onBack}>
+      <div className="flex h-[calc(48px+var(--titlebar-height))] shrink-0 items-center gap-3 border-border/60 border-b px-4 pt-[var(--titlebar-height)]">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 rounded-lg"
+          onClick={onBack}
+        >
           <ArrowLeftIcon className="size-4" />
         </Button>
         <span className="font-semibold text-sm">New Document</span>
@@ -255,9 +331,12 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
           {/* Purpose */}
           <div className="space-y-2.5">
             <div>
-              <label className="font-semibold text-sm">What are you writing?</label>
+              <span className="font-semibold text-sm">
+                What are you writing?
+              </span>
               <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
-                Describe your document and Claude will generate tailored content.
+                Describe your document and Claude will generate tailored
+                content.
               </p>
             </div>
             <Textarea
@@ -271,7 +350,7 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
           </div>
 
           {/* Collapsible sections */}
-          <div className="rounded-xl border border-border/60 bg-card/30 divide-y divide-border/40 overflow-hidden">
+          <div className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/60 bg-card/30">
             {/* Reference files */}
             <div>
               <button
@@ -281,10 +360,10 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/50">
                   <FileTextIcon className="size-3.5 text-muted-foreground" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium">Reference files</span>
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-sm">Reference files</span>
                   {attachments.length > 0 && (
-                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">
+                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 font-semibold text-[10px] text-primary leading-none">
                       {attachments.length}
                     </span>
                   )}
@@ -294,16 +373,18 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
                 />
               </button>
               {refFilesOpen && (
-                <div className="px-4 pb-4 space-y-3">
+                <div className="space-y-3 px-4 pb-4">
                   {attachments.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {attachments.map((path) => (
                         <div
                           key={path}
-                          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 pl-2.5 pr-1.5 py-1 text-xs transition-colors hover:bg-muted/60"
+                          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 py-1 pr-1.5 pl-2.5 text-xs transition-colors hover:bg-muted/60"
                         >
                           <PaperclipIcon className="size-3 shrink-0 text-muted-foreground/70" />
-                          <span className="max-w-[140px] truncate text-foreground/80">{path.split("/").pop()}</span>
+                          <span className="max-w-[140px] truncate text-foreground/80">
+                            {path.split("/").pop()}
+                          </span>
                           <button
                             onClick={() => handleRemoveAttachment(path)}
                             className="flex size-4 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
@@ -317,23 +398,27 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
                   <div
                     className={`flex flex-col items-center gap-2 rounded-lg border border-dashed p-4 transition-all ${
                       isDragOver
-                        ? "border-primary bg-primary/5 scale-[1.01]"
+                        ? "scale-[1.01] border-primary bg-primary/5"
                         : "border-border/60 hover:border-border hover:bg-muted/20"
                     }`}
                   >
                     {isDragOver ? (
                       <>
                         <UploadIcon className="size-5 text-primary" />
-                        <span className="text-xs font-medium text-primary">Drop to add</span>
+                        <span className="font-medium text-primary text-xs">
+                          Drop to add
+                        </span>
                       </>
                     ) : (
                       <>
                         <UploadIcon className="size-5 text-muted-foreground/40" />
                         <div className="text-center">
-                          <span className="text-xs text-muted-foreground/70">Drag & drop or </span>
+                          <span className="text-muted-foreground/70 text-xs">
+                            Drag & drop or{" "}
+                          </span>
                           <button
                             onClick={handleAddAttachments}
-                            className="text-xs font-medium text-foreground/70 underline underline-offset-2 decoration-border hover:text-foreground hover:decoration-foreground/50 transition-colors"
+                            className="font-medium text-foreground/70 text-xs underline decoration-border underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/50"
                           >
                             browse files
                           </button>
@@ -357,11 +442,11 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/50">
                   <MapPinIcon className="size-3.5 text-muted-foreground" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium">Project location</span>
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-sm">Project location</span>
                 </div>
                 {!locationOpen && projectFolder && projectName.trim() && (
-                  <span className="min-w-0 max-w-[180px] truncate rounded-md bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-muted-foreground/60">
+                  <span className="min-w-0 max-w-[180px] truncate rounded-md bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/60">
                     .../{projectFolder.split("/").pop()}/{projectName.trim()}
                   </span>
                 )}
@@ -370,7 +455,7 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
                 />
               </button>
               {locationOpen && (
-                <div className="px-4 pb-4 space-y-2.5">
+                <div className="space-y-2.5 px-4 pb-4">
                   <div className="flex gap-2">
                     <Input
                       placeholder="Project name"

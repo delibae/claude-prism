@@ -20,7 +20,9 @@ export function ClaudeChatDrawer() {
   // Initialize event listeners for Claude streaming
   useClaudeEvents();
 
-  const anyStreaming = useClaudeChatStore((s) => s.tabs.some((t) => t.isStreaming));
+  const anyStreaming = useClaudeChatStore((s) =>
+    s.tabs.some((t) => t.isStreaming),
+  );
   const error = useClaudeChatStore((s) => s.error);
 
   const [isOpen, setIsOpen] = useState(false);
@@ -50,41 +52,44 @@ export function ClaudeChatDrawer() {
     }
   }, [anyStreaming, isOpen, pendingAttachments]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (isExpanded) return;
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (isExpanded) return;
 
-    e.preventDefault();
-    setIsDragging(true);
-    hasDraggedRef.current = false;
+      e.preventDefault();
+      setIsDragging(true);
+      hasDraggedRef.current = false;
 
-    const startY = e.clientY;
-    const startHeight = heightRef.current;
+      const startY = e.clientY;
+      const startHeight = heightRef.current;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      hasDraggedRef.current = true;
-      const parent = containerRef.current?.parentElement;
-      const maxHeight = parent ? parent.clientHeight * 0.5 : 400;
-      const delta = startY - e.clientY;
-      const newHeight = Math.min(
-        Math.max(startHeight + delta, MIN_HEIGHT),
-        maxHeight
-      );
-      heightRef.current = newHeight;
-      if (panelRef.current) {
-        panelRef.current.style.height = `${newHeight}px`;
-      }
-    };
+      const handleMouseMove = (e: MouseEvent) => {
+        hasDraggedRef.current = true;
+        const parent = containerRef.current?.parentElement;
+        const maxHeight = parent ? parent.clientHeight * 0.5 : 400;
+        const delta = startY - e.clientY;
+        const newHeight = Math.min(
+          Math.max(startHeight + delta, MIN_HEIGHT),
+          maxHeight,
+        );
+        heightRef.current = newHeight;
+        if (panelRef.current) {
+          panelRef.current.style.height = `${newHeight}px`;
+        }
+      };
 
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      setHeight(heightRef.current);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
+      const handleMouseUp = () => {
+        setIsDragging(false);
+        setHeight(heightRef.current);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  }, [isExpanded]);
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [isExpanded],
+  );
 
   // Compute expanded dimensions from parent
   const getExpandedDimensions = useCallback(() => {
@@ -111,7 +116,7 @@ export function ClaudeChatDrawer() {
       ref={containerRef}
       className={cn(
         "pointer-events-none absolute inset-0 z-10 flex items-end justify-center transition-[padding] duration-300 ease-out",
-        isExpanded ? "p-0" : "px-4 pb-6 pt-4"
+        isExpanded ? "p-0" : "px-4 pt-4 pb-6",
       )}
     >
       {/* Floating toggle button */}
@@ -122,7 +127,7 @@ export function ClaudeChatDrawer() {
           "pointer-events-auto absolute right-4 bottom-6 flex size-12 items-center justify-center rounded-full border border-border bg-background shadow-lg transition-all duration-300 ease-out hover:scale-105 hover:shadow-xl",
           isOpen
             ? "pointer-events-none scale-50 opacity-0"
-            : "scale-100 opacity-100"
+            : "scale-100 opacity-100",
         )}
         aria-label="Open AI Assistant"
       >
@@ -134,18 +139,20 @@ export function ClaudeChatDrawer() {
         ref={panelRef}
         className={cn(
           "pointer-events-auto flex w-full flex-col overflow-hidden border bg-background transition-[height,max-width,border-radius,border-color,box-shadow,opacity,transform] duration-300 ease-out",
-          isExpanded ? "border-transparent shadow-none" : "border-border shadow-2xl",
+          isExpanded
+            ? "border-transparent shadow-none"
+            : "border-border shadow-2xl",
           isOpen
             ? "scale-100 opacity-100"
             : "pointer-events-none origin-bottom scale-95 opacity-0",
-          isDragging && "!transition-none"
+          isDragging && "!transition-none",
         )}
         style={panelStyle()}
       >
         {/* Header with drag handle, tab bar, and session selector */}
         {isExpanded ? (
           <>
-            <div className="flex items-center justify-start border-b border-border px-2 py-1">
+            <div className="flex items-center justify-start border-border border-b px-2 py-1">
               <button
                 type="button"
                 onClick={() => setIsExpanded(false)}

@@ -11,7 +11,7 @@ const PHASE_MAP: Record<string, number> = {
   "downloading tarball": 20,
   "Download complete": 60,
   "Copying skills": 70,
-  "Copied": 90,
+  Copied: 90,
   "Cleanup complete": 95,
 };
 
@@ -70,7 +70,7 @@ export function InstallProgress({
     <div className="space-y-2 py-1">
       <Progress value={pct} />
       <div className="flex items-center justify-between">
-        <p className="text-muted-foreground text-xs truncate max-w-[80%]">
+        <p className="max-w-[80%] truncate text-muted-foreground text-xs">
           {label}
         </p>
         <p className="font-mono text-muted-foreground text-xs tabular-nums">
@@ -79,7 +79,10 @@ export function InstallProgress({
       </div>
       {logs.length > 0 && (
         <ScrollArea className="h-28 rounded-md border border-border/60 bg-muted/30">
-          <div ref={scrollRef} className="p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <div
+            ref={scrollRef}
+            className="p-2 font-mono text-[11px] text-muted-foreground leading-relaxed"
+          >
             {logs.map((line, i) => (
               <div key={i}>{line}</div>
             ))}

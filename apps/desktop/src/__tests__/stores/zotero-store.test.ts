@@ -9,7 +9,10 @@ function storeKey(collectionKey: string | null): string {
 }
 
 function sanitizeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_\-\s]/g, "").replace(/\s+/g, "-").toLowerCase();
+  return name
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .replace(/\s+/g, "-")
+    .toLowerCase();
 }
 
 function parseBibEntries(content: string): Map<string, string> {

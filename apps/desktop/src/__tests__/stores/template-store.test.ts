@@ -35,7 +35,9 @@ describe("useTemplateStore", () => {
       useTemplateStore.getState().setSelectedCategory("academic");
       const { filteredTemplates } = useTemplateStore.getState();
       expect(filteredTemplates.length).toBeGreaterThan(0);
-      expect(filteredTemplates.every((t) => t.category === "academic")).toBe(true);
+      expect(filteredTemplates.every((t) => t.category === "academic")).toBe(
+        true,
+      );
     });
 
     it("clears category filter with null", () => {
@@ -53,7 +55,9 @@ describe("useTemplateStore", () => {
       useTemplateStore.getState().setSelectedCategory("academic");
       const { filteredTemplates } = useTemplateStore.getState();
       expect(filteredTemplates.length).toBeGreaterThan(0);
-      expect(filteredTemplates.every((t) => t.category === "academic")).toBe(true);
+      expect(filteredTemplates.every((t) => t.category === "academic")).toBe(
+        true,
+      );
     });
   });
 });

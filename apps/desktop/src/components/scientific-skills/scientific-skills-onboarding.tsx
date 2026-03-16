@@ -56,7 +56,9 @@ export function ScientificSkillsOnboarding({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const [installResult, setInstallResult] = useState<InstallResult | null>(null);
+  const [installResult, setInstallResult] = useState<InstallResult | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<SkillsStatus | null>(null);
   const [isUninstalling, setIsUninstalling] = useState(false);
@@ -95,7 +97,9 @@ export function ScientificSkillsOnboarding({
     setError(null);
 
     try {
-      const result = await invoke<InstallResult>("install_scientific_skills_global");
+      const result = await invoke<InstallResult>(
+        "install_scientific_skills_global",
+      );
       setInstallResult(result);
       setIsComplete(true);
       localStorage.setItem(STORAGE_KEY, "true");
@@ -111,7 +115,9 @@ export function ScientificSkillsOnboarding({
     try {
       await invoke("uninstall_scientific_skills", { projectPath: null });
       await checkStatus();
-      const gsAfter = await invoke<SkillsStatus>("check_skills_installed", { projectPath: null });
+      const gsAfter = await invoke<SkillsStatus>("check_skills_installed", {
+        projectPath: null,
+      });
       if (!gsAfter.installed) {
         localStorage.removeItem(STORAGE_KEY);
       }
@@ -125,7 +131,12 @@ export function ScientificSkillsOnboarding({
   // ─── Installing / Complete state ───
   if (isInstalling || isComplete) {
     return (
-      <Dialog open onOpenChange={(open) => { if (!open && (isComplete || error)) onClose(); }}>
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open && (isComplete || error)) onClose();
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm">
@@ -138,7 +149,8 @@ export function ScientificSkillsOnboarding({
             </DialogTitle>
             {isComplete && (
               <DialogDescription>
-                {installResult?.skills_installed ?? 0} scientific skills are now available.
+                {installResult?.skills_installed ?? 0} scientific skills are now
+                available.
               </DialogDescription>
             )}
           </DialogHeader>
@@ -152,7 +164,9 @@ export function ScientificSkillsOnboarding({
           {error && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
               <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-              <p className="text-xs leading-relaxed text-muted-foreground">{error}</p>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {error}
+              </p>
             </div>
           )}
 
@@ -161,7 +175,10 @@ export function ScientificSkillsOnboarding({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => { setError(null); setIsInstalling(false); }}
+                onClick={() => {
+                  setError(null);
+                  setIsInstalling(false);
+                }}
                 className="gap-1.5"
               >
                 <RefreshCwIcon className="size-3.5" />
@@ -181,18 +198,24 @@ export function ScientificSkillsOnboarding({
 
   // ─── Browse state — two-column layout ───
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent
         showCloseButton={false}
-        className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none w-[min(56rem,calc(100vw-4rem))] h-[min(36rem,calc(100vh-6rem))]"
+        className="flex h-[min(36rem,calc(100vh-6rem))] w-[min(56rem,calc(100vw-4rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
       >
         {/* Header */}
-        <DialogHeader className="shrink-0 border-b border-border px-6 py-3">
+        <DialogHeader className="shrink-0 border-border border-b px-6 py-3">
           <div className="flex items-center gap-4">
             <div className="min-w-0 flex-1">
               <DialogTitle className="text-sm">Scientific Skills</DialogTitle>
               <DialogDescription className="mt-0.5 text-xs">
-                {totalSkills} AI skills across {categories.length} domains — powered by{" "}
+                {totalSkills} AI skills across {categories.length} domains —
+                powered by{" "}
                 <a
                   href="https://github.com/K-Dense-AI/claude-scientific-skills"
                   target="_blank"
@@ -248,7 +271,7 @@ export function ScientificSkillsOnboarding({
         {/* Body — sidebar + detail */}
         <div className="flex flex-1 overflow-hidden">
           {/* Category sidebar */}
-          <nav className="w-64 shrink-0 overflow-hidden border-r border-border">
+          <nav className="w-64 shrink-0 overflow-hidden border-border border-r">
             <ScrollArea className="h-full">
               <div className="flex flex-col gap-0.5 p-2">
                 {categories.map((cat) => {
@@ -266,8 +289,10 @@ export function ScientificSkillsOnboarding({
                       )}
                     >
                       <Icon className="size-4 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">{cat.name}</span>
-                      <span className="text-xs tabular-nums text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate">
+                        {cat.name}
+                      </span>
+                      <span className="text-muted-foreground text-xs tabular-nums">
                         {cat.skill_count}
                       </span>
                     </button>
@@ -297,11 +322,16 @@ export function ScientificSkillsOnboarding({
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border bg-muted/20 px-6 py-2.5">
-          <p className="font-mono text-muted-foreground/60 text-[11px]">
+        <div className="flex shrink-0 items-center justify-between border-border border-t bg-muted/20 px-6 py-2.5">
+          <p className="font-mono text-[11px] text-muted-foreground/60">
             {isInstalled ? status?.location : "~/.claude/skills/"}
           </p>
-          <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="text-muted-foreground"
+          >
             Close
           </Button>
         </div>
@@ -320,7 +350,9 @@ function CategoryDetail({
   isInstalled: boolean;
 }) {
   const Icon = ICON_MAP[category.icon] || FlaskConicalIcon;
-  const [selectedSkill, setSelectedSkill] = useState<SkillEntryData | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<SkillEntryData | null>(
+    null,
+  );
   const [skillContent, setSkillContent] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -364,8 +396,12 @@ function CategoryDetail({
     return (
       <div>
         <button
-          onClick={() => { setSelectedSkill(null); setSkillContent(null); setFetchError(null); }}
-          className="mb-3 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          onClick={() => {
+            setSelectedSkill(null);
+            setSkillContent(null);
+            setFetchError(null);
+          }}
+          className="mb-3 flex items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground"
         >
           <ChevronLeftIcon className="size-3.5" />
           {category.name}
@@ -386,17 +422,19 @@ function CategoryDetail({
         <Separator className="my-4" />
 
         {loadingContent ? (
-          <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 py-4 text-muted-foreground text-xs">
             <Loader2Icon className="size-3.5 animate-spin" />
             Loading skill content…
           </div>
         ) : fetchError ? (
           <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
             <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-            <p className="text-xs leading-relaxed text-muted-foreground">{fetchError}</p>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {fetchError}
+            </p>
           </div>
         ) : skillContent ? (
-          <div className="whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground/80">
+          <div className="whitespace-pre-wrap rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-foreground/80 text-xs leading-relaxed">
             {skillContent}
           </div>
         ) : null}

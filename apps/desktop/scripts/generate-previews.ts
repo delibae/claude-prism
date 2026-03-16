@@ -104,7 +104,9 @@ async function main() {
 
       if (fs.existsSync(pdfPath)) {
         fs.copyFileSync(pdfPath, path.join(exampleDir, pdfName));
-        const sizeKb = Math.round(fs.statSync(path.join(exampleDir, pdfName)).size / 1024);
+        const sizeKb = Math.round(
+          fs.statSync(path.join(exampleDir, pdfName)).size / 1024,
+        );
         console.log(`OK (${sizeKb} KB)`);
         successCount++;
       } else {
@@ -112,7 +114,8 @@ async function main() {
         failCount++;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message.slice(0, 120) : String(err);
+      const msg =
+        err instanceof Error ? err.message.slice(0, 120) : String(err);
       console.log(`FAIL: ${msg}`);
       failCount++;
     } finally {
@@ -125,7 +128,9 @@ async function main() {
     console.log(
       "Note: Failed templates may require document classes not installed in your TeX distribution.",
     );
-    console.log("The gallery will show CSS fallback thumbnails for those templates.");
+    console.log(
+      "The gallery will show CSS fallback thumbnails for those templates.",
+    );
   }
 }
 

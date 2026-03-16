@@ -33,7 +33,7 @@ describe("Tauri IPC error message extraction", () => {
     // This is what Tauri invoke() rejects with for Rust Err(String)
     const error = "Compilation failed\n\n! Undefined control sequence.";
     expect(extractErrorMessage(error)).toBe(
-      "Compilation failed\n\n! Undefined control sequence."
+      "Compilation failed\n\n! Undefined control sequence.",
     );
   });
 

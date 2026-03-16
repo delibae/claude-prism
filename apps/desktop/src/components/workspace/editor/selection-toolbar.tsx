@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ArrowUpIcon } from "lucide-react";
 
 export interface ToolbarAction {
@@ -94,7 +100,6 @@ export function SelectionToolbar({
           onKeyDown={handleKeyDown}
           placeholder="Enter prompt..."
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          autoFocus
         />
         <button
           aria-label="Send prompt"
@@ -113,12 +118,16 @@ export function SelectionToolbar({
             <button
               key={action.id}
               onClick={() => onAction(action.id)}
-              className="flex items-center gap-2.5 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+              className="flex items-center gap-2.5 px-3 py-1.5 text-left text-foreground text-sm transition-colors hover:bg-muted"
             >
-              <span className="size-4 text-muted-foreground">{action.icon}</span>
+              <span className="size-4 text-muted-foreground">
+                {action.icon}
+              </span>
               {action.label}
               {action.hint && (
-                <span className="ml-auto text-xs text-muted-foreground">{action.hint}</span>
+                <span className="ml-auto text-muted-foreground text-xs">
+                  {action.hint}
+                </span>
               )}
             </button>
           ))}
@@ -127,7 +136,7 @@ export function SelectionToolbar({
 
       {/* Context label */}
       <div className="border-border border-t px-3 py-1.5">
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-muted-foreground text-xs">
           {contextLabel}
         </span>
       </div>

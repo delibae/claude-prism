@@ -32,7 +32,11 @@ import { useTemplateStore } from "@/stores/template-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
-import { getTemplateById, getTemplateSkeleton, BIB_TEMPLATE } from "@/lib/template-registry";
+import {
+  getTemplateById,
+  getTemplateSkeleton,
+  BIB_TEMPLATE,
+} from "@/lib/template-registry";
 import { getTemplatePdfUrl } from "@/lib/template-preview-cache";
 import { getMupdfClient } from "@/lib/mupdf/mupdf-client";
 import { exists, join } from "@/lib/tauri/fs";
@@ -44,8 +48,30 @@ const log = createLogger("template-preview");
 // ─── Helpers ───
 
 function randomProjectName(): string {
-  const adjectives = ["swift", "bright", "calm", "bold", "keen", "warm", "pure", "vast", "deep", "fair"];
-  const nouns = ["paper", "draft", "thesis", "note", "study", "essay", "report", "brief", "folio", "opus"];
+  const adjectives = [
+    "swift",
+    "bright",
+    "calm",
+    "bold",
+    "keen",
+    "warm",
+    "pure",
+    "vast",
+    "deep",
+    "fair",
+  ];
+  const nouns = [
+    "paper",
+    "draft",
+    "thesis",
+    "note",
+    "study",
+    "essay",
+    "report",
+    "brief",
+    "folio",
+    "opus",
+  ];
   const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
   const noun = nouns[Math.floor(Math.random() * nouns.length)];
   const id = Math.random().toString(36).slice(2, 6);
@@ -59,7 +85,9 @@ type ModalStep = "preview" | "details";
 export function TemplatePreview() {
   const previewTemplateId = useTemplateStore((s) => s.previewTemplateId);
   const closePreview = useTemplateStore((s) => s.closePreview);
-  const template = previewTemplateId ? getTemplateById(previewTemplateId) : null;
+  const template = previewTemplateId
+    ? getTemplateById(previewTemplateId)
+    : null;
 
   const [modalStep, setModalStep] = useState<ModalStep>("preview");
 
@@ -103,7 +131,9 @@ export function TemplatePreview() {
         setIsLandscape(false);
         setError(false);
         if (docIdRef.current > 0) {
-          getMupdfClient().closeDocument(docIdRef.current).catch(() => {});
+          getMupdfClient()
+            .closeDocument(docIdRef.current)
+            .catch(() => {});
           docIdRef.current = 0;
         }
       }
@@ -129,7 +159,9 @@ export function TemplatePreview() {
     if (lastProjectFolder) {
       setProjectFolder(lastProjectFolder);
     } else {
-      documentDir().then((dir) => setProjectFolder(dir)).catch(() => {});
+      documentDir()
+        .then((dir) => setProjectFolder(dir))
+        .catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,7 +231,13 @@ export function TemplatePreview() {
 
   // ── Render current page ──
   useEffect(() => {
-    if (docIdRef.current <= 0 || numPages === 0 || !canvasRef.current || !containerRef.current) return;
+    if (
+      docIdRef.current <= 0 ||
+      numPages === 0 ||
+      !canvasRef.current ||
+      !containerRef.current
+    )
+      return;
 
     const pageIndex = currentPage - 1;
     const size = pageSizesRef.current[pageIndex];
@@ -223,18 +261,21 @@ export function TemplatePreview() {
     const dpi = (displayW / size.width) * 72 * dpr;
 
     const client = getMupdfClient();
-    client.drawPage(docIdRef.current, pageIndex, dpi).then((imageData) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = imageData.width;
-      canvas.height = imageData.height;
-      canvas.style.width = `${displayW}px`;
-      canvas.style.height = `${displayH}px`;
-      const ctx = canvas.getContext("2d")!;
-      ctx.putImageData(imageData, 0, 0);
-    }).catch((err) => {
-      log.warn("render error", { error: String(err) });
-    });
+    client
+      .drawPage(docIdRef.current, pageIndex, dpi)
+      .then((imageData) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
+        canvas.style.width = `${displayW}px`;
+        canvas.style.height = `${displayH}px`;
+        const ctx = canvas.getContext("2d")!;
+        ctx.putImageData(imageData, 0, 0);
+      })
+      .catch((err) => {
+        log.warn("render error", { error: String(err) });
+      });
   }, [currentPage, numPages, isLandscape]);
 
   // ── Page navigation ──
@@ -251,8 +292,13 @@ export function TemplatePreview() {
     if (!previewTemplateId || modalStep !== "preview") return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "ArrowLeft") { e.preventDefault(); goToPrevPage(); }
-      else if (e.key === "ArrowRight") { e.preventDefault(); goToNextPage(); }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goToPrevPage();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goToNextPage();
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -275,16 +321,25 @@ export function TemplatePreview() {
           setIsDragOver(false);
           const paths = (event.payload as { paths: string[] }).paths;
           if (paths?.length > 0) {
-            setAttachments((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+            setAttachments((prev) => [
+              ...prev,
+              ...paths.filter((p) => !prev.includes(p)),
+            ]);
           }
         } else if (type === "leave") {
           setIsDragOver(false);
         }
       })
-      .then((fn) => { if (cancelled) fn(); else unlisten = fn; })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
       .catch(() => {});
 
-    return () => { cancelled = true; unlisten?.(); };
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, [modalStep]);
 
   // ── File handlers ──
@@ -292,14 +347,33 @@ export function TemplatePreview() {
     const selected = await open({
       multiple: true,
       title: "Add Reference Files",
-      filters: [{
-        name: "Documents & Images",
-        extensions: ["pdf", "tex", "bib", "txt", "md", "png", "jpg", "jpeg", "gif", "svg", "csv", "tsv", "json"],
-      }],
+      filters: [
+        {
+          name: "Documents & Images",
+          extensions: [
+            "pdf",
+            "tex",
+            "bib",
+            "txt",
+            "md",
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "svg",
+            "csv",
+            "tsv",
+            "json",
+          ],
+        },
+      ],
     });
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
-      setAttachments((prev) => [...prev, ...paths.filter((p) => !prev.includes(p))]);
+      setAttachments((prev) => [
+        ...prev,
+        ...paths.filter((p) => !prev.includes(p)),
+      ]);
     }
   }, []);
 
@@ -308,7 +382,11 @@ export function TemplatePreview() {
   };
 
   const handleChooseFolder = useCallback(async () => {
-    const selected = await open({ directory: true, multiple: false, title: "Choose Location for New Project" });
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose Location for New Project",
+    });
     if (selected) {
       setProjectFolder(selected);
       setLastProjectFolder(selected);
@@ -344,10 +422,13 @@ export function TemplatePreview() {
       }
 
       if (purpose.trim()) {
-        const attachmentNames = attachments.map((p) => p.split("/").pop()).filter(Boolean);
-        const attachmentSection = attachmentNames.length > 0
-          ? `\n### Reference Files\n${attachmentNames.map((n) => `- \`${n}\``).join("\n")}\n\nPlease review them and incorporate relevant information.\n`
-          : "";
+        const attachmentNames = attachments
+          .map((p) => p.split("/").pop())
+          .filter(Boolean);
+        const attachmentSection =
+          attachmentNames.length > 0
+            ? `\n### Reference Files\n${attachmentNames.map((n) => `- \`${n}\``).join("\n")}\n\nPlease review them and incorporate relevant information.\n`
+            : "";
 
         const prompt = [
           `## New ${template.name} Project`,
@@ -375,7 +456,9 @@ export function TemplatePreview() {
       await openProject(projectPath);
 
       if (attachments.length > 0) {
-        await useDocumentStore.getState().importFiles(attachments, "attachments");
+        await useDocumentStore
+          .getState()
+          .importFiles(attachments, "attachments");
       }
 
       // Close modal on success
@@ -392,28 +475,30 @@ export function TemplatePreview() {
   if (!template) return null;
 
   // ── Modal width depends on step ──
-  const modalWidth = modalStep === "preview"
-    ? isLandscape
-      ? "w-[min(72rem,calc(100vw-4rem))]"
-      : "w-[min(48rem,calc(100vw-6rem))]"
-    : "w-[min(32rem,calc(100vw-4rem))]";
+  const modalWidth =
+    modalStep === "preview"
+      ? isLandscape
+        ? "w-[min(72rem,calc(100vw-4rem))]"
+        : "w-[min(48rem,calc(100vw-6rem))]"
+      : "w-[min(32rem,calc(100vw-4rem))]";
 
   return (
     <Dialog open={!!previewTemplateId} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className={`flex max-w-none sm:max-w-none flex-col gap-0 overflow-hidden p-0 transition-[width] duration-300 ${modalWidth} ${modalStep === "preview" ? "h-[70vh]" : "max-h-[80vh]"}`}
+        className={`flex max-w-none flex-col gap-0 overflow-hidden p-0 transition-[width] duration-300 sm:max-w-none ${modalWidth} ${modalStep === "preview" ? "h-[70vh]" : "max-h-[80vh]"}`}
       >
         {modalStep === "preview" ? (
           /* ═══════════════════ PREVIEW STEP ═══════════════════ */
           <>
-            <DialogHeader className="shrink-0 border-b border-border px-6 py-3">
+            <DialogHeader className="shrink-0 border-border border-b px-6 py-3">
               <div className="flex items-center gap-4">
                 <div className="min-w-0 flex-1">
                   <DialogTitle className="text-sm">{template.name}</DialogTitle>
                   <DialogDescription className="mt-0.5 truncate text-xs">
                     {template.description} — {template.documentClass}
-                    {template.packages.length > 0 && ` — ${template.packages.length} packages`}
+                    {template.packages.length > 0 &&
+                      ` — ${template.packages.length} packages`}
                   </DialogDescription>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -431,7 +516,10 @@ export function TemplatePreview() {
 
             <div className="flex flex-1 overflow-hidden">
               <div className="relative flex flex-1 flex-col">
-                <div ref={containerRef} className="flex flex-1 items-center justify-center overflow-hidden bg-muted/30 p-6">
+                <div
+                  ref={containerRef}
+                  className="flex flex-1 items-center justify-center overflow-hidden bg-muted/30 p-6"
+                >
                   {loading && (
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <LoaderIcon className="size-5 animate-spin" />
@@ -452,14 +540,26 @@ export function TemplatePreview() {
                 </div>
 
                 {numPages > 0 && (
-                  <div className="flex shrink-0 items-center justify-center gap-3 border-t border-border bg-background py-2.5">
-                    <Button variant="ghost" size="icon" className="size-7" onClick={goToPrevPage} disabled={currentPage <= 1}>
+                  <div className="flex shrink-0 items-center justify-center gap-3 border-border border-t bg-background py-2.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      onClick={goToPrevPage}
+                      disabled={currentPage <= 1}
+                    >
                       <ChevronLeftIcon className="size-4" />
                     </Button>
-                    <span className="min-w-16 text-center text-xs tabular-nums text-muted-foreground">
+                    <span className="min-w-16 text-center text-muted-foreground text-xs tabular-nums">
                       {numPages > 1 ? `${currentPage} / ${numPages}` : "1 page"}
                     </span>
-                    <Button variant="ghost" size="icon" className="size-7" onClick={goToNextPage} disabled={currentPage >= numPages}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      onClick={goToNextPage}
+                      disabled={currentPage >= numPages}
+                    >
                       <ChevronRightIcon className="size-4" />
                     </Button>
                   </div>
@@ -471,12 +571,12 @@ export function TemplatePreview() {
           /* ═══════════════════ DETAILS STEP ═══════════════════ */
           <>
             {/* Header */}
-            <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-3">
+            <DialogHeader className="shrink-0 border-border/60 border-b px-5 py-3">
               <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-7 rounded-lg shrink-0"
+                  className="size-7 shrink-0 rounded-lg"
                   onClick={() => setModalStep("preview")}
                 >
                   <ArrowLeftIcon className="size-4" />
@@ -496,9 +596,12 @@ export function TemplatePreview() {
                 {/* Purpose — hero element */}
                 <div className="space-y-2">
                   <div>
-                    <label className="font-semibold text-sm">What are you writing?</label>
+                    <span className="font-semibold text-sm">
+                      What are you writing?
+                    </span>
                     <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
-                      Describe your document and Claude will generate tailored content.
+                      Describe your document and Claude will generate tailored
+                      content.
                     </p>
                   </div>
                   <Textarea
@@ -512,7 +615,7 @@ export function TemplatePreview() {
                 </div>
 
                 {/* Collapsible sections */}
-                <div className="rounded-xl border border-border/60 bg-card/30 divide-y divide-border/40 overflow-hidden">
+                <div className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/60 bg-card/30">
                   {/* Reference files */}
                   <div>
                     <button
@@ -522,10 +625,12 @@ export function TemplatePreview() {
                       <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/50">
                         <FileTextIcon className="size-3 text-muted-foreground" />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">Reference files</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium text-sm">
+                          Reference files
+                        </span>
                         {attachments.length > 0 && (
-                          <span className="ml-2 inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">
+                          <span className="ml-2 inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 font-semibold text-[10px] text-primary leading-none">
                             {attachments.length}
                           </span>
                         )}
@@ -535,16 +640,18 @@ export function TemplatePreview() {
                       />
                     </button>
                     {refFilesOpen && (
-                      <div className="px-4 pb-3 space-y-2.5">
+                      <div className="space-y-2.5 px-4 pb-3">
                         {attachments.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {attachments.map((path) => (
                               <div
                                 key={path}
-                                className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 pl-2.5 pr-1.5 py-1 text-xs transition-colors hover:bg-muted/60"
+                                className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 py-1 pr-1.5 pl-2.5 text-xs transition-colors hover:bg-muted/60"
                               >
                                 <PaperclipIcon className="size-3 shrink-0 text-muted-foreground/70" />
-                                <span className="max-w-30 truncate text-foreground/80">{path.split("/").pop()}</span>
+                                <span className="max-w-30 truncate text-foreground/80">
+                                  {path.split("/").pop()}
+                                </span>
                                 <button
                                   onClick={() => handleRemoveAttachment(path)}
                                   className="flex size-4 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
@@ -565,16 +672,20 @@ export function TemplatePreview() {
                           {isDragOver ? (
                             <>
                               <UploadIcon className="size-4 text-primary" />
-                              <span className="text-xs font-medium text-primary">Drop to add</span>
+                              <span className="font-medium text-primary text-xs">
+                                Drop to add
+                              </span>
                             </>
                           ) : (
                             <>
                               <UploadIcon className="size-4 text-muted-foreground/40" />
                               <div className="text-center">
-                                <span className="text-xs text-muted-foreground/70">Drag & drop or </span>
+                                <span className="text-muted-foreground/70 text-xs">
+                                  Drag & drop or{" "}
+                                </span>
                                 <button
                                   onClick={handleAddAttachments}
-                                  className="text-xs font-medium text-foreground/70 underline underline-offset-2 decoration-border hover:text-foreground transition-colors"
+                                  className="font-medium text-foreground/70 text-xs underline decoration-border underline-offset-2 transition-colors hover:text-foreground"
                                 >
                                   browse files
                                 </button>
@@ -595,12 +706,15 @@ export function TemplatePreview() {
                       <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/50">
                         <MapPinIcon className="size-3 text-muted-foreground" />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">Project location</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium text-sm">
+                          Project location
+                        </span>
                       </div>
                       {!locationOpen && projectFolder && projectName.trim() && (
-                        <span className="min-w-0 max-w-35 truncate rounded-md bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-muted-foreground/60">
-                          .../{projectFolder.split("/").pop()}/{projectName.trim()}
+                        <span className="min-w-0 max-w-35 truncate rounded-md bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-muted-foreground/60">
+                          .../{projectFolder.split("/").pop()}/
+                          {projectName.trim()}
                         </span>
                       )}
                       <ChevronDownIcon
@@ -608,7 +722,7 @@ export function TemplatePreview() {
                       />
                     </button>
                     {locationOpen && (
-                      <div className="px-4 pb-3 space-y-2">
+                      <div className="space-y-2 px-4 pb-3">
                         <div className="flex gap-2">
                           <Input
                             placeholder="Project name"
@@ -639,7 +753,7 @@ export function TemplatePreview() {
             </div>
 
             {/* Create button — sticky footer */}
-            <div className="shrink-0 border-t border-border/60 px-5 py-4">
+            <div className="shrink-0 border-border/60 border-t px-5 py-4">
               <Button
                 className="w-full gap-2 rounded-xl font-semibold shadow-sm transition-all hover:shadow-md active:scale-[0.99]"
                 size="lg"

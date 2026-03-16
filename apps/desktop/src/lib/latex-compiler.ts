@@ -16,7 +16,9 @@ export function resolveCompileTarget(
     return { rootId, targetPath: rootEntry.relativePath };
   }
   // Fallback: look for any well-known root tex file
-  const fallback = files.find((f) => f.name === "main.tex" || f.name === "document.tex");
+  const fallback = files.find(
+    (f) => f.name === "main.tex" || f.name === "document.tex",
+  );
   if (fallback) {
     return { rootId: fallback.id, targetPath: fallback.relativePath };
   }
@@ -51,7 +53,9 @@ export async function compileLatex(
   });
 
   const result = new Uint8Array(buffer);
-  log.info(`Compiled ${mainFile} in ${(performance.now() - start).toFixed(0)}ms (${(result.byteLength / 1024).toFixed(0)} KB)`);
+  log.info(
+    `Compiled ${mainFile} in ${(performance.now() - start).toFixed(0)}ms (${(result.byteLength / 1024).toFixed(0)} KB)`,
+  );
   return result;
 }
 
@@ -74,7 +78,8 @@ export async function synctexEdit(
       x,
       y,
     });
-    if (result) log.debug(`SyncTeX: page ${page} → ${result.file}:${result.line}`);
+    if (result)
+      log.debug(`SyncTeX: page ${page} → ${result.file}:${result.line}`);
     return result;
   } catch (err) {
     log.debug("SyncTeX lookup failed", { page, error: String(err) });

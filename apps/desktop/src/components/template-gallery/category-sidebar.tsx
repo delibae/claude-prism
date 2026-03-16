@@ -17,8 +17,6 @@ import {
   type TemplateCategory,
   type TemplateSubcategory,
   CATEGORY_LABELS,
-  SUBCATEGORY_LABELS,
-  CATEGORY_SUBCATEGORIES,
   getCategories,
   getAllTemplates,
   getTemplatesByCategory,
@@ -32,7 +30,7 @@ const CATEGORY_ICONS: Record<TemplateCategory, React.ReactNode> = {
   starter: <SparklesIcon className="size-4" />,
 };
 
-const SUBCATEGORY_ICONS: Record<TemplateSubcategory, React.ReactNode> = {
+const _SUBCATEGORY_ICONS: Record<TemplateSubcategory, React.ReactNode> = {
   papers: <FileTextIcon className="size-3.5" />,
   theses: <GraduationCapIcon className="size-3.5" />,
   presentations: <MonitorIcon className="size-3.5" />,
@@ -63,7 +61,9 @@ export function CategorySidebar() {
       >
         <SparklesIcon className="size-4" />
         <span className="flex-1">All Templates</span>
-        <span className="text-xs tabular-nums text-muted-foreground">{allCount}</span>
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {allCount}
+        </span>
       </button>
 
       <div className="my-1.5 h-px bg-border" />
@@ -84,7 +84,9 @@ export function CategorySidebar() {
           >
             {CATEGORY_ICONS[cat]}
             <span className="flex-1">{CATEGORY_LABELS[cat]}</span>
-            <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {count}
+            </span>
           </button>
         );
       })}

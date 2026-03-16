@@ -75,10 +75,19 @@ const LOGIN_STEPS: StepInfo[] = [
   { id: "complete", label: "Authenticated", status: "pending" },
 ];
 
-const STEP_ORDER_INSTALL = ["downloading", "installing", "verifying", "complete"];
+const STEP_ORDER_INSTALL = [
+  "downloading",
+  "installing",
+  "verifying",
+  "complete",
+];
 const STEP_ORDER_LOGIN = ["opening-browser", "waiting-auth", "complete"];
 
-function advanceSteps(steps: StepInfo[], targetId: string, order: string[]): StepInfo[] {
+function advanceSteps(
+  steps: StepInfo[],
+  targetId: string,
+  order: string[],
+): StepInfo[] {
   const targetIdx = order.indexOf(targetId);
   return steps.map((s) => {
     const thisIdx = order.indexOf(s.id);
@@ -207,14 +216,18 @@ export const useClaudeSetupStore = create<ClaudeSetupState>((set, get) => ({
 
   _advanceInstallStep: (stepId: string) => {
     set((state) => ({
-      installSteps: advanceSteps(state.installSteps, stepId, STEP_ORDER_INSTALL),
+      installSteps: advanceSteps(
+        state.installSteps,
+        stepId,
+        STEP_ORDER_INSTALL,
+      ),
     }));
   },
 
   _failCurrentStep: (error: string) => {
     set((state) => ({
       installSteps: state.installSteps.map((s) =>
-        s.status === "active" ? { ...s, status: "error" as const } : s
+        s.status === "active" ? { ...s, status: "error" as const } : s,
       ),
       error,
     }));
@@ -229,7 +242,7 @@ export const useClaudeSetupStore = create<ClaudeSetupState>((set, get) => ({
   _failCurrentLoginStep: (error: string) => {
     set((state) => ({
       loginSteps: state.loginSteps.map((s) =>
-        s.status === "active" ? { ...s, status: "error" as const } : s
+        s.status === "active" ? { ...s, status: "error" as const } : s,
       ),
       error,
     }));

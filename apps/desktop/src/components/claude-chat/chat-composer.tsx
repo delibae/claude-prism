@@ -1,11 +1,38 @@
-import { type FC, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type FC,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpIcon, SquareIcon, XIcon, FileTextIcon, FileCodeIcon, FileIcon, ImageIcon, FileSpreadsheetIcon, PaperclipIcon, ZapIcon, CheckIcon, ChevronDownIcon, SparklesIcon, RabbitIcon, LayersIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  SquareIcon,
+  XIcon,
+  FileTextIcon,
+  FileCodeIcon,
+  FileIcon,
+  ImageIcon,
+  FileSpreadsheetIcon,
+  PaperclipIcon,
+  ZapIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  SparklesIcon,
+  RabbitIcon,
+  LayersIcon,
+} from "lucide-react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
-import { useClaudeChatStore, offsetToLineCol } from "@/stores/claude-chat-store";
+import {
+  useClaudeChatStore,
+  offsetToLineCol,
+} from "@/stores/claude-chat-store";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
 import { getUniqueTargetName } from "@/lib/tauri/fs";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -19,17 +46,23 @@ const log = createLogger("chat-composer");
 export type { SlashCommand };
 
 interface PinnedContext {
-  label: string;       // @file:line:col-line:col
+  label: string; // @file:line:col-line:col
   filePath: string;
   selectedText: string;
   imageDataUrl?: string; // thumbnail for captured images
 }
 
 function getFileIcon(file: ProjectFile) {
-  if (file.type === "image") return <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />;
-  if (file.type === "pdf") return <FileSpreadsheetIcon className="size-3.5 shrink-0 text-muted-foreground" />;
-  if (file.type === "style") return <FileCodeIcon className="size-3.5 shrink-0 text-muted-foreground" />;
-  if (file.type === "other") return <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />;
+  if (file.type === "image")
+    return <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />;
+  if (file.type === "pdf")
+    return (
+      <FileSpreadsheetIcon className="size-3.5 shrink-0 text-muted-foreground" />
+    );
+  if (file.type === "style")
+    return <FileCodeIcon className="size-3.5 shrink-0 text-muted-foreground" />;
+  if (file.type === "other")
+    return <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />;
   return <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" />;
 }
 
@@ -49,7 +82,10 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const modelButtonRef = useRef<HTMLButtonElement>(null);
-  const [pickerPos, setPickerPos] = useState<{ left: number; bottom: number }>({ left: 0, bottom: 0 });
+  const [pickerPos, setPickerPos] = useState<{ left: number; bottom: number }>({
+    left: 0,
+    bottom: 0,
+  });
 
   // Recalculate popup position when it opens
   useLayoutEffect(() => {
@@ -98,7 +134,9 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     prevTabIdRef.current = activeTabId;
 
     // Restore draft from the new active tab
-    const tab = useClaudeChatStore.getState().tabs.find((t) => t.id === activeTabId);
+    const tab = useClaudeChatStore
+      .getState()
+      .tabs.find((t) => t.id === activeTabId);
     const draft = tab?.draft;
     setInput(draft?.input ?? "");
     setPinnedContexts(draft?.pinnedContexts ?? []);
@@ -121,7 +159,9 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
 
   // Consume pending attachments from external sources (e.g. PDF capture)
   const pendingAttachments = useClaudeChatStore((s) => s.pendingAttachments);
-  const consumePendingAttachments = useClaudeChatStore((s) => s.consumePendingAttachments);
+  const consumePendingAttachments = useClaudeChatStore(
+    (s) => s.consumePendingAttachments,
+  );
 
   // Focus textarea when the drawer opens
   const prevOpenRef = useRef(false);
@@ -161,13 +201,18 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     if (!file?.content) return;
     // Replace any existing selection-based context (keep file contexts)
     setPinnedContexts((prev) => {
-      const filtered = prev.filter((c) => !c.label.includes(":") || c.label.startsWith("@attachments/"));
+      const filtered = prev.filter(
+        (c) => !c.label.includes(":") || c.label.startsWith("@attachments/"),
+      );
       return [
         ...filtered,
         {
           label: currentContextLabel,
           filePath: file.relativePath,
-          selectedText: file.content!.slice(selectionRange.start, selectionRange.end),
+          selectedText: file.content!.slice(
+            selectionRange.start,
+            selectionRange.end,
+          ),
         },
       ];
     });
@@ -181,7 +226,11 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     }
     const q = mentionQuery.toLowerCase();
     const matched = files
-      .filter((f) => f.relativePath.toLowerCase().includes(q) || f.name.toLowerCase().includes(q))
+      .filter(
+        (f) =>
+          f.relativePath.toLowerCase().includes(q) ||
+          f.name.toLowerCase().includes(q),
+      )
       .slice(0, 8);
     setMentionFiles(matched);
     setMentionIndex(0);
@@ -197,35 +246,42 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
       .catch(() => setSlashCommands([]));
   }, [slashQuery !== null, projectRoot]);
 
-  const selectMention = useCallback((file: ProjectFile) => {
-    // Replace @query with empty and pin the file as context
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const cursorPos = textarea.selectionStart;
-    // Find the @ position before cursor
-    const textBefore = input.slice(0, cursorPos);
-    const atIndex = textBefore.lastIndexOf("@");
-    if (atIndex === -1) return;
-    const newInput = input.slice(0, atIndex) + input.slice(cursorPos);
-    setInput(newInput);
-    setMentionQuery(null);
+  const selectMention = useCallback(
+    (file: ProjectFile) => {
+      // Replace @query with empty and pin the file as context
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const cursorPos = textarea.selectionStart;
+      // Find the @ position before cursor
+      const textBefore = input.slice(0, cursorPos);
+      const atIndex = textBefore.lastIndexOf("@");
+      if (atIndex === -1) return;
+      const newInput = input.slice(0, atIndex) + input.slice(cursorPos);
+      setInput(newInput);
+      setMentionQuery(null);
 
-    // Pin the whole file as context
-    const isTextFile = file.type === "tex" || file.type === "bib" || file.type === "style" || file.type === "other";
-    setPinnedContexts((prev) => [
-      ...prev,
-      {
-        label: `@${file.relativePath}`,
-        filePath: file.relativePath,
-        selectedText: isTextFile
-          ? (file.content ?? "")
-          : `[Referenced file: ${file.relativePath} (${file.type} file)]`,
-      },
-    ]);
+      // Pin the whole file as context
+      const isTextFile =
+        file.type === "tex" ||
+        file.type === "bib" ||
+        file.type === "style" ||
+        file.type === "other";
+      setPinnedContexts((prev) => [
+        ...prev,
+        {
+          label: `@${file.relativePath}`,
+          filePath: file.relativePath,
+          selectedText: isTextFile
+            ? (file.content ?? "")
+            : `[Referenced file: ${file.relativePath} (${file.type} file)]`,
+        },
+      ]);
 
-    // Refocus textarea
-    setTimeout(() => textarea.focus(), 0);
-  }, [input]);
+      // Refocus textarea
+      setTimeout(() => textarea.focus(), 0);
+    },
+    [input],
+  );
 
   const selectSlashCommand = useCallback((command: SlashCommand) => {
     // Insert command syntax into input (opcode-style)
@@ -245,14 +301,16 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
         textarea.selectionStart = textarea.selectionEnd = newInput.length;
         // Auto-resize
         textarea.style.height = "auto";
-        textarea.style.height = Math.min(textarea.scrollHeight, 160) + "px";
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
       }
     }, 0);
   }, []);
 
   // Handle file drops — guard against duplicate calls from stale HMR listeners
   const isProcessingDropRef = useRef(false);
-  const handleFileDropRef = useRef<(paths: string[]) => Promise<void>>(async () => {});
+  const handleFileDropRef = useRef<(paths: string[]) => Promise<void>>(
+    async () => {},
+  );
   handleFileDropRef.current = async (paths: string[]) => {
     if (!projectRoot || paths.length === 0) return;
     if (isProcessingDropRef.current) return;
@@ -267,10 +325,16 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
       const newContexts: PinnedContext[] = [];
 
       for (const relativePath of importedPaths) {
-        const imported = storeFiles.find((f) => f.relativePath === relativePath);
+        const imported = storeFiles.find(
+          (f) => f.relativePath === relativePath,
+        );
 
         if (imported) {
-          const isText = imported.type === "tex" || imported.type === "bib" || imported.type === "style" || imported.type === "other";
+          const isText =
+            imported.type === "tex" ||
+            imported.type === "bib" ||
+            imported.type === "style" ||
+            imported.type === "other";
           newContexts.push({
             label: `@${relativePath}`,
             filePath: relativePath,
@@ -292,7 +356,9 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
         setPinnedContexts((prev) => {
           // Deduplicate by label
           const existingLabels = new Set(prev.map((c) => c.label));
-          const unique = newContexts.filter((c) => !existingLabels.has(c.label));
+          const unique = newContexts.filter(
+            (c) => !existingLabels.has(c.label),
+          );
           return [...prev, ...unique];
         });
       }
@@ -348,7 +414,8 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const clipboardFiles = e.clipboardData?.files;
-      if (!clipboardFiles || clipboardFiles.length === 0 || !projectRoot) return;
+      if (!clipboardFiles || clipboardFiles.length === 0 || !projectRoot)
+        return;
 
       // Check if there are actual file items (not just text)
       const fileItems = Array.from(clipboardFiles);
@@ -385,7 +452,9 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
 
           // Determine if it's a text file
           const isText = file.type.startsWith("text/");
-          const content = isText ? await file.text() : `[Attached file: ${uniqueName} (${file.type})]`;
+          const content = isText
+            ? await file.text()
+            : `[Attached file: ${uniqueName} (${file.type})]`;
 
           newContexts.push({
             label: `@${uniqueName}`,
@@ -393,7 +462,10 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
             selectedText: content,
           });
         } catch (err) {
-          log.error("Failed to save pasted file", { fileName, error: String(err) });
+          log.error("Failed to save pasted file", {
+            fileName,
+            error: String(err),
+          });
         }
       }
 
@@ -403,7 +475,9 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
 
         setPinnedContexts((prev) => {
           const existingLabels = new Set(prev.map((c) => c.label));
-          const unique = newContexts.filter((c) => !existingLabels.has(c.label));
+          const unique = newContexts.filter(
+            (c) => !existingLabels.has(c.label),
+          );
           return [...prev, ...unique];
         });
       }
@@ -440,7 +514,9 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     // Send with pinned context override
     if (pinnedContexts.length > 0) {
       const combinedLabel = pinnedContexts.map((c) => c.label).join(", ");
-      const combinedText = pinnedContexts.map((c) => c.selectedText).join("\n\n---\n\n");
+      const combinedText = pinnedContexts
+        .map((c) => c.selectedText)
+        .join("\n\n---\n\n");
       sendPrompt(finalPrompt, {
         label: combinedLabel,
         filePath: pinnedContexts[0].filePath,
@@ -462,7 +538,13 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
       // Slash command picker is open — let the picker handle keyboard events
       // (it uses window.addEventListener for ArrowUp/Down, Enter, Tab, Escape)
       if (slashQuery !== null) {
-        if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Tab" || e.key === "Escape") {
+        if (
+          e.key === "Enter" ||
+          e.key === "ArrowDown" ||
+          e.key === "ArrowUp" ||
+          e.key === "Tab" ||
+          e.key === "Escape"
+        ) {
           e.preventDefault();
           return;
         }
@@ -502,7 +584,16 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
         setPinnedContexts((prev) => prev.slice(0, -1));
       }
     },
-    [handleSend, pinnedContexts, input, mentionQuery, mentionFiles, mentionIndex, selectMention, slashQuery],
+    [
+      handleSend,
+      pinnedContexts,
+      input,
+      mentionQuery,
+      mentionFiles,
+      mentionIndex,
+      selectMention,
+      slashQuery,
+    ],
   );
 
   const handleInput = useCallback(
@@ -539,7 +630,7 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
       // Auto-resize
       const el = e.target;
       el.style.height = "auto";
-      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+      el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     },
     [],
   );
@@ -558,8 +649,10 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
-        modelPickerRef.current && !modelPickerRef.current.contains(target) &&
-        modelButtonRef.current && !modelButtonRef.current.contains(target)
+        modelPickerRef.current &&
+        !modelPickerRef.current.contains(target) &&
+        modelButtonRef.current &&
+        !modelButtonRef.current.contains(target)
       ) {
         setModelPickerOpen(false);
       }
@@ -584,105 +677,149 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
       )}
 
       {/* Model picker popup — portal to body to escape all stacking contexts */}
-      {modelPickerOpen && createPortal(
-        <div
-          ref={modelPickerRef}
-          className="fixed w-64 rounded-lg border border-border bg-background shadow-lg"
-          style={{ left: pickerPos.left, bottom: pickerPos.bottom, zIndex: 9999 }}
-        >
-          {/* Models */}
-          <div className="p-1">
-            <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Model</div>
-            {([
-              { id: "sonnet" as const, name: "Sonnet", desc: "Fast, efficient for most tasks", icon: <ZapIcon className="size-3.5" /> },
-              { id: "opus" as const, name: "Opus", desc: "Most capable, complex reasoning", icon: <SparklesIcon className="size-3.5" /> },
-              { id: "haiku" as const, name: "Haiku", desc: "Fastest, simple tasks", icon: <RabbitIcon className="size-3.5" /> },
-              { id: "opusplan" as const, name: "OpusPlan", desc: "Opus for planning, Sonnet for execution", icon: <LayersIcon className="size-3.5" /> },
-            ]).map((m) => (
-              <button
-                key={m.id}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors",
-                  selectedModel === m.id ? "bg-accent text-accent-foreground" : "hover:bg-muted",
-                )}
-                onClick={() => setSelectedModel(m.id)}
-              >
-                {m.icon}
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-xs">{m.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{m.desc}</div>
-                </div>
-                {selectedModel === m.id && <CheckIcon className="size-3 shrink-0" />}
-              </button>
-            ))}
-          </div>
-
-          <div className="border-t border-border" />
-
-          {/* Effort level */}
-          <div className="p-2">
-            <div className="flex items-center justify-between px-1 mb-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Effort</span>
-              <span className="text-xs text-muted-foreground">
-                {effortLevel === "low" ? "Low" : effortLevel === "medium" ? "Medium" : "High"}
-              </span>
-            </div>
-            <div className="flex gap-1">
-              {(["low", "medium", "high"] as const).map((level) => (
+      {modelPickerOpen &&
+        createPortal(
+          <div
+            ref={modelPickerRef}
+            className="fixed w-64 rounded-lg border border-border bg-background shadow-lg"
+            style={{
+              left: pickerPos.left,
+              bottom: pickerPos.bottom,
+              zIndex: 9999,
+            }}
+          >
+            {/* Models */}
+            <div className="p-1">
+              <div className="px-2 py-1 font-medium text-muted-foreground text-xs">
+                Model
+              </div>
+              {[
+                {
+                  id: "sonnet" as const,
+                  name: "Sonnet",
+                  desc: "Fast, efficient for most tasks",
+                  icon: <ZapIcon className="size-3.5" />,
+                },
+                {
+                  id: "opus" as const,
+                  name: "Opus",
+                  desc: "Most capable, complex reasoning",
+                  icon: <SparklesIcon className="size-3.5" />,
+                },
+                {
+                  id: "haiku" as const,
+                  name: "Haiku",
+                  desc: "Fastest, simple tasks",
+                  icon: <RabbitIcon className="size-3.5" />,
+                },
+                {
+                  id: "opusplan" as const,
+                  name: "OpusPlan",
+                  desc: "Opus for planning, Sonnet for execution",
+                  icon: <LayersIcon className="size-3.5" />,
+                },
+              ].map((m) => (
                 <button
-                  key={level}
+                  key={m.id}
                   className={cn(
-                    "flex-1 rounded-md py-1 text-center text-xs font-medium transition-colors",
-                    effortLevel === level
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80",
+                    "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors",
+                    selectedModel === m.id
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-muted",
                   )}
-                  onClick={() => setEffortLevel(level)}
+                  onClick={() => setSelectedModel(m.id)}
                 >
-                  {level === "low" ? "L" : level === "medium" ? "M" : "H"}
+                  {m.icon}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-xs">{m.name}</div>
+                    <div className="truncate text-muted-foreground text-xs">
+                      {m.desc}
+                    </div>
+                  </div>
+                  {selectedModel === m.id && (
+                    <CheckIcon className="size-3 shrink-0" />
+                  )}
                 </button>
               ))}
             </div>
-          </div>
 
-        </div>,
-        document.body,
-      )}
+            <div className="border-border border-t" />
+
+            {/* Effort level */}
+            <div className="p-2">
+              <div className="mb-1.5 flex items-center justify-between px-1">
+                <span className="font-medium text-muted-foreground text-xs">
+                  Effort
+                </span>
+                <span className="text-muted-foreground text-xs">
+                  {effortLevel === "low"
+                    ? "Low"
+                    : effortLevel === "medium"
+                      ? "Medium"
+                      : "High"}
+                </span>
+              </div>
+              <div className="flex gap-1">
+                {(["low", "medium", "high"] as const).map((level) => (
+                  <button
+                    key={level}
+                    className={cn(
+                      "flex-1 rounded-md py-1 text-center font-medium text-xs transition-colors",
+                      effortLevel === level
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80",
+                    )}
+                    onClick={() => setEffortLevel(level)}
+                  >
+                    {level === "low" ? "L" : level === "medium" ? "M" : "H"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* @ mention dropdown */}
-      {slashQuery === null && mentionQuery !== null && mentionFiles.length > 0 && (
-        <div
-          ref={mentionRef}
-          className="absolute bottom-full left-3 right-3 mb-1 max-h-48 overflow-y-auto rounded-lg border border-border bg-background shadow-lg"
-        >
-          {mentionFiles.map((file, i) => {
-            const parts = file.relativePath.split("/");
-            const fileName = parts.pop()!;
-            const dirPath = parts.length > 0 ? parts.join("/") + "/" : "";
-            return (
-              <button
-                key={file.id}
-                data-active={i === mentionIndex}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors",
-                  i === mentionIndex ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-                )}
-                onMouseDown={(e) => {
-                  e.preventDefault(); // prevent textarea blur
-                  selectMention(file);
-                }}
-                onMouseEnter={() => setMentionIndex(i)}
-              >
-                {getFileIcon(file)}
-                <span className="truncate font-mono text-sm">{fileName}</span>
-                {dirPath && (
-                  <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{dirPath}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {slashQuery === null &&
+        mentionQuery !== null &&
+        mentionFiles.length > 0 && (
+          <div
+            ref={mentionRef}
+            className="absolute right-3 bottom-full left-3 mb-1 max-h-48 overflow-y-auto rounded-lg border border-border bg-background shadow-lg"
+          >
+            {mentionFiles.map((file, i) => {
+              const parts = file.relativePath.split("/");
+              const fileName = parts.pop()!;
+              const dirPath = parts.length > 0 ? `${parts.join("/")}/` : "";
+              return (
+                <button
+                  key={file.id}
+                  data-active={i === mentionIndex}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors",
+                    i === mentionIndex
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-muted",
+                  )}
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // prevent textarea blur
+                    selectMention(file);
+                  }}
+                  onMouseEnter={() => setMentionIndex(i)}
+                >
+                  {getFileIcon(file)}
+                  <span className="truncate font-mono text-sm">{fileName}</span>
+                  {dirPath && (
+                    <span className="ml-auto shrink-0 font-mono text-muted-foreground text-xs">
+                      {dirPath}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
       <div
         className={cn(
@@ -706,7 +843,11 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
                   />
                   <button
                     aria-label="Remove attachment"
-                    onClick={() => setPinnedContexts((prev) => prev.filter((_, idx) => idx !== i))}
+                    onClick={() =>
+                      setPinnedContexts((prev) =>
+                        prev.filter((_, idx) => idx !== i),
+                      )
+                    }
                     className="absolute top-0.5 right-0.5 rounded-full bg-background/80 p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
                   >
                     <XIcon className="size-3" />
@@ -715,12 +856,16 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
               ) : (
                 <span
                   key={`${ctx.label}-${i}`}
-                  className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground"
+                  className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-mono text-muted-foreground text-xs"
                 >
                   {ctx.label}
                   <button
                     aria-label="Remove context"
-                    onClick={() => setPinnedContexts((prev) => prev.filter((_, idx) => idx !== i))}
+                    onClick={() =>
+                      setPinnedContexts((prev) =>
+                        prev.filter((_, idx) => idx !== i),
+                      )
+                    }
                     className="ml-0.5 rounded-sm p-0.5 transition-colors hover:bg-muted-foreground/20"
                   >
                     <XIcon className="size-3" />
@@ -732,7 +877,7 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
         )}
 
         {isDragOver ? (
-          <div className="flex min-h-10 items-center justify-center px-4 py-3 text-sm text-muted-foreground">
+          <div className="flex min-h-10 items-center justify-center px-4 py-3 text-muted-foreground text-sm">
             <PaperclipIcon className="mr-2 size-4" />
             Drop files to attach
           </div>
@@ -756,13 +901,23 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
               ref={modelButtonRef}
               type="button"
               onClick={() => setModelPickerOpen((v) => !v)}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground text-xs transition-colors hover:bg-muted hover:text-foreground"
             >
               <span>
-                {selectedModel === "sonnet" ? "Sonnet" : selectedModel === "opus" ? "Opus" : selectedModel === "haiku" ? "Haiku" : "OpusPlan"}
+                {selectedModel === "sonnet"
+                  ? "Sonnet"
+                  : selectedModel === "opus"
+                    ? "Opus"
+                    : selectedModel === "haiku"
+                      ? "Haiku"
+                      : "OpusPlan"}
               </span>
               <span className="text-muted-foreground/60">
-                {effortLevel === "low" ? "L" : effortLevel === "medium" ? "M" : "H"}
+                {effortLevel === "low"
+                  ? "L"
+                  : effortLevel === "medium"
+                    ? "M"
+                    : "H"}
               </span>
               <ChevronDownIcon className="size-3" />
             </button>

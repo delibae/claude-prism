@@ -123,7 +123,8 @@ export const useUvSetupStore = create<UvSetupState>((set, get) => ({
       set({
         isInstalling: false,
         status: "error",
-        error: "uv installation failed. Check your internet connection and try again.",
+        error:
+          "uv installation failed. Check your internet connection and try again.",
       });
     }
   },

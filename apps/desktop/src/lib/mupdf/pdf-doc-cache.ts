@@ -19,7 +19,9 @@ function computeFingerprint(data: Uint8Array): string {
   if (len < 16) return `${len}:${Array.from(data).join(",")}`;
   // Sample: length + first 8 bytes + middle 8 bytes + last 8 bytes
   const first = Array.from(data.subarray(0, 8));
-  const mid = Array.from(data.subarray(Math.floor(len / 2) - 4, Math.floor(len / 2) + 4));
+  const mid = Array.from(
+    data.subarray(Math.floor(len / 2) - 4, Math.floor(len / 2) + 4),
+  );
   const last = Array.from(data.subarray(len - 8));
   return `${len}:${first.join(",")}|${mid.join(",")}|${last.join(",")}`;
 }
@@ -39,7 +41,9 @@ async function evictOldest(): Promise<void> {
     const entry = cache.get(oldestKey)!;
     cache.delete(oldestKey);
     log.debug(`Evicted doc ${entry.docId} (cache size was ${cache.size + 1})`);
-    await getMupdfClient().closeDocument(entry.docId).catch(() => {});
+    await getMupdfClient()
+      .closeDocument(entry.docId)
+      .catch(() => {});
   }
 }
 
@@ -68,7 +72,9 @@ export function getCachedDocument(data: Uint8Array): DocCacheResult | null {
  * Returns the docId and pageSizes. If the same PDF bytes were already open,
  * reuses the existing document (cache hit).
  */
-export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResult> {
+export async function getOrOpenDocument(
+  data: Uint8Array,
+): Promise<DocCacheResult> {
   // Reuse synchronous lookup to avoid duplicating fingerprint + cache logic
   const hit = getCachedDocument(data);
   if (hit) return hit;
@@ -77,7 +83,9 @@ export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResul
   await evictOldest();
   const fingerprint = computeFingerprint(data);
 
-  log.debug(`Cache miss, opening document (${(data.byteLength / 1024).toFixed(0)} KB)`);
+  log.debug(
+    `Cache miss, opening document (${(data.byteLength / 1024).toFixed(0)} KB)`,
+  );
   const client = getMupdfClient();
   // Always copy — the original buffer may not be transferable (e.g., from Tauri),
   // and transfer detaches the ArrayBuffer which would corrupt the pdfCache reference.
@@ -94,7 +102,9 @@ export async function getOrOpenDocument(data: Uint8Array): Promise<DocCacheResul
     lastAccess: Date.now(),
   });
 
-  log.info(`Opened doc ${docId}: ${pageSizes.length} pages, cache size=${cache.size}`);
+  log.info(
+    `Opened doc ${docId}: ${pageSizes.length} pages, cache size=${cache.size}`,
+  );
   return { docId, pageSizes, cacheHit: false };
 }
 
@@ -103,7 +113,9 @@ export function invalidateDoc(docId: number): void {
   for (const [key, entry] of cache) {
     if (entry.docId === docId) {
       cache.delete(key);
-      getMupdfClient().closeDocument(docId).catch(() => {});
+      getMupdfClient()
+        .closeDocument(docId)
+        .catch(() => {});
       return;
     }
   }
@@ -113,8 +125,8 @@ export function invalidateDoc(docId: number): void {
 export async function clearDocCache(): Promise<void> {
   const count = cache.size;
   const client = getMupdfClient();
-  const closePromises = [...cache.values()].map(
-    (entry) => client.closeDocument(entry.docId).catch(() => {}),
+  const closePromises = [...cache.values()].map((entry) =>
+    client.closeDocument(entry.docId).catch(() => {}),
   );
   cache.clear();
   await Promise.all(closePromises);

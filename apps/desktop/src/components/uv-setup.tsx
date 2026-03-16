@@ -86,7 +86,7 @@ export function UvSetupDialog({ open, onClose }: UvSetupDialogProps) {
           {/* uv status */}
           <div className="flex items-center gap-3 rounded-lg border p-3">
             <StatusIcon status={status} isInstalling={isInstalling} />
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="font-medium text-sm">
                 {status === "checking"
                   ? "Checking uv..."
@@ -97,12 +97,12 @@ export function UvSetupDialog({ open, onClose }: UvSetupDialogProps) {
                       : "Error"}
               </div>
               {version && (
-                <div className="text-muted-foreground text-xs truncate">
+                <div className="truncate text-muted-foreground text-xs">
                   {version}
                 </div>
               )}
               {error && (
-                <div className="text-destructive text-xs mt-1">{error}</div>
+                <div className="mt-1 text-destructive text-xs">{error}</div>
               )}
             </div>
             {status === "not-installed" && !isInstalling && (
@@ -127,23 +127,33 @@ export function UvSetupDialog({ open, onClose }: UvSetupDialogProps) {
                   "flex size-8 items-center justify-center rounded-full",
                   venvReady
                     ? "bg-accent text-accent-foreground"
-                    : "bg-muted text-muted-foreground"
+                    : "bg-muted text-muted-foreground",
                 )}
               >
                 <FolderIcon className="size-4" />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="font-medium text-sm">
-                  {venvReady ? "Virtual Environment Active" : "No Virtual Environment"}
+                  {venvReady
+                    ? "Virtual Environment Active"
+                    : "No Virtual Environment"}
                 </div>
                 {venvPath && (
-                  <div className="text-muted-foreground text-xs truncate" title={venvPath}>
+                  <div
+                    className="truncate text-muted-foreground text-xs"
+                    title={venvPath}
+                  >
                     {venvPath}
                   </div>
                 )}
                 {pythonPath && (
-                  <div className="text-muted-foreground text-xs truncate" title={pythonPath}>
-                    Python: {pythonPath.split("/").pop() || pythonPath.split("\\").pop()}
+                  <div
+                    className="truncate text-muted-foreground text-xs"
+                    title={pythonPath}
+                  >
+                    Python:{" "}
+                    {pythonPath.split("/").pop() ||
+                      pythonPath.split("\\").pop()}
                   </div>
                 )}
               </div>
@@ -159,8 +169,9 @@ export function UvSetupDialog({ open, onClose }: UvSetupDialogProps) {
           {status === "ready" && venvReady && (
             <p className="text-muted-foreground text-xs leading-relaxed">
               Claude Code will automatically use this environment when running
-              Python code. Use <code className="text-foreground">uv pip install</code> to
-              add packages.
+              Python code. Use{" "}
+              <code className="text-foreground">uv pip install</code> to add
+              packages.
             </p>
           )}
         </div>

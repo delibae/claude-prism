@@ -53,7 +53,7 @@ export function TemplateGallery() {
   return (
     <div className="flex h-full flex-col">
       {/* Search bar */}
-      <div className="shrink-0 border-b border-border px-4 py-3">
+      <div className="shrink-0 border-border border-b px-4 py-3">
         <div className="relative mx-auto max-w-xl">
           <SearchIcon className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -61,7 +61,7 @@ export function TemplateGallery() {
             placeholder="Search templates...  ⌘K"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
+            className="pr-8 pl-9"
           />
           {searchQuery && (
             <button
@@ -77,7 +77,7 @@ export function TemplateGallery() {
       {/* Main content: sidebar + grid */}
       <div className="flex flex-1 overflow-hidden">
         {/* Category sidebar */}
-        <div className="shrink-0 border-r border-border pl-3 pt-2">
+        <div className="shrink-0 border-border border-r pt-2 pl-3">
           <CategorySidebar />
         </div>
 
@@ -86,8 +86,10 @@ export function TemplateGallery() {
           {filteredTemplates.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <SearchIcon className="mb-3 size-8 text-muted-foreground/40" />
-              <p className="font-medium text-sm text-muted-foreground">No templates found</p>
-              <p className="mt-1 text-xs text-muted-foreground/70">
+              <p className="font-medium text-muted-foreground text-sm">
+                No templates found
+              </p>
+              <p className="mt-1 text-muted-foreground/70 text-xs">
                 Try a different search term or category
               </p>
             </div>
@@ -95,7 +97,9 @@ export function TemplateGallery() {
             <GroupedGrid />
           ) : (
             <>
-              <h2 className="mb-4 font-medium text-sm text-muted-foreground">{heading}</h2>
+              <h2 className="mb-4 font-medium text-muted-foreground text-sm">
+                {heading}
+              </h2>
               <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
                 {filteredTemplates.map((t) => (
                   <TemplateCard key={t.id} template={t} />
@@ -118,7 +122,12 @@ function GroupedGrid() {
   const filteredTemplates = useTemplateStore((s) => s.filteredTemplates);
 
   // Group by category preserving order
-  const categories: TemplateCategory[] = ["academic", "professional", "creative", "starter"];
+  const categories: TemplateCategory[] = [
+    "academic",
+    "professional",
+    "creative",
+    "starter",
+  ];
   const groups = categories
     .map((cat) => ({
       category: cat,

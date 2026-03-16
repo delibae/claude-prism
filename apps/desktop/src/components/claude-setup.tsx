@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   DownloadIcon,
@@ -16,7 +16,10 @@ import {
 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/button";
-import { useClaudeSetupStore, type StepInfo } from "@/stores/claude-setup-store";
+import {
+  useClaudeSetupStore,
+  type StepInfo,
+} from "@/stores/claude-setup-store";
 import { cn } from "@/lib/utils";
 
 // ─── Event Hooks ───
@@ -34,7 +37,9 @@ function useInstallEvents() {
     const timer = setTimeout(() => {
       if (cancelled) return;
       const store = useClaudeSetupStore.getState();
-      const downloadStep = store.installSteps.find((s) => s.id === "downloading");
+      const downloadStep = store.installSteps.find(
+        (s) => s.id === "downloading",
+      );
       if (downloadStep?.status === "active") {
         store._advanceInstallStep("installing");
       }
@@ -52,7 +57,11 @@ function useInstallEvents() {
         if (lower.includes("setting up") || lower.includes("installing")) {
           store._advanceInstallStep("installing");
         }
-        if (lower.includes("complete") || lower.includes("successfully") || line.includes("✅")) {
+        if (
+          lower.includes("complete") ||
+          lower.includes("successfully") ||
+          line.includes("✅")
+        ) {
           store._advanceInstallStep("verifying");
         }
       });
@@ -62,11 +71,14 @@ function useInstallEvents() {
         useClaudeSetupStore.getState()._appendInstallLog(event.payload);
       });
 
-      const unlistenComplete = await listen<boolean>("install-complete", (event) => {
-        if (cancelled) return;
-        clearTimeout(timer);
-        useClaudeSetupStore.getState()._finishInstall(event.payload);
-      });
+      const unlistenComplete = await listen<boolean>(
+        "install-complete",
+        (event) => {
+          if (cancelled) return;
+          clearTimeout(timer);
+          useClaudeSetupStore.getState()._finishInstall(event.payload);
+        },
+      );
 
       if (cancelled) {
         unlistenOutput();
@@ -102,7 +114,7 @@ function useLoginEvents() {
     }, 1500);
 
     (async () => {
-      const unlistenOutput = await listen<string>("login-output", (event) => {
+      const unlistenOutput = await listen<string>("login-output", (_event) => {
         if (cancelled) return;
         // Any output means browser is open, advance to waiting
         useClaudeSetupStore.getState()._advanceLoginStep("waiting-auth");
@@ -112,11 +124,14 @@ function useLoginEvents() {
         // ignore stderr for login
       });
 
-      const unlistenComplete = await listen<boolean>("login-complete", (event) => {
-        if (cancelled) return;
-        clearTimeout(timer);
-        useClaudeSetupStore.getState()._finishLogin(event.payload);
-      });
+      const unlistenComplete = await listen<boolean>(
+        "login-complete",
+        (event) => {
+          if (cancelled) return;
+          clearTimeout(timer);
+          useClaudeSetupStore.getState()._finishLogin(event.payload);
+        },
+      );
 
       if (cancelled) {
         unlistenOutput();
@@ -159,7 +174,7 @@ function StepRow({ step }: { step: StepInfo }) {
           step.status === "complete" && "text-green-600",
           step.status === "active" && "font-medium text-foreground",
           step.status === "pending" && "text-muted-foreground/60",
-          step.status === "error" && "text-destructive"
+          step.status === "error" && "text-destructive",
         )}
       >
         {step.label}
@@ -184,12 +199,12 @@ function InstallLogOutput() {
     <div className="mt-1">
       <button
         onClick={toggle}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="flex items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground"
       >
         <ChevronRightIcon
           className={cn(
             "size-3 transition-transform duration-200",
-            visible && "rotate-90"
+            visible && "rotate-90",
           )}
         />
         {visible ? "Hide logs" : "Show logs"}
@@ -200,12 +215,12 @@ function InstallLogOutput() {
       <div
         className={cn(
           "overflow-hidden transition-[max-height] duration-300 ease-in-out",
-          visible ? "max-h-40" : "max-h-0"
+          visible ? "max-h-40" : "max-h-0",
         )}
       >
         <div
           ref={scrollRef}
-          className="mt-2 max-h-36 overflow-y-auto rounded-md border border-border bg-foreground/3 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
+          className="mt-2 max-h-36 overflow-y-auto rounded-md border border-border bg-foreground/3 p-3 font-mono text-[11px] text-muted-foreground leading-relaxed"
         >
           {logs.length === 0 ? (
             <span className="italic">Waiting for output...</span>
@@ -244,7 +259,7 @@ export function ClaudeSetup() {
     return (
       <div className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-muted/30 px-5 py-4">
         <LoaderIcon className="size-4 animate-spin text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground text-sm">
           Checking Claude Code...
         </span>
       </div>
@@ -256,8 +271,8 @@ export function ClaudeSetup() {
       <div className="flex w-full items-center gap-3 rounded-xl border border-border bg-muted/30 px-5 py-4">
         <CheckCircle2Icon className="size-5 shrink-0 text-green-600" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">Claude Code Ready</p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="font-medium text-sm">Claude Code Ready</p>
+          <p className="truncate text-muted-foreground text-xs">
             {[version, accountEmail].filter(Boolean).join(" · ")}
           </p>
         </div>
@@ -271,7 +286,7 @@ export function ClaudeSetup() {
       <div className="flex w-full flex-col gap-3 rounded-xl border border-border bg-muted/30 px-5 py-4">
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-5 shrink-0 text-muted-foreground" />
-          <p className="text-sm font-medium">Installing Claude Code</p>
+          <p className="font-medium text-sm">Installing Claude Code</p>
         </div>
 
         <div className="space-y-0 pl-1">
@@ -291,7 +306,7 @@ export function ClaudeSetup() {
       <div className="flex w-full flex-col gap-3 rounded-xl border border-border bg-muted/30 px-5 py-4">
         <div className="flex items-center gap-2">
           <LogInIcon className="size-5 shrink-0 text-muted-foreground" />
-          <p className="text-sm font-medium">Signing in to Claude</p>
+          <p className="font-medium text-sm">Signing in to Claude</p>
         </div>
 
         <div className="space-y-0 pl-1">
@@ -314,7 +329,7 @@ export function ClaudeSetup() {
       <div className="flex w-full flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
         <div className="flex items-center gap-2">
           <AlertCircleIcon className="size-5 shrink-0 text-destructive" />
-          <p className="text-sm font-medium">
+          <p className="font-medium text-sm">
             {hasInstallSteps ? "Installation Failed" : "Setup Error"}
           </p>
         </div>
@@ -328,7 +343,7 @@ export function ClaudeSetup() {
         )}
 
         {error && (
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-muted-foreground text-xs leading-relaxed">
             {error}
           </p>
         )}
@@ -354,10 +369,10 @@ export function ClaudeSetup() {
         <div className="flex items-center gap-2">
           <GitBranchIcon className="size-5 shrink-0 text-amber-600" />
           <div>
-            <p className="text-sm font-medium">Git for Windows Required</p>
-            <p className="text-xs text-muted-foreground">
-              Claude Code needs Git for Windows (git-bash) to work.
-              Please install it first, then click "I've installed Git".
+            <p className="font-medium text-sm">Git for Windows Required</p>
+            <p className="text-muted-foreground text-xs">
+              Claude Code needs Git for Windows (git-bash) to work. Please
+              install it first, then click "I've installed Git".
             </p>
           </div>
         </div>
@@ -391,17 +406,13 @@ export function ClaudeSetup() {
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-5 shrink-0 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">Claude Code Required</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="font-medium text-sm">Claude Code Required</p>
+            <p className="text-muted-foreground text-xs">
               ClaudePrism needs Claude Code CLI to power AI features.
             </p>
           </div>
         </div>
-        <Button
-          size="sm"
-          className="w-full gap-2"
-          onClick={install}
-        >
+        <Button size="sm" className="w-full gap-2" onClick={install}>
           <DownloadIcon className="size-3.5" />
           Install Claude Code
         </Button>
@@ -418,22 +429,18 @@ export function ClaudeSetup() {
         <div className="flex items-center gap-2">
           <LogInIcon className="size-5 shrink-0 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">Sign in to Claude</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="font-medium text-sm">Sign in to Claude</p>
+            <p className="text-muted-foreground text-xs">
               Authenticate with your Anthropic account to continue.
             </p>
           </div>
         </div>
         {version && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             Claude Code {version} installed
           </p>
         )}
-        <Button
-          size="sm"
-          className="w-full gap-2"
-          onClick={login}
-        >
+        <Button size="sm" className="w-full gap-2" onClick={login}>
           <LogInIcon className="size-3.5" />
           Sign in with Browser
         </Button>

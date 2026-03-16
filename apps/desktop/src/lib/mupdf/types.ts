@@ -29,7 +29,13 @@ export interface StructuredTextLine {
   x: number;
   y: number;
   text: string;
-  font: { name: string; family: string; size: number; weight: string; style: string };
+  font: {
+    name: string;
+    family: string;
+    size: number;
+    weight: string;
+    style: string;
+  };
 }
 
 export interface StructuredTextBlock {

@@ -44,7 +44,9 @@ export function DebugPage() {
 
   // Fetch system info once
   useEffect(() => {
-    invoke<SystemInfo>("get_system_info").then(setSystemInfo).catch(() => {});
+    invoke<SystemInfo>("get_system_info")
+      .then(setSystemInfo)
+      .catch(() => {});
   }, []);
 
   // Auto-scroll logs only if already scrolled to bottom.
@@ -55,7 +57,8 @@ export function DebugPage() {
     const container = logContainerRef.current;
     if (!container) return;
     // Check before new content is painted
-    const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const gap =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
     wasAtBottomRef.current = gap < 40;
   }); // runs every render, before paint
 
@@ -87,7 +90,11 @@ export function DebugPage() {
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
-    return d.toLocaleTimeString("en-US", { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    return (
+      d.toLocaleTimeString("en-US", { hour12: false }) +
+      "." +
+      String(d.getMilliseconds()).padStart(3, "0")
+    );
   };
 
   return (
@@ -96,14 +103,18 @@ export function DebugPage() {
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <BugIcon className="size-4" />
-          <h1 className="text-sm font-semibold">Debug</h1>
+          <h1 className="font-semibold text-sm">Debug</h1>
         </div>
         <button
           type="button"
           onClick={handleCopyReport}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground text-xs hover:bg-primary/90"
         >
-          {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+          {copied ? (
+            <CheckIcon className="size-3.5" />
+          ) : (
+            <CopyIcon className="size-3.5" />
+          )}
           {copied ? "Copied!" : "Copy Bug Report"}
         </button>
       </div>
@@ -115,7 +126,7 @@ export function DebugPage() {
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`px-3 py-1.5 text-xs font-medium capitalize border-b-2 transition-colors ${
+            className={`border-b-2 px-3 py-1.5 font-medium text-xs capitalize transition-colors ${
               tab === t
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -133,7 +144,9 @@ export function DebugPage() {
             <div className="flex gap-2">
               <select
                 value={levelFilter}
-                onChange={(e) => setLevelFilter(e.target.value as LogLevel | "all")}
+                onChange={(e) =>
+                  setLevelFilter(e.target.value as LogLevel | "all")
+                }
                 className="rounded border bg-background px-2 py-1 text-xs"
               >
                 <option value="all">All levels</option>
@@ -149,7 +162,9 @@ export function DebugPage() {
               >
                 <option value="">All sources</option>
                 {sources.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
               <input
@@ -169,18 +184,31 @@ export function DebugPage() {
               </button>
             </div>
 
-            <div ref={logContainerRef} className="flex-1 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px]">
+            <div
+              ref={logContainerRef}
+              className="flex-1 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px]"
+            >
               {filteredEntries.length === 0 && (
-                <p className="text-muted-foreground text-center py-4">No log entries</p>
+                <p className="py-4 text-center text-muted-foreground">
+                  No log entries
+                </p>
               )}
               {filteredEntries.map((entry, i) => (
                 <div key={i} className="flex gap-2 py-0.5 hover:bg-muted/50">
-                  <span className="text-muted-foreground shrink-0">{formatTime(entry.timestamp)}</span>
-                  <span className={`shrink-0 w-10 uppercase font-semibold ${LEVEL_COLORS[entry.level]}`}>
+                  <span className="shrink-0 text-muted-foreground">
+                    {formatTime(entry.timestamp)}
+                  </span>
+                  <span
+                    className={`w-10 shrink-0 font-semibold uppercase ${LEVEL_COLORS[entry.level]}`}
+                  >
                     {entry.level}
                   </span>
-                  <span className="text-muted-foreground shrink-0">[{entry.source}]</span>
-                  <span className="text-foreground break-all">{entry.message}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    [{entry.source}]
+                  </span>
+                  <span className="break-all text-foreground">
+                    {entry.message}
+                  </span>
                 </div>
               ))}
               <div ref={logEndRef} />
@@ -194,7 +222,9 @@ export function DebugPage() {
 
         {tab === "system" && (
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase text-muted-foreground">System Information</h3>
+            <h3 className="font-semibold text-muted-foreground text-xs uppercase">
+              System Information
+            </h3>
             {systemInfo ? (
               <div className="space-y-1 text-sm">
                 <Row label="OS" value={systemInfo.os} />
@@ -203,13 +233,18 @@ export function DebugPage() {
                 <Row label="App Version" value={systemInfo.app_version} />
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Loading...</p>
+              <p className="text-muted-foreground text-sm">Loading...</p>
             )}
 
-            <h3 className="text-xs font-semibold uppercase text-muted-foreground pt-4">Browser / WebView</h3>
+            <h3 className="pt-4 font-semibold text-muted-foreground text-xs uppercase">
+              Browser / WebView
+            </h3>
             <div className="space-y-1 text-sm">
               <Row label="User Agent" value={navigator.userAgent} />
-              <Row label="Device Pixel Ratio" value={String(window.devicePixelRatio)} />
+              <Row
+                label="Device Pixel Ratio"
+                value={String(window.devicePixelRatio)}
+              />
               <Row label="GPU Renderer" value={getGpuRenderer()} />
             </div>
           </div>
@@ -217,22 +252,35 @@ export function DebugPage() {
 
         {tab === "visibility" && (
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase text-muted-foreground">Visibility State</h3>
+            <h3 className="font-semibold text-muted-foreground text-xs uppercase">
+              Visibility State
+            </h3>
             <div className="space-y-1 text-sm">
               <Row
                 label="Current State"
                 value={document.visibilityState}
-                valueClass={document.visibilityState === "visible" ? "text-green-500" : "text-yellow-500"}
+                valueClass={
+                  document.visibilityState === "visible"
+                    ? "text-green-500"
+                    : "text-yellow-500"
+                }
               />
-              <Row label="Window Focused" value={document.hasFocus() ? "Yes" : "No"} />
+              <Row
+                label="Window Focused"
+                value={document.hasFocus() ? "Yes" : "No"}
+              />
               <Row label="Restore Events" value={String(visibilityCount)} />
             </div>
 
-            <h3 className="text-xs font-semibold uppercase text-muted-foreground pt-4">Recent Visibility Logs</h3>
-            <div className="overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px] max-h-48">
+            <h3 className="pt-4 font-semibold text-muted-foreground text-xs uppercase">
+              Recent Visibility Logs
+            </h3>
+            <div className="max-h-48 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px]">
               {getVisibilityLogs().map((entry, i) => (
                 <div key={i} className="py-0.5">
-                  <span className="text-muted-foreground">{formatTime(entry.timestamp)}</span>{" "}
+                  <span className="text-muted-foreground">
+                    {formatTime(entry.timestamp)}
+                  </span>{" "}
                   <span>{entry.message}</span>
                 </div>
               ))}
@@ -244,10 +292,18 @@ export function DebugPage() {
   );
 }
 
-function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+function Row({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
   return (
     <div className="flex gap-2">
-      <span className="text-muted-foreground shrink-0 w-32">{label}:</span>
+      <span className="w-32 shrink-0 text-muted-foreground">{label}:</span>
       <span className={`break-all ${valueClass ?? ""}`}>{value}</span>
     </div>
   );

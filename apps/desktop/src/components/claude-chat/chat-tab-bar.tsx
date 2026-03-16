@@ -14,8 +14,14 @@ export function ChatTabBar() {
 
   // Scroll active tab into view when it changes
   useEffect(() => {
-    const el = scrollRef.current?.querySelector(`[data-tab-id="${activeTabId}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    const el = scrollRef.current?.querySelector(
+      `[data-tab-id="${activeTabId}"]`,
+    );
+    el?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
   }, [activeTabId]);
 
   // Keyboard shortcuts: Ctrl+Tab / Ctrl+Shift+Tab to switch tabs, Ctrl+T new, Ctrl+W close
@@ -72,10 +78,10 @@ export function ChatTabBar() {
   );
 
   return (
-    <div className="flex items-center border-b border-border">
+    <div className="flex items-center border-border border-b">
       <div
         ref={scrollRef}
-        className="flex min-w-0 flex-1 items-center overflow-x-auto scrollbar-none"
+        className="scrollbar-none flex min-w-0 flex-1 items-center overflow-x-auto"
       >
         {tabs.map((tab) => (
           <TabButton

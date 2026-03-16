@@ -5,12 +5,14 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", ".wrangler/**", "dist/**", "src-tauri/target/**"],
-      "env": [
-        "LATEX_API_URL",
-        "KV_REST_API_URL",
-        "KV_REST_API_TOKEN"
-      ]
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        ".wrangler/**",
+        "dist/**",
+        "src-tauri/target/**"
+      ],
+      "env": ["LATEX_API_URL", "KV_REST_API_URL", "KV_REST_API_TOKEN"]
     },
     "test": {
       "dependsOn": ["^build"],

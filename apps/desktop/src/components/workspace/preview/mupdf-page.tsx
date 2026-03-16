@@ -57,21 +57,27 @@ export const MupdfPage = memo(function MupdfPage({
     const dpr = window.devicePixelRatio || 1;
     const dpi = scale * 72 * dpr;
 
-    client.drawPage(docId, pageIndex, dpi).then(async (imageData) => {
-      if (gen !== renderGenRef.current) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = imageData.width;
-      canvas.height = imageData.height;
-      const bitmap = await createImageBitmap(imageData);
-      if (gen !== renderGenRef.current) { bitmap.close(); return; }
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(bitmap, 0, 0);
-      bitmap.close();
-    }).catch((err) => {
-      if (gen !== renderGenRef.current) return;
-      log.error(`Render error page ${pageIndex}`, { error: String(err) });
-    });
+    client
+      .drawPage(docId, pageIndex, dpi)
+      .then(async (imageData) => {
+        if (gen !== renderGenRef.current) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
+        const bitmap = await createImageBitmap(imageData);
+        if (gen !== renderGenRef.current) {
+          bitmap.close();
+          return;
+        }
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
+      })
+      .catch((err) => {
+        if (gen !== renderGenRef.current) return;
+        log.error(`Render error page ${pageIndex}`, { error: String(err) });
+      });
   }, [docId, pageIndex, scale, isVisible]);
 
   // Initial render and re-render on dependency changes
@@ -83,15 +89,21 @@ export const MupdfPage = memo(function MupdfPage({
     const client = getMupdfClient();
     const gen = renderGenRef.current;
 
-    client.getPageText(docId, pageIndex).then((data) => {
-      if (gen !== renderGenRef.current) return;
-      setTextData(data);
-    }).catch(() => {});
+    client
+      .getPageText(docId, pageIndex)
+      .then((data) => {
+        if (gen !== renderGenRef.current) return;
+        setTextData(data);
+      })
+      .catch(() => {});
 
-    client.getPageLinks(docId, pageIndex).then((data) => {
-      if (gen !== renderGenRef.current) return;
-      setLinks(data);
-    }).catch(() => {});
+    client
+      .getPageLinks(docId, pageIndex)
+      .then((data) => {
+        if (gen !== renderGenRef.current) return;
+        setLinks(data);
+      })
+      .catch(() => {});
   }, [docId, pageIndex, scale, isVisible, renderPage]);
 
   // Re-render canvas when returning from background if content was lost
@@ -100,13 +112,19 @@ export const MupdfPage = memo(function MupdfPage({
       const canvas = canvasRef.current;
       if (!canvas || !isVisible || docId <= 0) return;
       if (isCanvasBlank(canvas)) {
-        log.warn(`Canvas blank after visibility restore, re-rendering page ${pageIndex}`);
+        log.warn(
+          `Canvas blank after visibility restore, re-rendering page ${pageIndex}`,
+        );
         renderPage();
       }
     };
 
     window.addEventListener(APP_VISIBILITY_RESTORED, handleVisibilityRestored);
-    return () => window.removeEventListener(APP_VISIBILITY_RESTORED, handleVisibilityRestored);
+    return () =>
+      window.removeEventListener(
+        APP_VISIBILITY_RESTORED,
+        handleVisibilityRestored,
+      );
   }, [docId, pageIndex, scale, isVisible, renderPage]);
 
   return (
@@ -128,21 +146,22 @@ export const MupdfPage = memo(function MupdfPage({
           preserveAspectRatio="none"
           style={{ width: cssW, height: cssH }}
         >
-          {textData.blocks.map((block, bi) =>
-            block.type === "text" &&
-            block.lines.map((line, li) => (
-              <text
-                key={`${bi}-${li}`}
-                x={line.bbox.x}
-                y={line.y}
-                fontSize={line.font.size}
-                fontFamily={line.font.family || line.font.name || "serif"}
-                textLength={line.bbox.w > 0 ? line.bbox.w : undefined}
-                lengthAdjust="spacingAndGlyphs"
-              >
-                {line.text}
-              </text>
-            )),
+          {textData.blocks.map(
+            (block, bi) =>
+              block.type === "text" &&
+              block.lines.map((line, li) => (
+                <text
+                  key={`${bi}-${li}`}
+                  x={line.bbox.x}
+                  y={line.y}
+                  fontSize={line.font.size}
+                  fontFamily={line.font.family || line.font.name || "serif"}
+                  textLength={line.bbox.w > 0 ? line.bbox.w : undefined}
+                  lengthAdjust="spacingAndGlyphs"
+                >
+                  {line.text}
+                </text>
+              )),
           )}
         </svg>
       )}
@@ -156,12 +175,14 @@ export const MupdfPage = memo(function MupdfPage({
               href={link.href}
               data-external={link.isExternal ? "true" : undefined}
               style={{
-                left: (link.x / pageWidth) * 100 + "%",
-                top: (link.y / pageHeight) * 100 + "%",
-                width: (link.w / pageWidth) * 100 + "%",
-                height: (link.h / pageHeight) * 100 + "%",
+                left: `${(link.x / pageWidth) * 100}%`,
+                top: `${(link.y / pageHeight) * 100}%`,
+                width: `${(link.w / pageWidth) * 100}%`,
+                height: `${(link.h / pageHeight) * 100}%`,
               }}
-            />
+            >
+              <span className="sr-only">Link</span>
+            </a>
           ))}
         </div>
       )}

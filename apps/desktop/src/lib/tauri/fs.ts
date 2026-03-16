@@ -16,7 +16,13 @@ import { createLogger } from "@/lib/debug/logger";
 
 const log = createLogger("fs");
 
-export type ProjectFileType = "tex" | "image" | "pdf" | "bib" | "style" | "other";
+export type ProjectFileType =
+  | "tex"
+  | "image"
+  | "pdf"
+  | "bib"
+  | "style"
+  | "other";
 
 export interface FsProjectFile {
   relativePath: string;
@@ -135,9 +141,7 @@ export interface ScanResult {
   folders: string[]; // relative paths of all directories
 }
 
-export async function scanProjectFolder(
-  rootPath: string,
-): Promise<ScanResult> {
+export async function scanProjectFolder(rootPath: string): Promise<ScanResult> {
   const files: FsProjectFile[] = [];
   const folders: string[] = [];
 
@@ -164,7 +168,9 @@ export async function scanProjectFolder(
             try {
               const info = await stat(entryPath);
               fileSize = info.size;
-            } catch { /* stat failed — treat as 0 */ }
+            } catch {
+              /* stat failed — treat as 0 */
+            }
           }
           files.push({
             relativePath,
@@ -230,7 +236,10 @@ export async function createFileOnDisk(
 ): Promise<string> {
   const fullPath = await join(rootPath, name);
   // Ensure parent directory exists
-  const lastSep = Math.max(fullPath.lastIndexOf("/"), fullPath.lastIndexOf("\\"));
+  const lastSep = Math.max(
+    fullPath.lastIndexOf("/"),
+    fullPath.lastIndexOf("\\"),
+  );
   const parentDir = lastSep > 0 ? fullPath.substring(0, lastSep) : "";
   if (parentDir && !(await exists(parentDir))) {
     await mkdir(parentDir, { recursive: true });
@@ -275,7 +284,10 @@ export async function copyFileToProject(
   const uniqueName = await getUniqueTargetName(rootPath, targetName);
   const fullPath = await join(rootPath, uniqueName);
   // Ensure parent directory exists (e.g., attachments/)
-  const lastSlash = Math.max(fullPath.lastIndexOf("/"), fullPath.lastIndexOf("\\"));
+  const lastSlash = Math.max(
+    fullPath.lastIndexOf("/"),
+    fullPath.lastIndexOf("\\"),
+  );
   if (lastSlash > 0) {
     const parentDir = fullPath.substring(0, lastSlash);
     if (!(await exists(parentDir))) {
@@ -291,7 +303,9 @@ export async function deleteFileFromDisk(absolutePath: string): Promise<void> {
   await remove(absolutePath);
 }
 
-export async function deleteFolderFromDisk(absolutePath: string): Promise<void> {
+export async function deleteFolderFromDisk(
+  absolutePath: string,
+): Promise<void> {
   log.debug(`Deleting folder: ${absolutePath}`);
   await remove(absolutePath, { recursive: true });
 }

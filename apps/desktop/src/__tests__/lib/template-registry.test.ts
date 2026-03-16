@@ -67,7 +67,12 @@ describe("template-registry", () => {
     });
 
     it("returns templates for each category", () => {
-      for (const cat of ["academic", "professional", "creative", "starter"] as const) {
+      for (const cat of [
+        "academic",
+        "professional",
+        "creative",
+        "starter",
+      ] as const) {
         expect(getTemplatesByCategory(cat).length).toBeGreaterThan(0);
       }
     });

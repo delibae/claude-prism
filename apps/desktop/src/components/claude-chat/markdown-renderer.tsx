@@ -21,15 +21,43 @@ import { useDocumentStore } from "@/stores/document-store";
 // ─── Shell Detection ───
 
 const SHELL_LANGUAGES = new Set([
-  "bash", "sh", "shell", "zsh", "fish", "terminal", "console",
+  "bash",
+  "sh",
+  "shell",
+  "zsh",
+  "fish",
+  "terminal",
+  "console",
 ]);
 
 function looksLikeShellCommand(code: string): boolean {
-  const firstLine = code.trim().split("\n")[0].replace(/^[\$#]\s*/, "").trim();
+  const firstLine = code
+    .trim()
+    .split("\n")[0]
+    .replace(/^[$#]\s*/, "")
+    .trim();
   const prefixes = [
-    "wget", "curl", "tlmgr", "apt", "brew", "npm", "pip", "sudo",
-    "mkdir", "cd ", "cp ", "mv ", "rm ", "git ", "make", "tar ", "unzip",
-    "latexmk", "pdflatex", "xelatex", "bibtex",
+    "wget",
+    "curl",
+    "tlmgr",
+    "apt",
+    "brew",
+    "npm",
+    "pip",
+    "sudo",
+    "mkdir",
+    "cd ",
+    "cp ",
+    "mv ",
+    "rm ",
+    "git ",
+    "make",
+    "tar ",
+    "unzip",
+    "latexmk",
+    "pdflatex",
+    "xelatex",
+    "bibtex",
   ];
   return prefixes.some((p) => firstLine.startsWith(p));
 }
@@ -64,7 +92,8 @@ export const MarkdownRenderer: FC<MarkdownRendererProps> = ({
           const match = /language-(\w+)/.exec(codeClassName || "");
           const language = match?.[1];
           const code = String(children).replace(/\n$/, "");
-          const isBlock = node?.position &&
+          const isBlock =
+            node?.position &&
             node.position.start.line !== node.position.end.line;
 
           if (!match && !isBlock) {
@@ -138,9 +167,12 @@ const CodeBlock: FC<{ language: string; code: string }> = ({
         stderr: result.stderr,
       });
       // Refresh file tree to pick up any new/deleted files
-      useDocumentStore.getState().refreshFiles().catch((err) => {
-        console.error("Failed to refresh files:", err);
-      });
+      useDocumentStore
+        .getState()
+        .refreshFiles()
+        .catch((err) => {
+          console.error("Failed to refresh files:", err);
+        });
     } catch (err: any) {
       setRunState({ status: "error", message: err?.message || String(err) });
     }
@@ -186,7 +218,10 @@ const CodeBlock: FC<{ language: string; code: string }> = ({
           <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">
             <AlertTriangleIcon className="size-3.5 text-yellow-500" />
             <span className="text-xs">
-              Run in <code className="rounded bg-muted px-1 text-xs">{projectRoot?.split("/").pop()}/</code>
+              Run in{" "}
+              <code className="rounded bg-muted px-1 text-xs">
+                {projectRoot?.split("/").pop()}/
+              </code>
             </span>
           </div>
           <div className="flex gap-2">
@@ -213,7 +248,9 @@ const CodeBlock: FC<{ language: string; code: string }> = ({
       {runState.status === "running" && (
         <div className="mt-1 flex items-center gap-2 rounded-lg border border-border bg-[#1e1e2e] px-3 py-2 text-sm">
           <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
-          <span className="font-mono text-muted-foreground text-xs">Running...</span>
+          <span className="font-mono text-muted-foreground text-xs">
+            Running...
+          </span>
         </div>
       )}
 
@@ -246,9 +283,9 @@ const CommandOutput: FC<{
 }> = ({ exitCode, stdout, stderr }) => {
   const [expanded, setExpanded] = useState(true);
   const success = exitCode === 0;
-  const output = (stdout + (stderr ? "\n" + stderr : "")).trim();
+  const output = (stdout + (stderr ? `\n${stderr}` : "")).trim();
   const truncated =
-    output.length > 2000 ? output.slice(0, 2000) + "\n..." : output;
+    output.length > 2000 ? `${output.slice(0, 2000)}\n...` : output;
 
   return (
     <div className="mt-1 rounded-lg border border-border bg-[#1e1e2e] text-sm">
@@ -276,8 +313,8 @@ const CommandOutput: FC<{
         </span>
       </button>
       {expanded && truncated && (
-        <div className="max-h-40 overflow-auto border-t border-border/50 px-3 py-2">
-          <pre className="whitespace-pre-wrap font-mono text-xs text-gray-300">
+        <div className="max-h-40 overflow-auto border-border/50 border-t px-3 py-2">
+          <pre className="whitespace-pre-wrap font-mono text-gray-300 text-xs">
             {truncated}
           </pre>
         </div>

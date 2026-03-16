@@ -43,12 +43,16 @@ describe("useProjectStore", () => {
 
     it("extracts name from path correctly", () => {
       useProjectStore.getState().addRecentProject("/a/b/c/deep-folder");
-      expect(useProjectStore.getState().recentProjects[0].name).toBe("deep-folder");
+      expect(useProjectStore.getState().recentProjects[0].name).toBe(
+        "deep-folder",
+      );
     });
 
     it("uses full path as name if no segments", () => {
       useProjectStore.getState().addRecentProject("standalone");
-      expect(useProjectStore.getState().recentProjects[0].name).toBe("standalone");
+      expect(useProjectStore.getState().recentProjects[0].name).toBe(
+        "standalone",
+      );
     });
   });
 
