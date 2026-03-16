@@ -98,12 +98,12 @@ jobs:
         shell: bash
         run: |
           BUNDLE="apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
-          NSIS_SIG=$(find "$BUNDLE/nsis" -name '*.nsis.zip.sig' 2>/dev/null | head -1)
-          NSIS_ZIP=$(find "$BUNDLE/nsis" -name '*.nsis.zip' ! -name '*.sig' 2>/dev/null | head -1)
+          NSIS_SIG=$(find "$BUNDLE/nsis" -name '*-setup.exe.sig' 2>/dev/null | head -1)
+          NSIS_EXE=$(find "$BUNDLE/nsis" -name '*-setup.exe' ! -name '*.sig' 2>/dev/null | head -1)
 
-          if [ -n "$NSIS_SIG" ] && [ -n "$NSIS_ZIP" ]; then
+          if [ -n "$NSIS_SIG" ] && [ -n "$NSIS_EXE" ]; then
             echo "sig=$(cat "$NSIS_SIG")" >> $GITHUB_OUTPUT
-            echo "url=$(basename "$NSIS_ZIP")" >> $GITHUB_OUTPUT
+            echo "url=$(basename "$NSIS_EXE")" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload build artifacts
@@ -113,7 +113,6 @@ jobs:
           path: |
             apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.exe
             apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.msi
-            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.nsis.zip
             apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.sig
           if-no-files-found: warn
 
@@ -391,7 +390,7 @@ jobs:
           # Upload all platform artifacts
           find artifacts -type f \( \
             -name "*.dmg" -o -name "*.app.tar.gz" -o \
-            -name "*.exe" -o -name "*.msi" -o -name "*.nsis.zip" -o \
+            -name "*.exe" -o -name "*.msi" -o \
             -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \
           \) | while read -r file; do
             echo "Uploading: $file"
