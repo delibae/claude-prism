@@ -33,6 +33,9 @@ tsconfig.tsbuildinfo
 # Rust
 Cargo.lock
 
+# Tauri auto-generated schemas
+apps/desktop/src-tauri/gen/schemas/
+
 # Debug
 npm-debug.log*
 yarn-debug.log*

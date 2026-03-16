@@ -16,11 +16,14 @@ import {
   FlaskConicalIcon,
   DownloadIcon,
   Loader2Icon,
+  RefreshCwIcon,
+  ArrowUpCircleIcon,
 } from "lucide-react";
 import { useProjectStore } from "@/stores/project-store";
 import { useDocumentStore } from "@/stores/document-store";
 import { useClaudeSetupStore } from "@/stores/claude-setup-store";
 import { useUvSetupStore } from "@/stores/uv-setup-store";
+import { useUpdater } from "@/hooks/use-updater";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,6 +40,7 @@ export function ProjectPicker() {
   const [showModeDialog, setShowModeDialog] = useState(false);
   const [wizardMode, setWizardMode] = useState<CreationMode | null>(null);
   const [appVersion, setAppVersion] = useState("");
+  const { status: updateStatus, checkForUpdate, installUpdate } = useUpdater();
 
   const recentProjects = useProjectStore((s) => s.recentProjects);
   const addRecentProject = useProjectStore((s) => s.addRecentProject);
@@ -89,9 +93,12 @@ export function ProjectPicker() {
         <div className="flex flex-col items-center gap-2">
           <img src="/icon-192.png" alt="ClaudePrism" className="size-16" />
           <h1 className="font-bold text-2xl">ClaudePrism</h1>
-          {appVersion && (
-            <span className="text-xs text-muted-foreground">v{appVersion}</span>
-          )}
+          <VersionBadge
+            version={appVersion}
+            updateStatus={updateStatus}
+            onCheck={checkForUpdate}
+            onInstall={installUpdate}
+          />
           <p className="text-center text-muted-foreground text-sm">
             AI-powered academic writing workspace
           </p>
@@ -383,4 +390,110 @@ function StatusRow({
       )}
     </div>
   );
+}
+
+// ─── Version Badge with Update Status ───
+
+function VersionBadge({
+  version,
+  updateStatus,
+  onCheck,
+  onInstall,
+}: {
+  version: string;
+  updateStatus: import("@/hooks/use-updater").UpdateStatus;
+  onCheck: () => void;
+  onInstall: () => void;
+}) {
+  if (!version) return null;
+
+  switch (updateStatus.state) {
+    case "available":
+      return (
+        <button
+          onClick={onInstall}
+          className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
+        >
+          <ArrowUpCircleIcon className="size-3.5" />
+          v{updateStatus.version} available — click to update
+        </button>
+      );
+
+    case "downloading":
+      return (
+        <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3.5 animate-spin" />
+          Downloading... {updateStatus.percent}%
+        </div>
+      );
+
+    case "installing":
+      return (
+        <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3.5 animate-spin" />
+          Installing...
+        </div>
+      );
+
+    case "ready":
+      return (
+        <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-3 py-1 text-xs text-green-600">
+          <CheckCircle2Icon className="size-3.5" />
+          Update complete — restarting...
+        </div>
+      );
+
+    case "checking":
+      return (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3 animate-spin" />
+          v{version} — checking for updates...
+        </div>
+      );
+
+    case "error":
+      return (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span>v{version}</span>
+          <span className="mx-0.5">·</span>
+          <button
+            onClick={onCheck}
+            className="flex items-center gap-1 transition-colors hover:text-foreground"
+          >
+            <RefreshCwIcon className="size-3" />
+            Retry
+          </button>
+        </div>
+      );
+
+    case "up-to-date":
+      return (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span>v{version}</span>
+          <span className="mx-0.5">·</span>
+          <button
+            onClick={onCheck}
+            className="flex items-center gap-1 transition-colors hover:text-foreground"
+          >
+            <CheckCircle2Icon className="size-3 text-green-500" />
+            Up to date
+          </button>
+        </div>
+      );
+
+    default:
+      return (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span>v{version}</span>
+          <span className="mx-0.5">·</span>
+          <button
+            onClick={onCheck}
+            className="flex items-center gap-1 transition-colors hover:text-foreground"
+          >
+            <RefreshCwIcon className="size-3" />
+            Check for updates
+          </button>
+        </div>
+      );
+  }
 }

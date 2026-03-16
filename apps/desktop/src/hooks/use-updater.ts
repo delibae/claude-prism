@@ -1,80 +1,80 @@
-import { useEffect, useRef } from "react";
-import { check } from "@tauri-apps/plugin-updater";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { toast } from "sonner";
 
-const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const INITIAL_DELAY_MS = 5_000; // 5 seconds after mount
+export type UpdateStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "up-to-date" }
+  | { state: "available"; version: string; notes?: string }
+  | { state: "downloading"; percent: number }
+  | { state: "installing" }
+  | { state: "ready" }
+  | { state: "error"; message: string };
 
 export function useUpdater() {
-  const checking = useRef(false);
+  const [status, setStatus] = useState<UpdateStatus>({ state: "idle" });
+  const updateRef = useRef<Update | null>(null);
 
-  useEffect(() => {
-    async function checkForUpdate() {
-      if (checking.current) return;
-      checking.current = true;
-
-      try {
-        const update = await check();
-        if (!update) return;
-
-        toast(`Update available: v${update.version}`, {
-          description: update.body || "A new version is ready to install.",
-          duration: Infinity,
-          action: {
-            label: "Update",
-            onClick: () => installUpdate(update),
-          },
-        });
-      } catch (err) {
-        console.error("Update check failed:", err);
-      } finally {
-        checking.current = false;
+  const checkForUpdate = useCallback(async () => {
+    setStatus({ state: "checking" });
+    try {
+      const update = await check();
+      if (!update) {
+        setStatus({ state: "up-to-date" });
+        return;
       }
+      updateRef.current = update;
+      setStatus({
+        state: "available",
+        version: update.version,
+        notes: update.body ?? undefined,
+      });
+    } catch (err) {
+      setStatus({ state: "error", message: String(err) });
     }
-
-    const initialTimer = setTimeout(checkForUpdate, INITIAL_DELAY_MS);
-    const interval = setInterval(checkForUpdate, CHECK_INTERVAL_MS);
-
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
-    };
   }, []);
-}
 
-async function installUpdate(update: Awaited<ReturnType<typeof check>>) {
-  if (!update) return;
+  const installUpdate = useCallback(async () => {
+    const update = updateRef.current;
+    if (!update) return;
 
-  const toastId = toast.loading("Downloading update...", {
-    duration: Infinity,
-  });
+    try {
+      let downloaded = 0;
+      let contentLength = 0;
 
-  try {
-    let downloaded = 0;
-    let contentLength = 0;
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            contentLength = event.data.contentLength ?? 0;
+            setStatus({ state: "downloading", percent: 0 });
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            if (contentLength > 0) {
+              setStatus({
+                state: "downloading",
+                percent: Math.round((downloaded / contentLength) * 100),
+              });
+            }
+            break;
+          case "Finished":
+            setStatus({ state: "installing" });
+            break;
+        }
+      });
 
-    await update.downloadAndInstall((event) => {
-      switch (event.event) {
-        case "Started":
-          contentLength = event.data.contentLength ?? 0;
-          break;
-        case "Progress":
-          downloaded += event.data.chunkLength;
-          if (contentLength > 0) {
-            const pct = Math.round((downloaded / contentLength) * 100);
-            toast.loading(`Downloading update... ${pct}%`, { id: toastId });
-          }
-          break;
-        case "Finished":
-          toast.loading("Installing...", { id: toastId });
-          break;
-      }
-    });
+      setStatus({ state: "ready" });
+      setTimeout(() => relaunch(), 1500);
+    } catch (err) {
+      setStatus({ state: "error", message: String(err) });
+    }
+  }, []);
 
-    toast.success("Update complete. Restarting...", { id: toastId, duration: 2000 });
-    setTimeout(() => relaunch(), 2000);
-  } catch (err) {
-    toast.error(`Update failed: ${err}`, { id: toastId, duration: 5000 });
-  }
+  // Auto-check on mount
+  useEffect(() => {
+    checkForUpdate();
+  }, [checkForUpdate]);
+
+  return { status, checkForUpdate, installUpdate };
 }
