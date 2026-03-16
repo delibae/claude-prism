@@ -17,10 +17,12 @@
     "build:desktop": "pnpm --filter=@claude-prism/desktop tauri build",
     "lint": "pnpm exec biome check",
     "lint:fix": "pnpm exec biome check --fix",
-    "release": "echo 'To release: git tag v<version> && git push origin v<version>'"
+    "release": "echo 'To release: git tag v<version> && git push origin v<version>'",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.13",
+    "husky": "^9.1.7",
     "turbo": "^2.7.6"
   },
   "packageManager": "pnpm@10.28.2",

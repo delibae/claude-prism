@@ -136,15 +136,25 @@ pnpm lint:fix      # auto-fix
 
 Rust code follows standard `rustfmt` conventions.
 
+### Pre-commit Hook
+
+A [Husky](https://typicode.github.io/husky/) pre-commit hook runs automatically on every commit. It checks and auto-fixes staged files via `biome check --staged --write`, so lint issues are caught before they reach the repository.
+
+The hook is set up automatically when you run `pnpm install`.
+
+### CI
+
+A GitHub Actions workflow runs `biome ci` on every pull request and push to `main`. PRs that fail lint checks cannot be merged.
+
 ## Pull Request Process
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)
 3. Make your changes
 4. Run tests: `pnpm test` (frontend) and `cargo test` (Rust)
-5. Run `pnpm lint` to ensure code quality
-6. Commit with a descriptive message
-7. Push to your fork and open a PR
+5. Commit — the pre-commit hook will auto-fix lint issues on staged files
+6. Push to your fork and open a PR
+7. CI will verify lint and tests pass
 
 ### Commit Convention
 
