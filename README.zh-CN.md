@@ -32,9 +32,9 @@
 
 ## 为什么选择 ClaudePrism？
 
-[OpenAI Prism](https://openai.com/prism/) 是一个面向科学家的云端 LaTeX 工作区 — 免费、强大，但**您未发表的研究存储在 OpenAI 的服务器上**。专家们对知识产权暴露及 OpenAI 是否可能主张研究数据权利表示担忧。默认情况下，内容可能被用于训练未来的模型，除非您选择退出。
+[OpenAI Prism](https://openai.com/prism/) 是一个云端 LaTeX 工作区 — 使用它需要将所有文件和数据上传到 OpenAI 的服务器。
 
-ClaudePrism 采用不同的方式：**一切都在您的本地机器上运行。**
+ClaudePrism 采用不同的方式：**您的文件留在您的机器上。**
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
@@ -45,28 +45,13 @@ ClaudePrism 采用不同的方式：**一切都在您的本地机器上运行。
 | 科学技能 | — | **100+ 领域技能（生物信息学、化学信息学、ML 等）** |
 | 快速开始 | 需要注册账户 | **安装即用 — 模板库 + 项目向导** |
 | 版本控制 | — | **基于 Git 的历史记录，支持标签和差异对比** |
-| 数据隐私 | 云存储，[可选择退出](https://help.openai.com/en/articles/8983082-how-do-i-turn-off-model-training-to-stop-openai-training-models-on-my-conversations) | **本地执行，[可选择退出](https://code.claude.com/docs/en/data-usage)** |
 | 源代码 | 专有 | **开源（MIT）** |
 
 ### 您的研究，您的机器
 
-ClaudePrism 将 **Claude Code** 作为本地子进程调用。您的文档保存在磁盘上 — 仅提示词被发送到 Claude API 进行推理。
+文档保存在本地磁盘上。ClaudePrism 将 **Claude Code** 作为本地子进程运行 — 您的文件不会被上传或远程存储。
 
-**两者在数据方面的对比：**
-
-| | OpenAI Prism | ClaudePrism（通过 Claude Code） |
-|---|---|---|
-| 文档存储位置 | OpenAI 云服务器 | **仅在您的本地磁盘** |
-| 模型训练退出 | [可用](https://help.openai.com/en/articles/8983082-how-do-i-turn-off-model-training-to-stop-openai-training-models-on-my-conversations)（设置 > 数据控制） | [可用](https://claude.ai/settings/data-privacy-controls)（隐私设置或 API 密钥） |
-| **退出后的数据暴露** | **文档仍保留在 OpenAI 服务器上** | **没有任何数据离开您的机器** |
-| **反馈陷阱** | **点赞/点踩会将整个对话发送用于训练** | **无此机制** |
-| 默认训练策略 | 开启（个人账户） | 开启（消费者），**关闭**（API 密钥 / 团队 / 企业） |
-| 数据保留 | 退出后约 30 天 | 30 天（退出）/ 5 年（加入） |
-| 零数据保留 | 不可用 | 企业版可用 |
-| 遥测 | 无法禁用 | `DISABLE_TELEMETRY=1` 完全禁用 |
-| 源代码 | 专有 | 开源 — [自行审计](https://github.com/delibae/claude-prism) |
-
-> **两个工具都允许退出模型训练。** 关键区别在于您的文档存储在哪里。使用 Prism，您未发表的研究存在于 OpenAI 的服务器上，无论训练设置如何。使用 ClaudePrism，文件永远不会离开您的机器 — 仅提示词被发送用于 AI 推理。
+> **注意：** 两种工具都会将提示词和文件内容发送到云端 API 进行 AI 推理。区别在于文件的存储位置 — OpenAI Prism 将文件保存在其服务器上，ClaudePrism 将文件保存在您的磁盘上。详情请参阅 [Claude Code 数据使用政策](https://code.claude.com/docs/en/data-usage)。
 
 ---
 
