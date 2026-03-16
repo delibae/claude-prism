@@ -44,7 +44,6 @@ import {
 } from "@codemirror/lint";
 import {
   useDocumentStore,
-  hasPdfData,
   type ProjectFile,
 } from "@/stores/document-store";
 import {
@@ -378,11 +377,7 @@ export function LatexEditor() {
       state.setPendingRecompile(true);
       return;
     }
-    const {
-      contentGeneration,
-      lastCompiledGenerations,
-      files: allFiles,
-    } = state;
+    const { files: allFiles } = state;
     const resolved = resolveCompileTarget(activeFile.id, allFiles);
     if (!resolved) {
       setCompileError(
@@ -536,7 +531,9 @@ export function LatexEditor() {
       const { from, to } = view.state.selection.main;
       const selected = view.state.sliceDoc(from, to);
       const wrapped = `\\${cmd}{${selected}}`;
-      const cursorPos = selected ? from + wrapped.length : from + cmd.length + 2;
+      const cursorPos = selected
+        ? from + wrapped.length
+        : from + cmd.length + 2;
       view.dispatch({
         changes: { from, to, insert: wrapped },
         selection: { anchor: cursorPos },
