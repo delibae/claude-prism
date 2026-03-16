@@ -170,6 +170,7 @@ fn create_new_window(app: tauri::AppHandle) -> Result<(), String> {
             .as_millis()
     );
 
+    #[allow(unused_mut)]
     let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::default())
         .title("ClaudePrism")
         .inner_size(1400.0, 900.0)

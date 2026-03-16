@@ -12,6 +12,9 @@ use tokio::sync::Mutex;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[derive(Clone)]
 pub struct ClaudeProcessState {
     pub processes: Arc<Mutex<HashMap<String, Child>>>,
@@ -46,6 +49,7 @@ fn find_claude_binary() -> Result<String, String> {
     }
 
     // 3. Check NVM directories (Unix) or npm global (Windows)
+    #[allow(unused_variables)]
     if let Some(home) = dirs::home_dir() {
         #[cfg(not(target_os = "windows"))]
         {
@@ -258,7 +262,7 @@ fn resolve_cmd_to_node(program: &str) -> (String, Vec<String>) {
 fn new_sync_command(program: &str) -> std::process::Command {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
+
         let (resolved, prefix) = resolve_cmd_to_node(program);
         let mut c = std::process::Command::new(&resolved);
         c.creation_flags(CREATE_NO_WINDOW);
@@ -284,7 +288,7 @@ fn create_command(
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        use std::os::windows::process::CommandExt;
+
         let (resolved, prefix) = resolve_cmd_to_node(clean_program.as_ref());
         let mut c = Command::new(&resolved);
         c.creation_flags(CREATE_NO_WINDOW);
@@ -676,6 +680,7 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
 }
 
 /// Return the list of directories the Claude Code installer needs.
+#[cfg(not(target_os = "windows"))]
 fn claude_required_dirs(home: &std::path::Path) -> Vec<PathBuf> {
     vec![
         home.join(".local").join("bin"),
@@ -687,11 +692,13 @@ fn claude_required_dirs(home: &std::path::Path) -> Vec<PathBuf> {
 
 /// Try to create all required directories without elevation.
 /// Returns Ok(true) if all succeeded, Ok(false) if any failed.
+#[cfg(not(target_os = "windows"))]
 fn try_create_dirs(dirs: &[PathBuf]) -> bool {
     dirs.iter().all(|dir| std::fs::create_dir_all(dir).is_ok())
 }
 
 /// Verify that all directories exist and are writable.
+#[cfg(not(target_os = "windows"))]
 fn verify_dirs_writable(dirs: &[PathBuf]) -> Result<(), String> {
     for dir in dirs {
         if !dir.exists() {
@@ -798,7 +805,7 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
     };
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        use std::os::windows::process::CommandExt;
+
         let mut c = tokio::process::Command::new("powershell");
         c.creation_flags(CREATE_NO_WINDOW);
         c.args([
@@ -908,7 +915,7 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        use std::os::windows::process::CommandExt;
+
         let (resolved, prefix) = resolve_cmd_to_node(&binary_path);
         let mut c = tokio::process::Command::new(&resolved);
         c.creation_flags(CREATE_NO_WINDOW);

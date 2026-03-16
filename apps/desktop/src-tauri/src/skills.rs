@@ -570,6 +570,7 @@ fn ensure_target_writable(target: &Path) -> Result<(), String> {
             )
         })?;
         let _ = std::fs::remove_file(&test_file);
+        return Ok(());
     }
 
     #[cfg(target_os = "windows")]
@@ -579,8 +580,6 @@ fn ensure_target_writable(target: &Path) -> Result<(), String> {
             target.display()
         ));
     }
-
-    Ok(())
 }
 
 /// Emit a progress log event to the frontend + stderr for terminal debugging.
