@@ -16,6 +16,7 @@ permissions:
 
 env:
   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
 jobs:
   # ──────────────────────────────────────────────
@@ -178,8 +179,7 @@ jobs:
           ZOTERO_CONSUMER_KEY: ${{ secrets.ZOTERO_CONSUMER_KEY }}
           ZOTERO_CONSUMER_SECRET: ${{ secrets.ZOTERO_CONSUMER_SECRET }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          TECTONIC_DEP_BACKEND: vcpkg
-          VCPKG_ROOT: /usr/local/share/vcpkg
+          TECTONIC_DEP_BACKEND: pkg-config
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
         run: pnpm --filter @claude-prism/desktop tauri build --target aarch64-apple-darwin
