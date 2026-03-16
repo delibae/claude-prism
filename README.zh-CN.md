@@ -22,9 +22,9 @@
 
 <p align="center">
   <a href="https://claudeprism.delibae.dev?utm_source=github&utm_medium=readme&utm_campaign=launch_v054">官网</a> ·
-  <a href="https://github.com/delibae/claude-prism/releases/latest">macOS</a> ·
-  <a href="https://github.com/delibae/claude-prism/releases/latest">Windows</a> ·
-  <a href="https://github.com/delibae/claude-prism/releases/latest">Linux</a> ·
+  <a href="https://github.com/delibae/claude-prism/releases/latest/download/ClaudePrism-macOS.dmg">macOS</a> ·
+  <a href="https://github.com/delibae/claude-prism/releases/latest/download/ClaudePrism-Windows-setup.exe">Windows</a> ·
+  <a href="https://github.com/delibae/claude-prism/releases/latest/download/ClaudePrism-Linux.deb">Linux</a> ·
   <a href="https://github.com/delibae/claude-prism/releases">所有版本</a>
 </p>
 
