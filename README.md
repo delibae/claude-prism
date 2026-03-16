@@ -44,9 +44,9 @@
 
 ## Why ClaudePrism?
 
-[OpenAI Prism](https://openai.com/prism/) is a cloud-based LaTeX workspace for scientists — free, powerful, but **your unpublished research lives on OpenAI's servers**. Experts have raised concerns about intellectual property exposure and whether OpenAI could claim rights over researcher data. By default, content may be used to train future models unless you opt out.
+[OpenAI Prism](https://openai.com/prism/) is a cloud-based LaTeX workspace — all your files and data must be uploaded to OpenAI's servers to use it.
 
-ClaudePrism takes a different approach: **everything runs locally on your machine.**
+ClaudePrism takes a different approach: **your files stay on your machine.**
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
@@ -57,28 +57,13 @@ ClaudePrism takes a different approach: **everything runs locally on your machin
 | Scientific Skills | — | **100+ domain skills (bioinformatics, cheminformatics, ML, ...)** |
 | Getting Started | Account setup required | **Install and go — template gallery + project wizard** |
 | Version Control | — | **Git-based history with labels & diff** |
-| Data Privacy | Cloud storage, [opt-out available](https://help.openai.com/en/articles/8983082-how-do-i-turn-off-model-training-to-stop-openai-training-models-on-my-conversations) | **Local execution, [opt-out available](https://code.claude.com/docs/en/data-usage)** |
 | Source Code | Proprietary | **Open source (MIT)** |
 
 ### Your Research, Your Machine
 
-ClaudePrism invokes **Claude Code** as a local subprocess. Your documents stay on disk — only prompts are sent to the Claude API for inference.
+Your documents stay on your local disk. ClaudePrism runs **Claude Code** as a local subprocess — your files are never uploaded or stored remotely.
 
-**How the two compare on data:**
-
-| | OpenAI Prism | ClaudePrism (via Claude Code) |
-|---|---|---|
-| Where documents live | OpenAI cloud servers | **Your local disk only** |
-| Model training opt-out | [Available](https://help.openai.com/en/articles/8983082-how-do-i-turn-off-model-training-to-stop-openai-training-models-on-my-conversations) (Settings > Data Controls) | [Available](https://claude.ai/settings/data-privacy-controls) (Privacy Settings or API key) |
-| **Data exposure after opt-out** | **Documents remain on OpenAI servers** | **Nothing leaves your machine** |
-| **Feedback pitfall** | **👍/👎 sends entire conversation to training** | **No such mechanism** |
-| Default training policy | ON (personal accounts) | ON (Consumer), **OFF** (API key / Team / Enterprise) |
-| Data retention | ~30 days after opt-out | 30 days (opt-out) / 5 years (opt-in) |
-| Zero data retention | Not available | Available on Enterprise |
-| Telemetry | Cannot disable | `DISABLE_TELEMETRY=1` to fully disable |
-| Source code | Proprietary | Open source — [audit it yourself](https://github.com/delibae/claude-prism) |
-
-> **Both tools allow opting out of model training.** The critical difference is where your documents live. With Prism, your unpublished research exists on OpenAI's servers regardless of training settings. With ClaudePrism, files never leave your machine — only prompts are sent for AI inference.
+> **Note:** Both tools send prompts and file contents to cloud APIs for AI inference. The difference is where your files are stored — OpenAI Prism keeps them on their servers, ClaudePrism keeps them on your disk. See [Claude Code data usage](https://code.claude.com/docs/en/data-usage) for details.
 
 ---
 
