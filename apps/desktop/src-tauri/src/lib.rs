@@ -320,6 +320,39 @@ pub fn run() {
             tauri::RunEvent::Ready => {
                 set_macos_app_icon();
             }
+            // Workaround: WKWebView sometimes fails to repaint after the app
+            // returns from background, leaving a black screen.  We apply two
+            // complementary fixes on focus-restore:
+            //   1. Nudge the window size by 1 px and back (forces native
+            //      compositing layer to re-composite).
+            //   2. Trigger a DOM reflow via JS (forces WKWebView render tree
+            //      rebuild without losing app state).
+            // Either one alone may not cover all cases.
+            // See https://github.com/tauri-apps/tauri/issues/5226
+            //     https://github.com/tauri-apps/tauri/issues/14843
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::WindowEvent {
+                ref label,
+                event: tauri::WindowEvent::Focused(true),
+                ..
+            } => {
+                if let Some(window) = app_handle.get_webview_window(label) {
+                    // 1) Native resize nudge
+                    if let Ok(size) = window.inner_size() {
+                        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                            width: size.width + 1,
+                            height: size.height,
+                        }));
+                        let _ = window.set_size(tauri::Size::Physical(size));
+                    }
+                    // 2) DOM reflow to force WKWebView render tree rebuild
+                    let _ = window.eval(
+                        "document.body.style.display='none';\
+                         document.body.offsetHeight;\
+                         document.body.style.display='';"
+                    );
+                }
+            }
             tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::Destroyed,

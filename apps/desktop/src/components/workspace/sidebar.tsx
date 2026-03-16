@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   FileTextIcon,
   FolderIcon,
@@ -181,13 +182,22 @@ function getFileIcon(file: ProjectFile) {
   return <FileTextIcon className="size-4 shrink-0" />;
 }
 
-// ─── Constants ───
+// ─── App Version (resolved once from Tauri) ───
 
-const APP_VERSION = "0.0.1";
+let _appVersion = "";
+getVersion().then((v) => { _appVersion = v; });
+function useAppVersion() {
+  const [version, setVersion] = useState(_appVersion);
+  useEffect(() => {
+    if (!version) getVersion().then(setVersion);
+  }, [version]);
+  return version || "…";
+}
 
 // ─── Sidebar ───
 
 export function Sidebar() {
+  const appVersion = useAppVersion();
   const files = useDocumentStore((s) => s.files);
   const activeFileId = useDocumentStore((s) => s.activeFileId);
   const setActiveFile = useDocumentStore((s) => s.setActiveFile);
@@ -717,7 +727,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="flex items-center justify-between border-sidebar-border border-t px-3 py-2 text-muted-foreground text-xs">
-        <span className="truncate">ClaudePrism v{APP_VERSION}</span>
+        <span className="truncate">ClaudePrism v{appVersion}</span>
         <div className="flex shrink-0 items-center gap-1">
           <Button variant="ghost" size="icon" className="size-6" asChild>
             <a
