@@ -5,8 +5,8 @@
 <h1 align="center">ClaudePrism</h1>
 
 <p align="center">
-  A private, offline-first scientific writing workspace powered by Claude.<br/>
-  LaTeX + Python + 100 scientific skills — all running locally on your machine.
+  An offline-first scientific writing workspace powered by Claude.<br/>
+  LaTeX + Python + 100+ scientific skills — runs on your desktop.
 </p>
 
 <p align="center">
@@ -46,11 +46,11 @@
 
 [OpenAI Prism](https://openai.com/prism/) is a cloud-based LaTeX workspace — all your files and data must be uploaded to OpenAI's servers to use it.
 
-ClaudePrism takes a different approach: **your files stay on your machine.**
+ClaudePrism is a **local-first** alternative — your files are stored on your disk, compiled offline, and edited locally. AI features require sending content to Anthropic's API for inference (see [data usage](https://code.claude.com/docs/en/data-usage)).
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI Model | GPT-5.2 (cloud) | **Claude Opus / Sonnet / Haiku (local CLI)** |
+| AI Model | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
 | Runtime | Browser (cloud) | **Native desktop (Tauri 2 + Rust)** |
 | LaTeX | Cloud compilation | **Tectonic (embedded, offline)** |
 | Python Environment | — | **Built-in uv + venv — one-click scientific Python setup** |
@@ -59,11 +59,9 @@ ClaudePrism takes a different approach: **your files stay on your machine.**
 | Version Control | — | **Git-based history with labels & diff** |
 | Source Code | Proprietary | **Open source (MIT)** |
 
-### Your Research, Your Machine
+### Data & Privacy
 
-Your documents stay on your local disk. ClaudePrism runs **Claude Code** as a local subprocess — your files are never uploaded or stored remotely.
-
-> **Note:** Both tools send prompts and file contents to cloud APIs for AI inference. The difference is where your files are stored — OpenAI Prism keeps them on their servers, ClaudePrism keeps them on your disk. See [Claude Code data usage](https://code.claude.com/docs/en/data-usage) for details.
+ClaudePrism stores and compiles your documents locally — nothing is uploaded to a remote server for storage. However, when you use AI features, **prompts and file contents that Claude reads are sent to Anthropic's API for inference**, just like any cloud-based LLM tool. See [Claude Code data usage](https://code.claude.com/docs/en/data-usage) for retention policies and opt-out options.
 
 ---
 

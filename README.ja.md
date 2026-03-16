@@ -5,8 +5,8 @@
 <h1 align="center">ClaudePrism</h1>
 
 <p align="center">
-  Claude を活用した、プライベートかつオフラインファーストの論文執筆ワークスペース。<br/>
-  LaTeX + Python + 100 以上の専門スキル ── すべてローカルで動作します。
+  Claude を活用した、オフラインファーストの論文執筆ワークスペース。<br/>
+  LaTeX + Python + 100 以上の専門スキル ── デスクトップで動作します。
 </p>
 
 <p align="center">
@@ -46,11 +46,11 @@
 
 [OpenAI Prism](https://openai.com/prism/) はクラウドベースの LaTeX ワークスペースです — 利用するにはすべてのファイルとデータを OpenAI のサーバーにアップロードする必要があります。
 
-ClaudePrism は異なるアプローチを採用しています。**ファイルは手元のマシンに残ります。**
+ClaudePrism は**ローカルファースト**の代替ツールです — ファイルはローカルディスクに保存し、オフラインでコンパイルします。AI 機能は Anthropic API にコンテンツを送信して推論を行います（[データ使用ポリシー](https://code.claude.com/docs/en/data-usage)を参照）。
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI モデル | GPT-5.2（クラウド） | **Claude Opus / Sonnet / Haiku（ローカル CLI）** |
+| AI モデル | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
 | 実行環境 | ブラウザ（クラウド） | **ネイティブデスクトップ（Tauri 2 + Rust）** |
 | LaTeX | クラウドコンパイル | **Tectonic 内蔵（オフライン対応）** |
 | Python 環境 | — | **uv + venv 内蔵 ── ワンクリックで科学計算向け Python 環境を構築** |
@@ -59,11 +59,9 @@ ClaudePrism は異なるアプローチを採用しています。**ファイル
 | バージョン管理 | — | **Git ベースの履歴管理（ラベル & diff）** |
 | ソースコード | プロプライエタリ | **オープンソース（MIT）** |
 
-### 研究データは手元のマシンに保存
+### データとプライバシー
 
-ドキュメントはローカルディスクに保存されます。ClaudePrism は **Claude Code** をローカルのサブプロセスとして実行します — ファイルがリモートにアップロード・保存されることはありません。
-
-> **注意:** どちらのツールも、AI 推論のためにプロンプトとファイル内容をクラウド API に送信します。違いはファイルの保存場所です — OpenAI Prism はファイルを自社サーバーに保管し、ClaudePrism はユーザーのディスクに保管します。詳細は [Claude Code データ使用ポリシー](https://code.claude.com/docs/en/data-usage)をご覧ください。
+ドキュメントはローカルで保存・コンパイルされ、リモートサーバーにアップロードされません。ただし、AI 機能を使用する際、**プロンプトと Claude が読み取ったファイル内容は Anthropic API に送信されます**。これはすべてのクラウドベース LLM ツールと同様です。保持ポリシーとオプトアウトオプションについては [Claude Code データ使用ポリシー](https://code.claude.com/docs/en/data-usage)をご覧ください。
 
 ---
 

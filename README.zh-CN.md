@@ -5,8 +5,8 @@
 <h1 align="center">ClaudePrism</h1>
 
 <p align="center">
-  由 Claude 驱动的私密、离线优先的科学写作工作区。<br/>
-  LaTeX + Python + 100 多个科学技能 — 全部在本地运行。
+  由 Claude 驱动的离线优先科学写作工作区。<br/>
+  LaTeX + Python + 100 多个科学技能 — 在桌面端运行。
 </p>
 
 <p align="center">
@@ -34,11 +34,11 @@
 
 [OpenAI Prism](https://openai.com/prism/) 是一个云端 LaTeX 工作区 — 使用它需要将所有文件和数据上传到 OpenAI 的服务器。
 
-ClaudePrism 采用不同的方式：**您的文件留在您的机器上。**
+ClaudePrism 是**本地优先**的替代方案 — 文件存储在本地磁盘，离线编译。AI 功能通过 Anthropic API 发送内容进行推理（参见[数据使用政策](https://code.claude.com/docs/en/data-usage)）。
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI 模型 | GPT-5.2（云端） | **Claude Opus / Sonnet / Haiku（本地 CLI）** |
+| AI 模型 | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
 | 运行环境 | 浏览器（云端） | **原生桌面应用（Tauri 2 + Rust）** |
 | LaTeX | 云端编译 | **Tectonic（内嵌，离线）** |
 | Python 环境 | — | **内置 uv + venv — 一键科学 Python 环境** |
@@ -47,11 +47,9 @@ ClaudePrism 采用不同的方式：**您的文件留在您的机器上。**
 | 版本控制 | — | **基于 Git 的历史记录，支持标签和差异对比** |
 | 源代码 | 专有 | **开源（MIT）** |
 
-### 您的研究，您的机器
+### 数据与隐私
 
-文档保存在本地磁盘上。ClaudePrism 将 **Claude Code** 作为本地子进程运行 — 您的文件不会被上传或远程存储。
-
-> **注意：** 两种工具都会将提示词和文件内容发送到云端 API 进行 AI 推理。区别在于文件的存储位置 — OpenAI Prism 将文件保存在其服务器上，ClaudePrism 将文件保存在您的磁盘上。详情请参阅 [Claude Code 数据使用政策](https://code.claude.com/docs/en/data-usage)。
+文档在本地存储和编译，不会上传到远程服务器。但使用 AI 功能时，**提示词和 Claude 读取的文件内容会发送到 Anthropic API 进行推理**，这与所有云端 LLM 工具相同。有关保留政策和退出选项，请参阅 [Claude Code 数据使用政策](https://code.claude.com/docs/en/data-usage)。
 
 ---
 
