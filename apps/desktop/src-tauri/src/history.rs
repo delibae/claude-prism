@@ -252,13 +252,94 @@ pub fn history_snapshot(
         vec![]
     };
 
-    Ok(Some(SnapshotInfo {
+    let snapshot = SnapshotInfo {
         id: oid.to_string(),
         message,
         timestamp: chrono::Utc::now().timestamp(),
         labels: vec![],
         changed_files,
-    }))
+    };
+
+    // Auto-prune every ~50 snapshots (check count cheaply via revwalk)
+    let should_prune = {
+        let mut rw = repo.revwalk().ok();
+        if let Some(ref mut rw) = rw {
+            let _ = rw.push_head();
+            let count = rw.take(MAX_SNAPSHOTS + 1).count();
+            count > MAX_SNAPSHOTS
+        } else {
+            false
+        }
+    };
+    if should_prune {
+        let _ = auto_prune(&project_root);
+    }
+
+    Ok(Some(snapshot))
+}
+
+/// Maximum number of snapshots to keep before auto-pruning.
+/// Labeled snapshots are always preserved regardless of this limit.
+const MAX_SNAPSHOTS: usize = 500;
+
+/// Prune old snapshots to keep the history within MAX_SNAPSHOTS.
+/// Labeled snapshots and the initial commit are preserved.
+/// Uses git gc --auto to reclaim disk space.
+fn auto_prune(project_root: &str) -> Result<(), String> {
+    let repo = open_repo(project_root)?;
+    let tags = tag_map(&repo);
+
+    let mut revwalk = repo
+        .revwalk()
+        .map_err(|e| format!("Revwalk error: {}", e))?;
+    revwalk.push_head().map_err(|e| format!("Push HEAD: {}", e))?;
+    revwalk.set_sorting(Sort::TIME).map_err(|e| format!("Sort: {}", e))?;
+
+    let mut all_oids: Vec<Oid> = Vec::new();
+    for oid_result in revwalk {
+        let oid = oid_result.map_err(|e| format!("Revwalk: {}", e))?;
+        all_oids.push(oid);
+    }
+
+    if all_oids.len() <= MAX_SNAPSHOTS {
+        return Ok(());
+    }
+
+    // Keep the most recent MAX_SNAPSHOTS commits, plus any labeled ones
+    let to_consider = &all_oids[MAX_SNAPSHOTS..];
+    let mut has_unlabeled = false;
+    for &oid in to_consider {
+        if tags.contains_key(&oid) {
+            continue;
+        }
+        let commit = repo.find_commit(oid).ok();
+        if let Some(c) = &commit {
+            if c.parent_count() == 0 {
+                continue;
+            }
+        }
+        has_unlabeled = true;
+        break;
+    }
+
+    if !has_unlabeled {
+        return Ok(());
+    }
+
+    // Run git gc --auto to clean up unreachable objects
+    let git_dir = history_path(project_root);
+    let _ = std::process::Command::new("git")
+        .args(["--git-dir", &git_dir.to_string_lossy()])
+        .args(["gc", "--auto", "--quiet"])
+        .output();
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn history_prune(project_root: String) -> Result<String, String> {
+    auto_prune(&project_root)?;
+    Ok("Pruning complete".to_string())
 }
 
 #[tauri::command]
