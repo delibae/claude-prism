@@ -496,7 +496,10 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
           }
         }
 
-        set((s) => applyTabUpdate(s, activeTabId, { messages }));
+        const trimmed = messages.length > MAX_MESSAGES_PER_TAB
+          ? messages.slice(messages.length - MAX_MESSAGES_PER_TAB)
+          : messages;
+        set((s) => applyTabUpdate(s, activeTabId, { messages: trimmed }));
       } catch (err) {
         log.error("Failed to load session history", { error: String(err) });
       }

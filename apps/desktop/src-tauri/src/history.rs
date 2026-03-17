@@ -260,7 +260,7 @@ pub fn history_snapshot(
         changed_files,
     };
 
-    // Auto-prune every ~50 snapshots (check count cheaply via revwalk)
+    // Auto-prune when snapshot count exceeds MAX_SNAPSHOTS
     let should_prune = {
         let mut rw = repo.revwalk().ok();
         if let Some(ref mut rw) = rw {
@@ -283,8 +283,12 @@ pub fn history_snapshot(
 const MAX_SNAPSHOTS: usize = 500;
 
 /// Prune old snapshots to keep the history within MAX_SNAPSHOTS.
-/// Labeled snapshots and the initial commit are preserved.
-/// Uses git gc --auto to reclaim disk space.
+/// Labeled snapshots and the initial commit are always preserved.
+///
+/// Strategy: use `git replace --graft` to turn the oldest kept commit into
+/// a root (orphaning all older ancestors), then `git gc --prune=now` to
+/// reclaim the unreachable objects. This actually reduces history size
+/// because commits must be unreachable before gc can collect them.
 fn auto_prune(project_root: &str) -> Result<(), String> {
     let repo = open_repo(project_root)?;
     let tags = tag_map(&repo);
@@ -305,32 +309,61 @@ fn auto_prune(project_root: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    // Keep the most recent MAX_SNAPSHOTS commits, plus any labeled ones
-    let to_consider = &all_oids[MAX_SNAPSHOTS..];
-    let mut has_unlabeled = false;
-    for &oid in to_consider {
+    // Find the cutoff: walk backwards from MAX_SNAPSHOTS to find the oldest
+    // commit we want to keep, skipping labeled ones (which are always kept).
+    // The cutoff commit will be grafted as a new root.
+    let mut cutoff_idx = MAX_SNAPSHOTS;
+    // Extend the kept range to include any labeled commits just beyond the cutoff
+    while cutoff_idx < all_oids.len() {
+        let oid = all_oids[cutoff_idx];
         if tags.contains_key(&oid) {
+            cutoff_idx += 1;
             continue;
         }
-        let commit = repo.find_commit(oid).ok();
-        if let Some(c) = &commit {
+        // Also preserve the initial commit (root)
+        if let Ok(c) = repo.find_commit(oid) {
             if c.parent_count() == 0 {
+                cutoff_idx += 1;
                 continue;
             }
         }
-        has_unlabeled = true;
         break;
     }
 
-    if !has_unlabeled {
+    // cutoff_idx-1 is the oldest commit to keep. Graft it as a root
+    // to make everything older unreachable.
+    let oldest_kept = all_oids[cutoff_idx - 1];
+    let commit = repo.find_commit(oldest_kept)
+        .map_err(|e| format!("Find cutoff commit: {}", e))?;
+
+    // Only graft if it has parents (i.e., it's not already a root)
+    if commit.parent_count() == 0 {
         return Ok(());
     }
 
-    // Run git gc --auto to clean up unreachable objects
     let git_dir = history_path(project_root);
+    let git_dir_str = git_dir.to_string_lossy();
+
+    // Graft the cutoff commit as a new root (removes parent links)
+    let result = std::process::Command::new("git")
+        .args(["--git-dir", &git_dir_str])
+        .args(["replace", "--graft", &oldest_kept.to_string()])
+        .output();
+
+    if let Ok(output) = &result {
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // If replace ref already exists, that's fine — previous prune set it
+            if !stderr.contains("already exists") {
+                return Err(format!("git replace --graft failed: {}", stderr));
+            }
+        }
+    }
+
+    // Now gc with aggressive pruning to reclaim the orphaned objects
     let _ = std::process::Command::new("git")
-        .args(["--git-dir", &git_dir.to_string_lossy()])
-        .args(["gc", "--auto", "--quiet"])
+        .args(["--git-dir", &git_dir_str])
+        .args(["gc", "--prune=now", "--quiet"])
         .output();
 
     Ok(())

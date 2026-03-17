@@ -54,14 +54,19 @@ const MAX_PDF_CACHE_ENTRIES = 20;
 /** Current active PDF root file id (mirrors what Zustand tracks via pdfRevision). */
 let _currentPdfRootId: string | null = null;
 
-/** Evict oldest entries until cache is within limits. */
-function _evictPdfCache() {
+/** Evict oldest entries until cache is within limits.
+ *  Never evicts `protectKey` — used to prevent evicting a just-inserted entry. */
+function _evictPdfCache(protectKey?: string) {
   while (
     _pdfLruOrder.length > MAX_PDF_CACHE_ENTRIES ||
     _pdfCacheTotalBytes > MAX_PDF_CACHE_BYTES
   ) {
-    const oldest = _pdfLruOrder.shift();
-    if (!oldest) break;
+    // Find the oldest entry that isn't the protected key
+    const evictIdx = protectKey
+      ? _pdfLruOrder.findIndex((k) => k !== protectKey)
+      : 0;
+    if (evictIdx === -1 || evictIdx >= _pdfLruOrder.length) break;
+    const oldest = _pdfLruOrder.splice(evictIdx, 1)[0];
     const bytes = _pdfBytesCache.get(oldest);
     if (bytes) {
       _pdfCacheTotalBytes -= bytes.byteLength;
@@ -600,7 +605,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       _pdfBytesCache.set(key, data);
       _pdfCacheTotalBytes += data.byteLength;
       _touchPdfLru(key);
-      _evictPdfCache();
+      _evictPdfCache(key);
       _currentPdfRootId = key;
     } else if (rootFileId) {
       const existing = _pdfBytesCache.get(rootFileId);
