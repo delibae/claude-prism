@@ -32,6 +32,7 @@ tsconfig.tsbuildinfo
 
 # Rust
 Cargo.lock
+apps/desktop/src-tauri/.cargo/config.toml
 
 # Tauri auto-generated schemas
 apps/desktop/src-tauri/gen/schemas/
