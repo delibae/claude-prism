@@ -13,9 +13,12 @@ import {
   CrosshairIcon,
   ChevronUpIcon,
   ChevronDownIcon,
+  MoreHorizontalIcon,
+  FileWarningIcon,
 } from "lucide-react";
 import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
+import { invoke } from "@tauri-apps/api/core";
 import {
   useDocumentStore,
   getPdfBytes,
@@ -40,6 +43,19 @@ import {
 } from "@/components/ui/popover";
 import { HistoryPanel } from "@/components/workspace/history-panel";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   compileLatex,
   synctexEdit,
   resolveCompileTarget,
@@ -60,6 +76,109 @@ import { resolveTexRoot } from "@/stores/document-store";
 import { createLogger } from "@/lib/debug/logger";
 
 const log = createLogger("pdf-preview");
+
+/** Classify a LaTeX log line for syntax highlighting. */
+function classifyLogLine(line: string): "error" | "warning" | "success" | null {
+  if (line.startsWith("!") || /\berror:/i.test(line) || /^l\.\d+/.test(line)) {
+    return "error";
+  }
+  if (
+    /Warning:/i.test(line) ||
+    /^Invalid UTF-8/i.test(line) ||
+    /undefined/i.test(line) ||
+    /Rerun to get/i.test(line) ||
+    /Overfull/i.test(line) ||
+    /Underfull/i.test(line)
+  ) {
+    return "warning";
+  }
+  if (/^Output written on/i.test(line) || /^\[\d+/.test(line)) {
+    return "success";
+  }
+  return null;
+}
+
+const LOG_LINE_STYLES: Record<string, string> = {
+  error:
+    "text-destructive font-semibold bg-destructive/10 rounded px-1 -mx-1 block",
+  warning:
+    "text-yellow-700 dark:text-yellow-300 bg-yellow-500/10 rounded px-1 -mx-1 block",
+  success:
+    "text-green-700 dark:text-green-300 bg-green-500/10 rounded px-1 -mx-1 block",
+};
+
+type WarningCategory = "font" | "reference" | "box" | "other";
+
+function categorizeWarningLine(line: string): WarningCategory | null {
+  if (/Font/i.test(line)) return "font";
+  if (/Reference|Citation|Rerun to get/i.test(line)) return "reference";
+  if (/Overfull|Underfull/i.test(line)) return "box";
+  if (
+    /Warning:/i.test(line) ||
+    /^Invalid UTF-8/i.test(line) ||
+    /undefined/i.test(line)
+  ) {
+    return "other";
+  }
+  return null;
+}
+
+interface LogSummary {
+  errors: number;
+  warnings: number;
+  font: number;
+  reference: number;
+  box: number;
+  other: number;
+}
+
+function summarizeLog(content: string): LogSummary {
+  const summary: LogSummary = {
+    errors: 0,
+    warnings: 0,
+    font: 0,
+    reference: 0,
+    box: 0,
+    other: 0,
+  };
+  for (const line of content.split("\n")) {
+    const cls = classifyLogLine(line);
+    if (cls === "error") {
+      summary.errors++;
+    } else if (cls === "warning") {
+      summary.warnings++;
+      const cat = categorizeWarningLine(line);
+      if (cat) summary[cat]++;
+    }
+  }
+  return summary;
+}
+
+function formatSummaryDetail(summary: LogSummary): string {
+  const parts: string[] = [];
+  if (summary.font > 0) parts.push(`${summary.font} font`);
+  if (summary.reference > 0) parts.push(`${summary.reference} reference`);
+  if (summary.box > 0) parts.push(`${summary.box} box`);
+  if (summary.other > 0) parts.push(`${summary.other} other`);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+function HighlightedLog({ content }: { content: string }) {
+  const lines = content.split("\n");
+  return (
+    <pre className="whitespace-pre-wrap p-4 font-mono text-foreground/50 text-xs leading-relaxed">
+      {lines.map((line, i) => {
+        const cls = classifyLogLine(line);
+        return (
+          <span key={i} className={cls ? LOG_LINE_STYLES[cls] : undefined}>
+            {line}
+            {"\n"}
+          </span>
+        );
+      })}
+    </pre>
+  );
+}
 
 type FitMode = "fit-width" | "fit-height" | null;
 
@@ -126,6 +245,10 @@ export function PdfPreview() {
   } | null>(null);
   const hasInitialCompile = useRef(false);
   const initialized = useDocumentStore((s) => s.initialized);
+  const [showLogs, setShowLogs] = useState(false);
+  const [logContent, setLogContent] = useState<string | null>(null);
+  const [logSummary, setLogSummary] = useState<LogSummary | null>(null);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
 
   // Derive pdfData from external cache, re-read whenever pdfRevision bumps
   const pdfData = useMemo(() => getCurrentPdfBytes(), [pdfRevision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -396,6 +519,19 @@ export function PdfPreview() {
     return { top: relTop, left: relLeft };
   })();
 
+  const fetchLogSummary = useCallback(async () => {
+    if (!projectRoot) return;
+    try {
+      const content = await invoke<string>("get_build_log", {
+        projectDir: projectRoot,
+      });
+      setLogContent(content);
+      setLogSummary(summarizeLog(content));
+    } catch {
+      setLogSummary(null);
+    }
+  }, [projectRoot]);
+
   useEffect(() => {
     if (hasInitialCompile.current) return;
     if (!initialized || !projectRoot) return;
@@ -422,11 +558,13 @@ export function PdfPreview() {
         setCompileError(formatCompileError(error));
       } finally {
         setIsCompiling(false);
+        fetchLogSummary();
       }
     };
     compile();
   }, [
     initialized,
+    fetchLogSummary,
     projectRoot,
     pdfData,
     isCompiling,
@@ -477,6 +615,11 @@ export function PdfPreview() {
     });
     if (!filePath) return;
     await writeFile(filePath, new Uint8Array(currentPdf));
+  };
+
+  const handleOpenLogs = async () => {
+    await fetchLogSummary();
+    setShowLogs(true);
   };
 
   const handleCurrentPageChange = useCallback(
@@ -564,6 +707,7 @@ export function PdfPreview() {
         await new Promise((r) => setTimeout(r, 500 - elapsed));
       }
       setIsCompiling(false);
+      fetchLogSummary();
       // If a recompile was requested while we were compiling, trigger it now
       // Use setTimeout to avoid unbounded recursion on the call stack
       if (useDocumentStore.getState().pendingRecompile) {
@@ -835,6 +979,27 @@ export function PdfPreview() {
               Retry
             </Button>
           )}
+          {!isSaving &&
+            !isCompiling &&
+            logSummary &&
+            (logSummary.warnings > 0 || logSummary.errors > 0) && (
+              <button
+                onClick={handleOpenLogs}
+                className={`flex items-center gap-0.5 rounded-md px-1.5 py-0.5 transition-colors ${
+                  logSummary.errors > 0
+                    ? "bg-destructive/15 text-destructive hover:bg-destructive/25"
+                    : "bg-yellow-500/15 text-yellow-700 hover:bg-yellow-500/25 dark:text-yellow-300"
+                }`}
+                title="Open compilation logs"
+              >
+                <AlertCircleIcon className="size-3" />
+                <span className="font-medium text-[11px] tabular-nums">
+                  {logSummary.errors > 0
+                    ? logSummary.errors
+                    : logSummary.warnings}
+                </span>
+              </button>
+            )}
         </div>
         <div data-tauri-drag-region className="flex-1 self-stretch" />
         <div className="flex shrink-0 items-center gap-1">
@@ -961,32 +1126,69 @@ export function PdfPreview() {
                 </kbd>
               </Button>
               <div className="mx-1 h-4 w-px bg-border" />
+              {/* Export, Logs, History: inline when wide */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7"
+                className="@[40rem]/pv:flex hidden size-7"
                 onClick={handleExport}
                 title="Export PDF"
               >
                 <DownloadIcon className="size-3.5" />
               </Button>
-            </>
-          )}
-          <Popover>
-            <PopoverTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7"
-                title="History"
+                className="@[40rem]/pv:flex hidden size-7"
+                onClick={handleOpenLogs}
+                title="Compilation Logs"
               >
-                <HistoryIcon className="size-3.5" />
+                <FileWarningIcon className="size-3.5" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-96">
-              <HistoryPanel maxHeight="max-h-[32rem]" />
-            </PopoverContent>
-          </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="@[40rem]/pv:flex hidden size-7"
+                    title="History"
+                  >
+                    <HistoryIcon className="size-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-96">
+                  <HistoryPanel maxHeight="max-h-[32rem]" />
+                </PopoverContent>
+              </Popover>
+              {/* Overflow menu: visible only when narrow */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="@[40rem]/pv:hidden size-7"
+                    title="More actions"
+                  >
+                    <MoreHorizontalIcon className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleExport}>
+                    <DownloadIcon className="mr-2 size-4" />
+                    Export PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleOpenLogs}>
+                    <FileWarningIcon className="mr-2 size-4" />
+                    Compilation Logs
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowHistoryDialog(true)}>
+                    <HistoryIcon className="mr-2 size-4" />
+                    History
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       </div>
       {renderContent()}
@@ -1020,6 +1222,87 @@ export function PdfPreview() {
           </div>
         </div>
       )}
+      {/* History Dialog (used when in overflow mode) */}
+      <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
+        <DialogContent className="flex h-[min(36rem,calc(100vh-6rem))] w-96 max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="shrink-0 border-border border-b px-6 py-3">
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <HistoryIcon className="size-4 text-muted-foreground" />
+              History
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1">
+            <HistoryPanel maxHeight="" />
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+      {/* Compilation Logs Dialog */}
+      <Dialog open={showLogs} onOpenChange={setShowLogs}>
+        <DialogContent className="flex h-[min(36rem,calc(100vh-6rem))] w-[min(48rem,calc(100vw-4rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="shrink-0 border-border border-b px-6 py-3">
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <FileWarningIcon className="size-4 text-muted-foreground" />
+              Compilation Logs
+            </DialogTitle>
+          </DialogHeader>
+          {logContent &&
+            (() => {
+              const summary = summarizeLog(logContent);
+              if (summary.errors === 0 && summary.warnings === 0) return null;
+              return (
+                <div className="flex shrink-0 items-center gap-3 border-border border-b bg-muted/30 px-6 py-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs">
+                    {summary.errors > 0 && (
+                      <span className="rounded-md bg-destructive/15 px-2 py-0.5 font-medium text-destructive">
+                        {summary.errors}{" "}
+                        {summary.errors === 1 ? "error" : "errors"}
+                      </span>
+                    )}
+                    {summary.warnings > 0 && (
+                      <span className="rounded-md bg-yellow-500/15 px-2 py-0.5 font-medium text-yellow-700 dark:text-yellow-300">
+                        {summary.warnings}{" "}
+                        {summary.warnings === 1 ? "warning" : "warnings"}
+                        {formatSummaryDetail(summary)}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 gap-1.5 text-xs"
+                    onClick={() => {
+                      setShowLogs(false);
+                      const lines = logContent
+                        .split("\n")
+                        .filter((l) => classifyLogLine(l) !== null);
+                      const excerpt =
+                        lines.length > 30
+                          ? `${lines.slice(0, 30).join("\n")}\n... (${lines.length - 30} more)`
+                          : lines.join("\n");
+                      useClaudeChatStore
+                        .getState()
+                        .sendPrompt(
+                          `[Compilation log — ${summary.errors} errors, ${summary.warnings} warnings]\n${excerpt}\n\nExplain these issues and suggest fixes.`,
+                        );
+                    }}
+                  >
+                    <MousePointerClickIcon className="size-3.5" />
+                    Ask AI about these
+                  </Button>
+                </div>
+              );
+            })()}
+          <ScrollArea className="flex-1">
+            {logContent ? (
+              <HighlightedLog content={logContent} />
+            ) : (
+              <pre className="whitespace-pre-wrap p-4 font-mono text-foreground/50 text-xs leading-relaxed">
+                No log available.
+              </pre>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
