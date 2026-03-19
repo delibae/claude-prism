@@ -62,6 +62,7 @@ export function ScientificSkillsOnboarding({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<SkillsStatus | null>(null);
   const [isUninstalling, setIsUninstalling] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
 
   // Check global install status
   const checkStatus = useCallback(async () => {
@@ -323,13 +324,31 @@ export function ScientificSkillsOnboarding({
 
         {/* Footer */}
         <div className="flex shrink-0 items-center justify-between border-border border-t bg-muted/20 px-6 py-2.5">
-          <p className="font-mono text-[11px] text-muted-foreground/60">
-            {isInstalled ? status?.location : "~/.claude/skills/"}
-          </p>
+          {!isInstalled ? (
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={dontShowAgain}
+                onChange={(e) => setDontShowAgain(e.target.checked)}
+              />
+              <span className="text-muted-foreground text-xs">
+                Don't show again
+              </span>
+            </label>
+          ) : (
+            <p className="font-mono text-[11px] text-muted-foreground/60">
+              {status?.location}
+            </p>
+          )}
           <Button
             variant="ghost"
             size="sm"
-            onClick={onClose}
+            onClick={() => {
+              if (dontShowAgain) {
+                localStorage.setItem(STORAGE_KEY, "true");
+              }
+              onClose();
+            }}
             className="text-muted-foreground"
           >
             Close
