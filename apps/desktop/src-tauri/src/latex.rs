@@ -694,6 +694,23 @@ pub async fn synctex_edit(
     Ok(SynctexResult { file, line, column })
 }
 
+#[tauri::command]
+pub async fn get_build_log(
+    state: tauri::State<'_, LatexCompilerState>,
+    project_dir: String,
+) -> Result<String, String> {
+    let builds = state.last_builds.lock().await;
+    let build = builds
+        .get(&project_dir)
+        .ok_or("No build found for this project")?;
+    let log_path = build
+        .work_dir
+        .join(format!("{}.log", build.main_file_name));
+    drop(builds);
+    std::fs::read_to_string(&log_path)
+        .map_err(|e| format!("Failed to read log: {e}"))
+}
+
 /// Clear in-memory build state on app exit.
 /// Persistent build directories are intentionally kept for fast restart.
 pub async fn cleanup_all_builds(state: &LatexCompilerState) {
