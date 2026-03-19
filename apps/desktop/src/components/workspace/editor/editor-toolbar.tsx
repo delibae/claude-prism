@@ -16,6 +16,7 @@ import {
   PlusIcon,
   BookMarkedIcon,
   ExternalLinkIcon,
+  MoreHorizontalIcon,
 } from "lucide-react";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
@@ -226,7 +227,7 @@ export function EditorToolbar({
   }
 
   return (
-    <div className="flex h-[calc(36px+var(--titlebar-height))] items-center gap-1 border-border border-b bg-muted/30 px-2 pt-[var(--titlebar-height)]">
+    <div className="@container/et flex h-[calc(36px+var(--titlebar-height))] items-center gap-1 border-border border-b bg-muted/30 px-2 pt-[var(--titlebar-height)]">
       <FileTextIcon className="size-4 text-muted-foreground" />
       <span className="mr-2 font-medium text-muted-foreground text-sm">
         {fileName}
@@ -250,45 +251,94 @@ export function EditorToolbar({
       >
         <CodeIcon className="size-4" />
       </TooltipIconButton>
-      <div className="mx-2 h-4 w-px bg-border" />
-      <TooltipIconButton
-        tooltip="Section"
-        onClick={() => insertText("\\section{", "}")}
-      >
-        <Heading1Icon className="size-4" />
-      </TooltipIconButton>
-      <TooltipIconButton
-        tooltip="Subsection"
-        onClick={() => insertText("\\subsection{", "}")}
-      >
-        <Heading2Icon className="size-4" />
-      </TooltipIconButton>
-      <TooltipIconButton
-        tooltip="List item"
-        onClick={() => insertText("\\item ")}
-      >
-        <ListIcon className="size-4" />
-      </TooltipIconButton>
-      <div className="mx-2 h-4 w-px bg-border" />
-      <TooltipIconButton
-        tooltip="Inline math ($...$)"
-        onClick={() => wrapSelection("$")}
-      >
-        <FunctionSquareIcon className="size-4" />
-      </TooltipIconButton>
-      <TooltipIconButton
-        tooltip="Display math (\\[...\\])"
-        onClick={() => insertText("\\[\n  ", "\n\\]")}
-      >
-        <span className="font-mono text-xs">∫</span>
-      </TooltipIconButton>
-      <div className="mx-2 h-4 w-px bg-border" />
-      <TooltipIconButton
-        tooltip="Citation (\\cite)"
-        onClick={() => insertText("\\cite{", "}")}
-      >
-        <BookMarkedIcon className="size-4" />
-      </TooltipIconButton>
+      {/* Responsive: show inline when wide, hide when narrow */}
+      <div className="@[32rem]/et:contents hidden">
+        <div className="mx-2 h-4 w-px bg-border" />
+        <TooltipIconButton
+          tooltip="Section"
+          onClick={() => insertText("\\section{", "}")}
+        >
+          <Heading1Icon className="size-4" />
+        </TooltipIconButton>
+        <TooltipIconButton
+          tooltip="Subsection"
+          onClick={() => insertText("\\subsection{", "}")}
+        >
+          <Heading2Icon className="size-4" />
+        </TooltipIconButton>
+        <TooltipIconButton
+          tooltip="List item"
+          onClick={() => insertText("\\item ")}
+        >
+          <ListIcon className="size-4" />
+        </TooltipIconButton>
+        <div className="mx-2 h-4 w-px bg-border" />
+        <TooltipIconButton
+          tooltip="Inline math ($...$)"
+          onClick={() => wrapSelection("$")}
+        >
+          <FunctionSquareIcon className="size-4" />
+        </TooltipIconButton>
+        <TooltipIconButton
+          tooltip="Display math (\\[...\\])"
+          onClick={() => insertText("\\[\n  ", "\n\\]")}
+        >
+          <span className="font-mono text-xs">∫</span>
+        </TooltipIconButton>
+        <div className="mx-2 h-4 w-px bg-border" />
+        <TooltipIconButton
+          tooltip="Citation (\\cite)"
+          onClick={() => insertText("\\cite{", "}")}
+        >
+          <BookMarkedIcon className="size-4" />
+        </TooltipIconButton>
+      </div>
+      {/* Overflow menu: visible only when narrow */}
+      <div className="@[32rem]/et:hidden">
+        <div className="flex items-center gap-1">
+          <div className="mx-2 h-4 w-px bg-border" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 p-1"
+                title="More formatting"
+              >
+                <MoreHorizontalIcon className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => insertText("\\section{", "}")}>
+                <Heading1Icon className="mr-2 size-4" />
+                Section
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => insertText("\\subsection{", "}")}
+              >
+                <Heading2Icon className="mr-2 size-4" />
+                Subsection
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => insertText("\\item ")}>
+                <ListIcon className="mr-2 size-4" />
+                List Item
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => wrapSelection("$")}>
+                <FunctionSquareIcon className="mr-2 size-4" />
+                Inline Math
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => insertText("\\[\n  ", "\n\\]")}>
+                <span className="mr-2 font-mono text-xs">∫</span>
+                Display Math
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => insertText("\\cite{", "}")}>
+                <BookMarkedIcon className="mr-2 size-4" />
+                Citation
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
       <div data-tauri-drag-region className="flex-1 self-stretch" />
       {editors.length === 1 && (
         <TooltipIconButton
