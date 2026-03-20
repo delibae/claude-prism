@@ -1122,6 +1122,32 @@ fn common_claude_args() -> Vec<String> {
     ]
 }
 
+/// Validate that a project path exists and is a directory.
+fn validate_project_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("Project path cannot be empty".into());
+    }
+    let p = std::path::Path::new(path);
+    if !p.is_absolute() {
+        return Err(format!("Project path must be absolute: {}", path));
+    }
+    if !p.exists() || !p.is_dir() {
+        return Err(format!("Project path does not exist or is not a directory: {}", path));
+    }
+    Ok(())
+}
+
+/// Validate that a session ID contains only safe characters (alphanumeric, hyphens, underscores).
+fn validate_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("Session ID cannot be empty".into());
+    }
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("Invalid session ID: {}", id));
+    }
+    Ok(())
+}
+
 // ─── Tauri Commands ───
 
 #[tauri::command]
@@ -1133,6 +1159,7 @@ pub async fn execute_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
+    validate_project_path(&project_path)?;
     let claude_path = find_claude_binary()?;
 
     let mut args = vec!["-p".to_string(), prompt];
@@ -1155,6 +1182,7 @@ pub async fn continue_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
+    validate_project_path(&project_path)?;
     let claude_path = find_claude_binary()?;
 
     let mut args = vec!["-c".to_string(), "-p".to_string(), prompt];
@@ -1178,6 +1206,8 @@ pub async fn resume_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
+    validate_project_path(&project_path)?;
+    validate_session_id(&session_id)?;
     let claude_path = find_claude_binary()?;
 
     let mut args = vec!["--resume".to_string(), session_id, "-p".to_string(), prompt];
@@ -1353,6 +1383,7 @@ fn extract_first_user_message(path: &PathBuf) -> (Option<String>, Option<String>
 
 #[tauri::command]
 pub async fn list_claude_sessions(project_path: String) -> Result<Vec<ClaudeSessionInfo>, String> {
+    validate_project_path(&project_path)?;
     eprintln!(
         "[session] list_claude_sessions called with project_path={}",
         project_path
@@ -1428,6 +1459,8 @@ pub async fn load_session_history(
     project_path: String,
     session_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
+    validate_project_path(&project_path)?;
+    validate_session_id(&session_id)?;
     eprintln!(
         "[session] load_session_history called: session_id={} project_path={}",
         session_id, project_path
@@ -1477,6 +1510,7 @@ pub struct ShellCommandResult {
 
 #[tauri::command]
 pub async fn run_shell_command(command: String, cwd: String) -> Result<ShellCommandResult, String> {
+    validate_project_path(&cwd)?;
     #[cfg(not(target_os = "windows"))]
     let (shell, args) = ("sh", vec!["-c".to_string(), command]);
     #[cfg(target_os = "windows")]

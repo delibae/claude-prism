@@ -252,13 +252,127 @@ pub fn history_snapshot(
         vec![]
     };
 
-    Ok(Some(SnapshotInfo {
+    let snapshot = SnapshotInfo {
         id: oid.to_string(),
         message,
         timestamp: chrono::Utc::now().timestamp(),
         labels: vec![],
         changed_files,
-    }))
+    };
+
+    // Auto-prune when snapshot count exceeds MAX_SNAPSHOTS
+    let should_prune = {
+        let mut rw = repo.revwalk().ok();
+        if let Some(ref mut rw) = rw {
+            let _ = rw.push_head();
+            let count = rw.take(MAX_SNAPSHOTS + 1).count();
+            count > MAX_SNAPSHOTS
+        } else {
+            false
+        }
+    };
+    if should_prune {
+        let _ = auto_prune(&project_root);
+    }
+
+    Ok(Some(snapshot))
+}
+
+/// Maximum number of snapshots to keep before auto-pruning.
+/// Labeled snapshots are always preserved regardless of this limit.
+const MAX_SNAPSHOTS: usize = 500;
+
+/// Prune old snapshots to keep the history within MAX_SNAPSHOTS.
+/// Labeled snapshots and the initial commit are always preserved.
+///
+/// Strategy: use `git replace --graft` to turn the oldest kept commit into
+/// a root (orphaning all older ancestors), then `git gc --prune=now` to
+/// reclaim the unreachable objects. This actually reduces history size
+/// because commits must be unreachable before gc can collect them.
+fn auto_prune(project_root: &str) -> Result<(), String> {
+    let repo = open_repo(project_root)?;
+    let tags = tag_map(&repo);
+
+    let mut revwalk = repo
+        .revwalk()
+        .map_err(|e| format!("Revwalk error: {}", e))?;
+    revwalk.push_head().map_err(|e| format!("Push HEAD: {}", e))?;
+    revwalk.set_sorting(Sort::TIME).map_err(|e| format!("Sort: {}", e))?;
+
+    let mut all_oids: Vec<Oid> = Vec::new();
+    for oid_result in revwalk {
+        let oid = oid_result.map_err(|e| format!("Revwalk: {}", e))?;
+        all_oids.push(oid);
+    }
+
+    if all_oids.len() <= MAX_SNAPSHOTS {
+        return Ok(());
+    }
+
+    // Find the cutoff: walk backwards from MAX_SNAPSHOTS to find the oldest
+    // commit we want to keep, skipping labeled ones (which are always kept).
+    // The cutoff commit will be grafted as a new root.
+    let mut cutoff_idx = MAX_SNAPSHOTS;
+    // Extend the kept range to include any labeled commits just beyond the cutoff
+    while cutoff_idx < all_oids.len() {
+        let oid = all_oids[cutoff_idx];
+        if tags.contains_key(&oid) {
+            cutoff_idx += 1;
+            continue;
+        }
+        // Also preserve the initial commit (root)
+        if let Ok(c) = repo.find_commit(oid) {
+            if c.parent_count() == 0 {
+                cutoff_idx += 1;
+                continue;
+            }
+        }
+        break;
+    }
+
+    // cutoff_idx-1 is the oldest commit to keep. Graft it as a root
+    // to make everything older unreachable.
+    let oldest_kept = all_oids[cutoff_idx - 1];
+    let commit = repo.find_commit(oldest_kept)
+        .map_err(|e| format!("Find cutoff commit: {}", e))?;
+
+    // Only graft if it has parents (i.e., it's not already a root)
+    if commit.parent_count() == 0 {
+        return Ok(());
+    }
+
+    let git_dir = history_path(project_root);
+    let git_dir_str = git_dir.to_string_lossy();
+
+    // Graft the cutoff commit as a new root (removes parent links)
+    let result = std::process::Command::new("git")
+        .args(["--git-dir", &git_dir_str])
+        .args(["replace", "--graft", &oldest_kept.to_string()])
+        .output();
+
+    if let Ok(output) = &result {
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // If replace ref already exists, that's fine — previous prune set it
+            if !stderr.contains("already exists") {
+                return Err(format!("git replace --graft failed: {}", stderr));
+            }
+        }
+    }
+
+    // Now gc with aggressive pruning to reclaim the orphaned objects
+    let _ = std::process::Command::new("git")
+        .args(["--git-dir", &git_dir_str])
+        .args(["gc", "--prune=now", "--quiet"])
+        .output();
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn history_prune(project_root: String) -> Result<String, String> {
+    auto_prune(&project_root)?;
+    Ok("Pruning complete".to_string())
 }
 
 #[tauri::command]

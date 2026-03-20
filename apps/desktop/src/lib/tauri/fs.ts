@@ -117,6 +117,28 @@ const IGNORED_EXTENSIONS = new Set([
   ".db",
 ]);
 
+/**
+ * Validate that a relative path does not escape the project root via traversal.
+ * Rejects paths containing ".." segments, absolute paths, and null bytes.
+ */
+function validateRelativePath(relativePath: string): void {
+  if (relativePath.includes("\0")) {
+    throw new Error(`Invalid path: contains null bytes`);
+  }
+  // Normalize separators and split
+  const normalized = relativePath.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  for (const seg of segments) {
+    if (seg === "..") {
+      throw new Error(`Invalid path: directory traversal not allowed ("${relativePath}")`);
+    }
+  }
+  // Reject absolute paths
+  if (/^[/\\]/.test(relativePath) || /^[A-Za-z]:/.test(relativePath)) {
+    throw new Error(`Invalid path: must be relative ("${relativePath}")`);
+  }
+}
+
 function getFileType(name: string): ProjectFileType | null {
   const lower = name.toLowerCase();
   // Skip ignored file extensions (build artifacts, binary/non-text files)
@@ -152,8 +174,8 @@ export async function scanProjectFolder(rootPath: string): Promise<ScanResult> {
       const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
 
       if (entry.isDirectory) {
-        // Skip hidden directories and common non-project dirs
-        if (entry.name.startsWith(".") || entry.name === "node_modules") {
+        // Skip hidden directories, common non-project dirs, and traversal attempts
+        if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "..") {
           continue;
         }
         folders.push(relativePath);
@@ -234,6 +256,7 @@ export async function createFileOnDisk(
   name: string,
   content: string,
 ): Promise<string> {
+  validateRelativePath(name);
   const fullPath = await join(rootPath, name);
   // Ensure parent directory exists
   const lastSep = Math.max(
@@ -256,6 +279,7 @@ export async function getUniqueTargetName(
   rootPath: string,
   targetName: string,
 ): Promise<string> {
+  validateRelativePath(targetName);
   const fullPath = await join(rootPath, targetName);
   if (!(await exists(fullPath))) return targetName;
 
@@ -280,6 +304,7 @@ export async function copyFileToProject(
   sourcePath: string,
   targetName: string,
 ): Promise<string> {
+  validateRelativePath(targetName);
   // Auto-deduplicate filename
   const uniqueName = await getUniqueTargetName(rootPath, targetName);
   const fullPath = await join(rootPath, uniqueName);

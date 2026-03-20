@@ -89,6 +89,12 @@ const TAB_FIELDS = [
   "totalOutputTokens",
 ] as const;
 
+/**
+ * Max messages retained per tab. Older messages are trimmed when this limit
+ * is exceeded to prevent unbounded memory growth in long sessions.
+ */
+const MAX_MESSAGES_PER_TAB = 500;
+
 function makeDefaultTab(id: string): TabState {
   return {
     id,
@@ -490,7 +496,10 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
           }
         }
 
-        set((s) => applyTabUpdate(s, activeTabId, { messages }));
+        const trimmed = messages.length > MAX_MESSAGES_PER_TAB
+          ? messages.slice(messages.length - MAX_MESSAGES_PER_TAB)
+          : messages;
+        set((s) => applyTabUpdate(s, activeTabId, { messages: trimmed }));
       } catch (err) {
         log.error("Failed to load session history", { error: String(err) });
       }
@@ -589,8 +598,14 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
       const tab = state.tabs.find((t) => t.id === tabId);
       if (!tab) return {};
 
+      let newMessages = [...tab.messages, msg];
+      // Trim oldest messages if exceeding limit (keep recent messages)
+      if (newMessages.length > MAX_MESSAGES_PER_TAB) {
+        newMessages = newMessages.slice(newMessages.length - MAX_MESSAGES_PER_TAB);
+      }
+
       return applyTabUpdate(state, tabId, {
-        messages: [...tab.messages, msg],
+        messages: newMessages,
         totalInputTokens: tab.totalInputTokens + inputDelta,
         totalOutputTokens: tab.totalOutputTokens + outputDelta,
       });

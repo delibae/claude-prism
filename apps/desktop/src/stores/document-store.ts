@@ -40,20 +40,62 @@ export interface ProjectFile {
 
 // ── PDF bytes cache (kept outside Zustand to avoid React diffing large buffers) ──
 // Keyed by rootFileId. Consumers read via getPdfBytes() / getCurrentPdfBytes().
+// Bounded LRU cache: evicts oldest entries when size or count limits are exceeded.
 const _pdfBytesCache = new Map<string, Uint8Array>();
+/** Insertion-order tracking for LRU eviction. Most-recently-used at end. */
+const _pdfLruOrder: string[] = [];
+/** Total bytes currently stored in cache. */
+let _pdfCacheTotalBytes = 0;
+/** Max total bytes in cache (128 MB). */
+const MAX_PDF_CACHE_BYTES = 128 * 1024 * 1024;
+/** Max number of cached PDFs. */
+const MAX_PDF_CACHE_ENTRIES = 20;
+
 /** Current active PDF root file id (mirrors what Zustand tracks via pdfRevision). */
 let _currentPdfRootId: string | null = null;
 
+/** Evict oldest entries until cache is within limits.
+ *  Never evicts `protectKey` — used to prevent evicting a just-inserted entry. */
+function _evictPdfCache(protectKey?: string) {
+  while (
+    _pdfLruOrder.length > MAX_PDF_CACHE_ENTRIES ||
+    _pdfCacheTotalBytes > MAX_PDF_CACHE_BYTES
+  ) {
+    // Find the oldest entry that isn't the protected key
+    const evictIdx = protectKey
+      ? _pdfLruOrder.findIndex((k) => k !== protectKey)
+      : 0;
+    if (evictIdx === -1 || evictIdx >= _pdfLruOrder.length) break;
+    const oldest = _pdfLruOrder.splice(evictIdx, 1)[0];
+    const bytes = _pdfBytesCache.get(oldest);
+    if (bytes) {
+      _pdfCacheTotalBytes -= bytes.byteLength;
+      _pdfBytesCache.delete(oldest);
+    }
+    if (_currentPdfRootId === oldest) _currentPdfRootId = null;
+  }
+}
+
+/** Touch a key to mark it as most-recently-used. */
+function _touchPdfLru(key: string) {
+  const idx = _pdfLruOrder.indexOf(key);
+  if (idx !== -1) _pdfLruOrder.splice(idx, 1);
+  _pdfLruOrder.push(key);
+}
+
 /** Get PDF bytes for a specific root file id. */
 export function getPdfBytes(rootFileId: string): Uint8Array | undefined {
-  return _pdfBytesCache.get(rootFileId);
+  const data = _pdfBytesCache.get(rootFileId);
+  if (data) _touchPdfLru(rootFileId);
+  return data;
 }
 
 /** Get the current active PDF bytes (convenience for components that don't know the rootId). */
 export function getCurrentPdfBytes(): Uint8Array | null {
-  return _currentPdfRootId
-    ? (_pdfBytesCache.get(_currentPdfRootId) ?? null)
-    : null;
+  if (!_currentPdfRootId) return null;
+  const data = _pdfBytesCache.get(_currentPdfRootId) ?? null;
+  if (data) _touchPdfLru(_currentPdfRootId);
+  return data;
 }
 
 /** Check if any PDF data exists for the current root. */
@@ -63,6 +105,8 @@ export function hasPdfData(): boolean {
 
 export function clearPdfBytesCache() {
   _pdfBytesCache.clear();
+  _pdfLruOrder.length = 0;
+  _pdfCacheTotalBytes = 0;
   _currentPdfRootId = null;
 }
 
@@ -176,6 +220,9 @@ function migratePdfBytesKey(oldKey: string, newKey: string) {
   const bytes = _pdfBytesCache.get(oldKey)!;
   _pdfBytesCache.delete(oldKey);
   _pdfBytesCache.set(newKey, bytes);
+  // Update LRU order
+  const idx = _pdfLruOrder.indexOf(oldKey);
+  if (idx !== -1) _pdfLruOrder[idx] = newKey;
   if (_currentPdfRootId === oldKey) _currentPdfRootId = newKey;
 }
 
@@ -387,7 +434,11 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       state.activeFileId === id ? newFiles[0].id : state.activeFileId;
     const compileErrorCache = new Map(state.compileErrorCache);
     const lastCompiledGenerations = new Map(state.lastCompiledGenerations);
+    const deletedPdf = _pdfBytesCache.get(id);
+    if (deletedPdf) _pdfCacheTotalBytes -= deletedPdf.byteLength;
     _pdfBytesCache.delete(id);
+    const lruIdx = _pdfLruOrder.indexOf(id);
+    if (lruIdx !== -1) _pdfLruOrder.splice(lruIdx, 1);
     compileErrorCache.delete(id);
     lastCompiledGenerations.delete(id);
     // If the deleted file was active, show the new active file's cached PDF
@@ -437,7 +488,11 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const compileErrorCache = new Map(state.compileErrorCache);
     const lastCompiledGenerations = new Map(state.lastCompiledGenerations);
     for (const f of filesToRemove) {
+      const deletedPdf = _pdfBytesCache.get(f.id);
+      if (deletedPdf) _pdfCacheTotalBytes -= deletedPdf.byteLength;
       _pdfBytesCache.delete(f.id);
+      const lruIdx = _pdfLruOrder.indexOf(f.id);
+      if (lruIdx !== -1) _pdfLruOrder.splice(lruIdx, 1);
       compileErrorCache.delete(f.id);
       lastCompiledGenerations.delete(f.id);
     }
@@ -544,10 +599,20 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   setPdfData: (data, rootFileId?) => {
     if (data) {
       const key = rootFileId ?? "__default__";
+      // Update cache size tracking
+      const existing = _pdfBytesCache.get(key);
+      if (existing) _pdfCacheTotalBytes -= existing.byteLength;
       _pdfBytesCache.set(key, data);
+      _pdfCacheTotalBytes += data.byteLength;
+      _touchPdfLru(key);
+      _evictPdfCache(key);
       _currentPdfRootId = key;
     } else if (rootFileId) {
+      const existing = _pdfBytesCache.get(rootFileId);
+      if (existing) _pdfCacheTotalBytes -= existing.byteLength;
       _pdfBytesCache.delete(rootFileId);
+      const idx = _pdfLruOrder.indexOf(rootFileId);
+      if (idx !== -1) _pdfLruOrder.splice(idx, 1);
       if (_currentPdfRootId === rootFileId) _currentPdfRootId = null;
     } else {
       _currentPdfRootId = null;

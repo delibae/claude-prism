@@ -358,6 +358,7 @@ pub fn run() {
             history::history_restore,
             history::history_add_label,
             history::history_remove_label,
+            history::history_prune,
             slash_commands::slash_commands_list,
             slash_commands::slash_command_get,
             slash_commands::slash_command_save,
