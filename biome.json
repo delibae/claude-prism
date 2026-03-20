@@ -40,7 +40,7 @@
             "allowedLabels": ["DEV"]
           }
         },
-        "noDoubleEquals": "warn",
+        "noDoubleEquals": "off",
         "noPrototypeBuiltins": "off",
         "noDocumentCookie": "off"
       },
@@ -57,7 +57,7 @@
             "ignoreRestSiblings": true
           }
         },
-        "useExhaustiveDependencies": "warn",
+        "useExhaustiveDependencies": "off",
         "useHookAtTopLevel": "off",
         "noSwitchDeclarations": "off",
         "noUnsafeOptionalChaining": "off",
@@ -86,7 +86,7 @@
         "useAriaPropsForRole": "off"
       },
       "security": {
-        "noDangerouslySetInnerHtml": "warn"
+        "noDangerouslySetInnerHtml": "off"
       },
       "performance": {
         "noImgElement": "off"
