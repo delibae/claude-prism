@@ -71,12 +71,42 @@ fn find_claude_binary() -> Result<String, String> {
         }
     }
 
-    // 2. Try to find claude on PATH
+    // 2. Check NVM_BIN environment variable (active NVM version).
+    //    This is checked before `which` because GUI apps lack shell-sourced PATH,
+    //    but NVM_BIN may still be set when launched from a terminal-aware context.
+    #[cfg(not(target_os = "windows"))]
+    if let Ok(nvm_bin) = std::env::var("NVM_BIN") {
+        let claude_in_nvm = PathBuf::from(&nvm_bin).join("claude");
+        if claude_in_nvm.exists() {
+            return Ok(claude_in_nvm.to_string_lossy().to_string());
+        }
+    }
+
+    // 3. Try to find claude on PATH
     if let Ok(path) = which::which("claude") {
         return Ok(path.to_string_lossy().to_string());
     }
 
-    // 3. Check NVM directories (Unix) or npm global (Windows)
+    // 4. On macOS/Linux, ask a login shell for the real PATH.
+    //    GUI apps inherit a minimal PATH that misses ~/.nvm, homebrew, etc.
+    //    A login shell sources ~/.zshrc / ~/.bashrc where NVM/Homebrew are set up.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", "which claude"])
+            .output()
+        {
+            if output.status.success() {
+                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path_str.is_empty() && PathBuf::from(&path_str).exists() {
+                    return Ok(path_str);
+                }
+            }
+        }
+    }
+
+    // 5. Check NVM directories (Unix) or npm global (Windows)
     #[allow(unused_variables)]
     if let Some(home) = dirs::home_dir() {
         #[cfg(not(target_os = "windows"))]
@@ -134,7 +164,7 @@ fn find_claude_binary() -> Result<String, String> {
         }
     }
 
-    // 3. Check standard paths (Unix only)
+    // 6. Check standard paths (Unix only)
     #[cfg(not(target_os = "windows"))]
     {
         let standard_paths = [
@@ -150,7 +180,7 @@ fn find_claude_binary() -> Result<String, String> {
         }
     }
 
-    // 4. Check user-specific paths
+    // 7. Check user-specific paths
     if let Some(home) = dirs::home_dir() {
         #[cfg(not(target_os = "windows"))]
         let user_paths = vec![
@@ -177,7 +207,7 @@ fn find_claude_binary() -> Result<String, String> {
         }
     }
 
-    // 5. Bare fallback — hope it's in PATH
+    // 8. Bare fallback — hope it's in PATH
     Ok("claude".to_string())
 }
 
@@ -432,6 +462,58 @@ fn create_command(
         let program_dir_str = program_dir.to_string_lossy();
         if !current_path.contains(program_dir_str.as_ref()) {
             current_path = format!("{}{}{}", program_dir_str, sep, current_path);
+        }
+    }
+
+    // GUI apps (launched from Dock/Spotlight/Finder) inherit a minimal PATH
+    // that lacks directories like /opt/homebrew/bin or ~/.local/bin.
+    // MCP servers and other child processes that rely on tools installed there
+    // (e.g. `uv`, `node`, `python`) would fail to start.
+    // Prepend common tool directories so child processes can find them.
+    // This mirrors the approach used by find_claude_binary() and extends it
+    // to all child processes.  Fixes #87 and #90.
+    #[cfg(not(target_os = "windows"))]
+    if let Some(home) = dirs::home_dir() {
+        let extra_dirs: Vec<std::path::PathBuf> = vec![
+            home.join(".local").join("bin"),
+            home.join(".cargo").join("bin"),
+            home.join(".bun").join("bin"),
+            "/opt/homebrew/bin".into(),
+            "/opt/homebrew/sbin".into(),
+            "/usr/local/bin".into(),
+        ];
+        // Also check NVM: if NVM_BIN is set, use it; otherwise scan ~/.nvm
+        if let Ok(nvm_bin) = std::env::var("NVM_BIN") {
+            let nvm_bin_path = std::path::PathBuf::from(&nvm_bin);
+            if nvm_bin_path.exists() && !current_path.contains(&nvm_bin) {
+                current_path = format!("{}{}{}", nvm_bin, sep, current_path);
+            }
+        } else {
+            let nvm_dir = home.join(".nvm").join("versions").join("node");
+            if nvm_dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
+                    let mut candidates: Vec<std::path::PathBuf> = entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.path().join("bin"))
+                        .filter(|p| p.exists())
+                        .collect();
+                    candidates.sort();
+                    candidates.reverse(); // prefer latest version
+                    if let Some(nvm_bin_path) = candidates.first() {
+                        let nvm_bin_str = nvm_bin_path.to_string_lossy();
+                        if !current_path.contains(nvm_bin_str.as_ref()) {
+                            current_path =
+                                format!("{}{}{}", nvm_bin_str, sep, current_path);
+                        }
+                    }
+                }
+            }
+        }
+        for dir in extra_dirs {
+            let dir_str = dir.to_string_lossy().to_string();
+            if dir.exists() && !current_path.contains(&dir_str) {
+                current_path = format!("{}{}{}", dir_str, sep, current_path);
+            }
         }
     }
 
