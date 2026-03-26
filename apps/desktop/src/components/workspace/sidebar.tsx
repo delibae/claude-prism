@@ -25,6 +25,8 @@ import {
   AppWindowIcon,
   FlaskConicalIcon,
   TerminalIcon,
+  SettingsIcon,
+  PanelLeftCloseIcon,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -58,6 +60,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
@@ -71,6 +74,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useUvSetupStore } from "@/stores/uv-setup-store";
 import { UvSetupDialog } from "@/components/uv-setup";
+import { useUiPreferencesStore } from "@/stores/ui-preferences-store";
+import { resetOnboardingFlag } from "@/components/scientific-skills/scientific-skills-onboarding";
 import { createLogger } from "@/lib/debug/logger";
 
 const log = createLogger("sidebar");
@@ -206,7 +211,11 @@ function useAppVersion() {
 
 // ─── Sidebar ───
 
-export function Sidebar() {
+interface SidebarProps {
+  onToggleSidebar?: () => void;
+}
+
+export function Sidebar({ onToggleSidebar }: SidebarProps = {}) {
   const appVersion = useAppVersion();
   const files = useDocumentStore((s) => s.files);
   const activeFileId = useDocumentStore((s) => s.activeFileId);
@@ -232,6 +241,8 @@ export function Sidebar() {
   const projectRoot = useDocumentStore((s) => s.projectRoot);
   const folders = useDocumentStore((s) => s.folders);
   const { theme, setTheme } = useTheme();
+  const showZotero = useUiPreferencesStore((s) => s.showZoteroPanel);
+  const setShowZotero = useUiPreferencesStore((s) => s.setShowZoteroPanel);
 
   // ─── Native OS file drop (Tauri onDragDropEvent) ───
   const sidebarFilesRef = useRef<HTMLDivElement>(null);
@@ -638,6 +649,17 @@ export function Sidebar() {
           >
             <HomeIcon className="size-3.5" />
           </Button>
+          {onToggleSidebar && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              onClick={onToggleSidebar}
+              title="Collapse Sidebar"
+            >
+              <PanelLeftCloseIcon className="size-3.5" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -792,19 +814,23 @@ export function Sidebar() {
           </div>
         </Panel>
 
-        <PanelResizeHandle className="h-px bg-sidebar-border transition-colors hover:bg-ring data-resize-handle-active:bg-ring" />
+        {showZotero && (
+          <>
+            <PanelResizeHandle className="h-px bg-sidebar-border transition-colors hover:bg-ring data-resize-handle-active:bg-ring" />
 
-        {/* Zotero */}
-        <Panel defaultSize={15} minSize={10}>
-          <div className="flex h-full flex-col">
-            <div className="flex h-8 shrink-0 items-center">
-              <ZoteroHeader />
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <ZoteroPanel />
-            </div>
-          </div>
-        </Panel>
+            {/* Zotero */}
+            <Panel defaultSize={15} minSize={10}>
+              <div className="flex h-full flex-col">
+                <div className="flex h-8 shrink-0 items-center">
+                  <ZoteroHeader />
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <ZoteroPanel />
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
       </PanelGroup>
 
       {/* Environment section — Python + Skills */}
@@ -849,6 +875,35 @@ export function Sidebar() {
               <MoonIcon className="size-3.5" />
             )}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6"
+                title="Settings"
+              >
+                <SettingsIcon className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top">
+              <DropdownMenuCheckboxItem
+                checked={showZotero}
+                onCheckedChange={setShowZotero}
+              >
+                Show Zotero Panel
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  setShowZotero(true);
+                  resetOnboardingFlag();
+                }}
+              >
+                Revert to Defaults
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
