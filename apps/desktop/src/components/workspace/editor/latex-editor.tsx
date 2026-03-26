@@ -54,6 +54,7 @@ import {
   resolveCompileTarget,
   formatCompileError,
 } from "@/lib/latex-compiler";
+import { useSettingsStore } from "@/stores/settings-store";
 import { EditorToolbar } from "./editor-toolbar";
 import { SelectionToolbar, type ToolbarAction } from "./selection-toolbar";
 import { Button } from "@/components/ui/button";
@@ -395,7 +396,9 @@ export function LatexEditor() {
         .getState()
         .createSnapshot(projectRoot, "[compile] Pre-compile")
         .catch(() => {});
-      const data = await compileLatex(projectRoot, targetPath);
+      const useTexlive =
+        useSettingsStore.getState().compilerBackend === "texlive";
+      const data = await compileLatex(projectRoot, targetPath, useTexlive);
       setPdfData(data, rootId);
     } catch (error) {
       setCompileError(formatCompileError(error), rootId);

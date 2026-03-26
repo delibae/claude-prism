@@ -102,6 +102,102 @@ fn detect_tex_engine(content: &str) -> Option<TexEngine> {
     None
 }
 
+#[derive(Debug, PartialEq)]
+enum BibTool {
+    Biber,
+    BibTeX,
+    None,
+}
+
+/// Detect which bibliography tool is needed by scanning .tex content.
+fn detect_bib_tool(content: &str) -> BibTool {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('%') {
+            continue;
+        }
+        if trimmed.contains("\\usepackage") && trimmed.contains("biblatex") {
+            return BibTool::Biber;
+        }
+    }
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('%') {
+            continue;
+        }
+        if trimmed.contains("\\bibliography{") || trimmed.contains("\\addbibresource{") {
+            return BibTool::BibTeX;
+        }
+    }
+    BibTool::None
+}
+
+/// Resolve a TeXLive engine binary to its full path.
+/// GUI apps on macOS lack the user's shell PATH, so we check standard
+/// TeXLive installation locations and fall back to a login-shell query.
+fn find_texlive_binary(name: &str) -> Result<PathBuf, String> {
+    // 1. Try PATH (works when launched from terminal)
+    if let Ok(path) = which::which(name) {
+        return Ok(path);
+    }
+
+    // 2. Check standard TeXLive locations
+    #[cfg(not(target_os = "windows"))]
+    {
+        let standard_paths = [
+            format!("/Library/TeX/texbin/{}", name),
+            format!("/usr/local/texlive/2025/bin/universal-darwin/{}", name),
+            format!("/usr/local/texlive/2024/bin/universal-darwin/{}", name),
+            format!("/usr/local/texlive/2025/bin/x86_64-linux/{}", name),
+            format!("/usr/local/texlive/2024/bin/x86_64-linux/{}", name),
+            format!("/opt/homebrew/bin/{}", name),
+            format!("/usr/bin/{}", name),
+        ];
+        for path_str in &standard_paths {
+            let p = PathBuf::from(path_str);
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let standard_paths = [
+            format!("C:\\texlive\\2025\\bin\\windows\\{}.exe", name),
+            format!("C:\\texlive\\2024\\bin\\windows\\{}.exe", name),
+        ];
+        for path_str in &standard_paths {
+            let p = PathBuf::from(path_str);
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+    }
+
+    // 3. macOS: ask login shell for PATH
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("/bin/zsh")
+            .args(["-l", "-c", &format!("which {}", name)])
+            .output()
+        {
+            if output.status.success() {
+                let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let p = PathBuf::from(&resolved);
+                if p.exists() {
+                    return Ok(p);
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "{} not found. Install TeXLive or add it to your PATH.",
+        name
+    ))
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     if !dst.exists() {
         std::fs::create_dir_all(dst)?;
@@ -293,6 +389,175 @@ fn compile_with_tectonic_subprocess(work_dir: &Path, main_file: &str) -> Result<
     }
 }
 
+// --- TeXLive Compilation ---
+
+/// Build a PATH that includes the TeXLive bin directory so that xelatex
+/// can find xdvipdfmx, kpsewhich, and other tools it invokes internally.
+/// GUI apps on macOS have a minimal PATH that doesn't include TeXLive.
+fn texlive_env_path(engine: &Path) -> String {
+    let texbin = engine
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    if current_path.contains(&texbin) {
+        current_path
+    } else {
+        format!("{}:{}", texbin, current_path)
+    }
+}
+
+/// Run a single TeX engine pass.  Never returns `Err` for a non-zero exit
+/// code — TeXLive returns non-zero for warnings, font substitutions, etc.
+/// The only `Err` is when the process cannot be *spawned* at all.
+/// The caller decides success by checking whether the PDF was produced.
+fn run_texlive_pass(
+    engine: &Path,
+    args: &[&str],
+    main_file: &Path,
+    work_dir: &Path,
+) -> Result<(), String> {
+    let output = std::process::Command::new(engine)
+        .args(args)
+        .arg(main_file)
+        .current_dir(work_dir)
+        .env("PATH", texlive_env_path(engine))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to launch {}: {}", engine.display(), e))?;
+
+    // TeXLive returns non-zero on warnings too — don't fail here.
+    // The caller decides success by checking whether the PDF was produced.
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            eprintln!("[texlive] engine stderr: {}", stderr.trim());
+        }
+    }
+    Ok(())
+}
+
+fn compile_with_texlive(
+    work_dir: &Path,
+    main_file: &str,
+    engine: Option<TexEngine>,
+    tex_content: &str,
+) -> Result<(), String> {
+    let engine_name = match engine {
+        Some(TexEngine::XeLaTeX) | None => "xelatex",
+        Some(TexEngine::Latex) => "pdflatex",
+        Some(TexEngine::LuaLaTeX) => "lualatex",
+    };
+
+    let engine_path = find_texlive_binary(engine_name)?;
+    let env_path = texlive_env_path(&engine_path);
+    eprintln!("[texlive] backend: {} ({})", engine_name, engine_path.display());
+    let bib_tool = detect_bib_tool(tex_content);
+
+    // Use "." as output-directory since current_dir is already work_dir.
+    // Absolute paths break when they contain ~ (e.g. iCloud's com~apple~CloudDocs)
+    // because TeX interprets ~ as a home directory shortcut.
+    let output_dir_arg = "-output-directory=.".to_string();
+    // Do NOT use -halt-on-error: xelatex is a pipeline (xetex → .xdv → xdvipdfmx → .pdf).
+    // With -halt-on-error, recoverable warnings (e.g. missing font shapes) cause xetex to
+    // exit non-zero, and the xelatex wrapper skips the xdvipdfmx step — producing .xdv but
+    // no .pdf.  -interaction=nonstopmode alone is sufficient to avoid interactive prompts.
+    let common_args: Vec<&str> = vec![
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        &output_dir_arg,
+    ];
+
+    let main_file_path = Path::new(main_file);
+
+    // Pass 1
+    run_texlive_pass(&engine_path, &common_args, main_file_path, work_dir)?;
+
+    // Bib pass (if needed)
+    let main_stem = Path::new(main_file)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+
+    match bib_tool {
+        BibTool::Biber => {
+            let biber_path = find_texlive_binary("biber")?;
+            let output = std::process::Command::new(&biber_path)
+                .arg(main_stem)
+                .current_dir(work_dir)
+                .env("PATH", &env_path)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .map_err(|e| format!("Failed to run biber: {}", e))?;
+            if !output.status.success() {
+                eprintln!(
+                    "[texlive] biber warning: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+        BibTool::BibTeX => {
+            let bibtex_path = find_texlive_binary("bibtex")?;
+            let aux_file = work_dir.join(format!("{}.aux", main_stem));
+            let output = std::process::Command::new(&bibtex_path)
+                .arg(&aux_file)
+                .current_dir(work_dir)
+                .env("PATH", &env_path)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .map_err(|e| format!("Failed to run bibtex: {}", e))?;
+            if !output.status.success() {
+                eprintln!(
+                    "[texlive] bibtex warning: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+        BibTool::None => {}
+    }
+
+    // Pass 2: resolve references / TOC
+    run_texlive_pass(&engine_path, &common_args, &main_file_path, work_dir)?;
+
+    // Pass 3: stabilize citations (only if bib was used)
+    if !matches!(bib_tool, BibTool::None) {
+        run_texlive_pass(&engine_path, &common_args, &main_file_path, work_dir)?;
+    }
+
+    let pdf_path = work_dir.join(format!("{}.pdf", main_stem));
+    let xdv_path = work_dir.join(format!("{}.xdv", main_stem));
+
+    // Fallback: if xelatex produced .xdv but no .pdf (e.g. xdvipdfmx was skipped due to
+    // warnings), manually run xdvipdfmx to convert .xdv → .pdf.
+    if !pdf_path.exists() && xdv_path.exists() {
+        eprintln!("[texlive] .xdv exists but no .pdf — running xdvipdfmx manually");
+        if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx") {
+            let output = std::process::Command::new(&xdvipdfmx)
+                .args(["-o", &pdf_path.to_string_lossy()])
+                .arg(&xdv_path)
+                .current_dir(work_dir)
+                .env("PATH", &env_path)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .map_err(|e| format!("Failed to launch xdvipdfmx: {}", e))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.trim().is_empty() {
+                    eprintln!("[texlive] xdvipdfmx stderr: {}", stderr.trim());
+                }
+            }
+        }
+    }
+
+    // Success is determined by whether the PDF exists, not by exit codes.
+    // The caller (compile_latex) checks pdf_path.exists() and reads the log for errors.
+    Ok(())
+}
+
 // --- SyncTeX Native Parser ---
 
 struct SynctexNode {
@@ -435,11 +700,50 @@ fn parse_synctex_node(s: &str, factor: f64, x_offset: f64, y_offset: f64) -> Opt
 
 // --- Tauri Commands ---
 
+#[derive(serde::Serialize)]
+pub struct TexliveStatus {
+    pub available: bool,
+    pub engines: Vec<String>,
+    pub version: Option<String>,
+}
+
+#[tauri::command]
+pub fn detect_texlive() -> TexliveStatus {
+    let engines_to_check = ["pdflatex", "xelatex", "lualatex"];
+    let mut found_engines = Vec::new();
+
+    for name in &engines_to_check {
+        if find_texlive_binary(name).is_ok() {
+            found_engines.push(name.to_string());
+        }
+    }
+
+    let version = find_texlive_binary("pdflatex").ok().and_then(|path| {
+        std::process::Command::new(&path)
+            .arg("--version")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .ok()
+            .and_then(|o| {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                stdout.lines().next().map(|l| l.to_string())
+            })
+    });
+
+    TexliveStatus {
+        available: !found_engines.is_empty(),
+        engines: found_engines,
+        version,
+    }
+}
+
 #[tauri::command]
 pub async fn compile_latex(
     state: tauri::State<'_, LatexCompilerState>,
     project_dir: String,
     main_file: String,
+    use_texlive: Option<bool>,
 ) -> Result<tauri::ipc::Response, String> {
     // Acquire semaphore permit (non-blocking)
     let _permit = state
@@ -459,6 +763,7 @@ pub async fn compile_latex(
     let _project_guard = project_lock.lock().await;
 
     let t0 = std::time::Instant::now();
+    let use_texlive = use_texlive.unwrap_or(false);
 
     let main_file_name = Path::new(&main_file)
         .file_stem()
@@ -489,14 +794,15 @@ pub async fn compile_latex(
     }
 
     eprintln!(
-        "[latex] +{:.0}ms {} ({})",
+        "[latex] +{:.0}ms {} ({}, backend={})",
         t0.elapsed().as_millis(),
         if is_reuse {
             "sync source files"
         } else {
             "full copy"
         },
-        if is_reuse { "reuse" } else { "first build" }
+        if is_reuse { "reuse" } else { "first build" },
+        if use_texlive { "texlive" } else { "tectonic" }
     );
 
     // Remove stale PDF so a failed compile doesn't return the previous result.
@@ -513,42 +819,70 @@ pub async fn compile_latex(
     }
 
     // Detect TeX engine from magic comment
-    if let Ok(content) = std::fs::read_to_string(&main_tex_path) {
-        if let Some(engine) = detect_tex_engine(&content) {
-            if engine == TexEngine::LuaLaTeX {
-                return Err(
-                    "Compilation failed\n\nThis document requires LuaLaTeX (% !TEX program = lualatex), \
-                     which is not supported. Prism uses a XeTeX-based engine (Tectonic). \
-                     Please switch to XeLaTeX or remove the magic comment."
-                        .to_string(),
-                );
-            }
-            // XeLaTeX → native (Tectonic is XeTeX-based), pdflatex → mostly compatible
+    let main_tex_content = std::fs::read_to_string(&main_tex_path).unwrap_or_default();
+    let engine = detect_tex_engine(&main_tex_content);
+
+    // Save engine name before `engine` is moved into the spawn_blocking closure
+    let engine_name_for_label = match &engine {
+        Some(TexEngine::XeLaTeX) | None => "xelatex",
+        Some(TexEngine::Latex) => "pdflatex",
+        Some(TexEngine::LuaLaTeX) => "lualatex",
+    };
+    let backend_label = if use_texlive {
+        format!("TeXLive/{}", engine_name_for_label)
+    } else {
+        "Tectonic".to_string()
+    };
+
+    if !use_texlive {
+        if let Some(TexEngine::LuaLaTeX) = engine {
+            return Err(
+                "Compilation failed\n\nThis document requires LuaLaTeX (% !TEX program = lualatex), \
+                 which is not supported. Prism uses a XeTeX-based engine (Tectonic). \
+                 Please switch to XeLaTeX or remove the magic comment."
+                    .to_string(),
+            );
         }
     }
 
-    // Run Tectonic in a subprocess to isolate C-level global state (font cache, etc.).
-    // This prevents the font_cache assertion failure on retry after a failed compilation.
-    let work_dir_clone = work_dir.clone();
-    let main_file_clone = main_file.clone();
-    let compile_result = tokio::task::spawn_blocking(move || {
-        lower_thread_priority();
-        compile_with_tectonic_subprocess(&work_dir_clone, &main_file_clone)
-    })
-    .await
-    .map_err(|e| format!("Compilation task panicked: {}", e))?;
-
-    eprintln!(
-        "[latex] +{:.0}ms tectonic done (ok={})",
-        t0.elapsed().as_millis(),
-        compile_result.is_ok()
-    );
+    let compile_result = if use_texlive {
+        let work_dir_clone = work_dir.clone();
+        let main_file_clone = main_file.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            lower_thread_priority();
+            compile_with_texlive(&work_dir_clone, &main_file_clone, engine, &main_tex_content)
+        })
+        .await
+        .map_err(|e| format!("Compilation task panicked: {}", e))?;
+        eprintln!(
+            "[latex] +{:.0}ms texlive done (ok={})",
+            t0.elapsed().as_millis(),
+            result.is_ok()
+        );
+        result
+    } else {
+        // Run Tectonic in a subprocess to isolate C-level global state (font cache, etc.).
+        let work_dir_clone = work_dir.clone();
+        let main_file_clone = main_file.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            lower_thread_priority();
+            compile_with_tectonic_subprocess(&work_dir_clone, &main_file_clone)
+        })
+        .await
+        .map_err(|e| format!("Compilation task panicked: {}", e))?;
+        eprintln!(
+            "[latex] +{:.0}ms tectonic done (ok={})",
+            t0.elapsed().as_millis(),
+            result.is_ok()
+        );
+        result
+    };
 
     let log_path = work_dir.join(format!("{}.log", main_file_name));
 
-    // Handle "No pages of output" — retry with \AtEndDocument{\null} injection
-    // Skip retry if there are real errors (e.g. missing packages) — retrying won't help.
-    if !pdf_path.exists() {
+    // Handle "No pages of output" — retry with \AtEndDocument{\null} injection (Tectonic only).
+    // TeXLive multi-pass handles this differently; the injection is Tectonic-specific.
+    if !use_texlive && !pdf_path.exists() {
         let log_path_clone = log_path.clone();
         let main_tex = work_dir.join(&main_file);
         let pdf_path_clone = pdf_path.clone();
@@ -610,9 +944,10 @@ pub async fn compile_latex(
             .map_err(|e| format!("PDF read task panicked: {}", e))?
             .map_err(|e| format!("Failed to read PDF: {}", e))?;
         eprintln!(
-            "[latex] +{:.0}ms total (reuse={}) pdf_size={}KB",
+            "[latex] +{:.0}ms total (reuse={}, backend={}) pdf_size={}KB",
             t0.elapsed().as_millis(),
             is_reuse,
+            backend_label,
             pdf_bytes.len() / 1024
         );
         Ok(tauri::ipc::Response::new(pdf_bytes))
@@ -627,7 +962,7 @@ pub async fn compile_latex(
         } else {
             details
         };
-        Err(format!("Compilation failed\n\n{}", msg))
+        Err(format!("Compilation failed ({})\n\n{}", backend_label, msg))
     }
 }
 
@@ -704,6 +1039,44 @@ pub async fn cleanup_all_builds(state: &LatexCompilerState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- detect_bib_tool ---
+
+    #[test]
+    fn test_detect_bib_tool_biber() {
+        let content = "\\documentclass{article}\n\\usepackage{biblatex}\n\\begin{document}\n\\end{document}";
+        assert_eq!(detect_bib_tool(content), BibTool::Biber);
+    }
+
+    #[test]
+    fn test_detect_bib_tool_biblatex_with_options() {
+        let content = "\\documentclass{article}\n\\usepackage[style=apa,backend=biber]{biblatex}\n\\begin{document}";
+        assert_eq!(detect_bib_tool(content), BibTool::Biber);
+    }
+
+    #[test]
+    fn test_detect_bib_tool_bibtex() {
+        let content = "\\documentclass{article}\n\\bibliography{refs}\n\\end{document}";
+        assert_eq!(detect_bib_tool(content), BibTool::BibTeX);
+    }
+
+    #[test]
+    fn test_detect_bib_tool_addbibresource() {
+        let content = "\\documentclass{article}\n\\addbibresource{refs.bib}\n\\end{document}";
+        assert_eq!(detect_bib_tool(content), BibTool::BibTeX);
+    }
+
+    #[test]
+    fn test_detect_bib_tool_none() {
+        let content = "\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}";
+        assert_eq!(detect_bib_tool(content), BibTool::None);
+    }
+
+    #[test]
+    fn test_detect_bib_tool_commented_out() {
+        let content = "\\documentclass{article}\n% \\bibliography{refs}\n% \\usepackage{biblatex}\n\\end{document}";
+        assert_eq!(detect_bib_tool(content), BibTool::None);
+    }
 
     // --- extract_error_lines ---
 

@@ -43,13 +43,17 @@ export function formatCompileError(error: unknown): string {
 export async function compileLatex(
   projectDir: string,
   mainFile: string = "main.tex",
+  useTexlive: boolean = false,
 ): Promise<Uint8Array> {
-  log.info(`Compiling ${mainFile}`);
+  log.info(
+    `Compiling ${mainFile} (backend: ${useTexlive ? "texlive" : "tectonic"})`,
+  );
   const start = performance.now();
   // compile_latex returns raw PDF bytes via Tauri IPC Response
   const buffer = await invoke<ArrayBuffer>("compile_latex", {
     projectDir,
     mainFile,
+    useTexlive,
   });
 
   const result = new Uint8Array(buffer);
@@ -57,6 +61,16 @@ export async function compileLatex(
     `Compiled ${mainFile} in ${(performance.now() - start).toFixed(0)}ms (${(result.byteLength / 1024).toFixed(0)} KB)`,
   );
   return result;
+}
+
+export interface TexliveStatus {
+  available: boolean;
+  engines: string[];
+  version: string | null;
+}
+
+export async function detectTexlive(): Promise<TexliveStatus> {
+  return invoke<TexliveStatus>("detect_texlive");
 }
 
 export interface SynctexResult {

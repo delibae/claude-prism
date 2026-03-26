@@ -355,6 +355,7 @@ pub fn run() {
             read_clipboard_file_paths,
             latex::compile_latex,
             latex::synctex_edit,
+            latex::detect_texlive,
             claude::check_claude_status,
             claude::install_claude_cli,
             claude::login_claude,
