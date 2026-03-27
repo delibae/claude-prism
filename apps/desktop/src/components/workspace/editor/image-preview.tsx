@@ -3,6 +3,7 @@ import { CheckIcon, XIcon } from "lucide-react";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { toast } from "sonner";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
+import { LOCAL_ZOOM_SHORTCUTS_ATTR } from "@/lib/app-zoom";
 import { getAssetUrl } from "@/lib/tauri/fs";
 import { Button } from "@/components/ui/button";
 
@@ -353,12 +354,14 @@ export function ImagePreview({
     <div
       ref={containerRef}
       tabIndex={-1}
+      {...{ [LOCAL_ZOOM_SHORTCUTS_ATTR]: "true" }}
       className="relative h-full overflow-auto bg-muted/50 p-4 outline-none"
       style={
         cropMode
           ? { cursor: cropRect && !dragStart ? "default" : "crosshair" }
           : undefined
       }
+      onMouseDownCapture={() => containerRef.current?.focus()}
       onMouseMove={cropMode ? handleCropMouseMove : undefined}
       onMouseUp={cropMode ? handleCropMouseUp : undefined}
       onMouseLeave={cropMode ? handleCropMouseUp : undefined}

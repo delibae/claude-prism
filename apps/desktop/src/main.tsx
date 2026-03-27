@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { initializeAppZoom } from "./lib/app-zoom";
 import { createLogger } from "./lib/debug/logger";
 import { APP_VISIBILITY_RESTORED } from "./lib/debug/log-store";
 import "./styles/globals.css";
@@ -51,6 +52,7 @@ if (navigator.userAgent.includes("Windows")) {
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element #root not found");
+const rootContainer: HTMLElement = rootEl;
 
 function hideLoadingScreen() {
   const loading = document.getElementById("loading-screen");
@@ -61,23 +63,32 @@ function hideLoadingScreen() {
   getCurrentWindow().show();
 }
 
-if (isDebugWindow) {
-  // Debug window — render standalone debug page
-  import("./components/debug/debug-page").then(({ DebugPage }) => {
-    ReactDOM.createRoot(rootEl).render(
+async function bootstrap() {
+  try {
+    await initializeAppZoom();
+  } catch (error) {
+    log.error("Failed to initialize app zoom", { error: String(error) });
+  }
+
+  if (isDebugWindow) {
+    // Debug window — render standalone debug page
+    const { DebugPage } = await import("./components/debug/debug-page");
+    ReactDOM.createRoot(rootContainer).render(
       <React.StrictMode>
         <DebugPage />
       </React.StrictMode>,
     );
     hideLoadingScreen();
-  });
-} else {
+    return;
+  }
+
   // Main app window
-  import("./App").then(({ App }) => {
-    ReactDOM.createRoot(rootEl).render(
-      <React.StrictMode>
-        <App onReady={hideLoadingScreen} />
-      </React.StrictMode>,
-    );
-  });
+  const { App } = await import("./App");
+  ReactDOM.createRoot(rootContainer).render(
+    <React.StrictMode>
+      <App onReady={hideLoadingScreen} />
+    </React.StrictMode>,
+  );
 }
+
+void bootstrap();

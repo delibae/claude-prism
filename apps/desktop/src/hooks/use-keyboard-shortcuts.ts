@@ -1,9 +1,33 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  getAppZoomAction,
+  resetAppZoom,
+  shouldHandleAppZoomShortcut,
+  zoomInApp,
+  zoomOutApp,
+} from "@/lib/app-zoom";
 import { useDocumentStore } from "@/stores/document-store";
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
+    const handleZoomKeyDown = (e: KeyboardEvent) => {
+      const zoomAction = getAppZoomAction(e);
+      if (!zoomAction || !shouldHandleAppZoomShortcut(e.target)) {
+        return;
+      }
+
+      e.preventDefault();
+
+      if (zoomAction === "in") {
+        zoomInApp().catch(console.error);
+      } else if (zoomAction === "out") {
+        zoomOutApp().catch(console.error);
+      } else {
+        resetAppZoom().catch(console.error);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
@@ -46,6 +70,10 @@ export function useKeyboardShortcuts() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleZoomKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleZoomKeyDown, true);
+    };
   }, []);
 }

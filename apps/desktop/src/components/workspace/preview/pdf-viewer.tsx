@@ -6,6 +6,7 @@ import {
   getCachedDocument,
   getOrOpenDocument,
 } from "@/lib/mupdf/pdf-doc-cache";
+import { LOCAL_ZOOM_SHORTCUTS_ATTR } from "@/lib/app-zoom";
 import { MupdfPage } from "./mupdf-page";
 import { createLogger } from "@/lib/debug/logger";
 import { APP_VISIBILITY_RESTORED } from "@/lib/debug/log-store";
@@ -751,8 +752,10 @@ export function PdfViewer({
     <div
       ref={containerRef}
       tabIndex={-1}
+      {...{ [LOCAL_ZOOM_SHORTCUTS_ATTR]: "true" }}
       className="min-h-0 flex-1 overflow-auto outline-none"
       style={{ cursor: captureMode ? "crosshair" : undefined }}
+      onMouseDownCapture={() => containerRef.current?.focus()}
       onMouseDown={handleCaptureMouseDown}
       onMouseMove={handleCaptureMouseMove}
       onMouseUp={handleCaptureMouseUp}
