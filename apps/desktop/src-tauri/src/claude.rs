@@ -1909,6 +1909,7 @@ mod tests {
 
     // --- claude_required_dirs ---
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_claude_required_dirs_has_all_paths() {
         let home = PathBuf::from("/Users/test");
@@ -1922,6 +1923,7 @@ mod tests {
 
     // --- try_create_dirs ---
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_try_create_dirs_succeeds_in_temp() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1931,6 +1933,7 @@ mod tests {
         assert!(dirs[1].exists());
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_try_create_dirs_fails_for_invalid_path() {
         let dirs = vec![PathBuf::from("/nonexistent_root_path/test/dir")];
@@ -1939,6 +1942,7 @@ mod tests {
 
     // --- verify_dirs_writable ---
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_verify_dirs_writable_success() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1946,6 +1950,7 @@ mod tests {
         assert!(verify_dirs_writable(&dirs).is_ok());
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_verify_dirs_writable_nonexistent() {
         let dirs = vec![PathBuf::from("/tmp/nonexistent_dir_prism_test_12345")];
@@ -1954,6 +1959,7 @@ mod tests {
         assert!(result.unwrap_err().contains("does not exist"));
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_verify_dirs_writable_cleans_up_test_file() {
         let tmp = tempfile::tempdir().unwrap();

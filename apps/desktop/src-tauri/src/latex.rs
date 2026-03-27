@@ -43,18 +43,34 @@ fn extract_error_lines(log: &str) -> String {
         return String::new();
     }
 
-    // Extract real errors first — they take priority over "No pages of output"
-    let error_lines: Vec<&str> = log
-        .lines()
-        .filter(|l| l.starts_with('!') || l.contains("Error:") || l.contains("error:"))
-        .take(10)
-        .collect();
+    let lines: Vec<&str> = log.lines().collect();
 
-    if !error_lines.is_empty() {
-        return error_lines.join("\n");
+    let mut blocks: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() && blocks.len() < 5 {
+        let line = lines[i];
+        let is_error_start =
+            line.starts_with('!') || line.contains("Error:") || line.contains("error:");
+
+        if is_error_start {
+            let end = (i + 14).min(lines.len());
+            blocks.push(lines[i..end].join("\n"));
+            i = end;
+            continue;
+        }
+
+        i += 1;
     }
 
-    if log.lines().any(|l| l.contains("No pages of output")) {
+    if !blocks.is_empty() {
+        let mut result = blocks.join("\n\n");
+        result.push_str("\n\n---- Engine output ----\n");
+        let tail_start = lines.len().saturating_sub(20);
+        result.push_str(&lines[tail_start..].join("\n"));
+        return result;
+    }
+
+    if lines.iter().any(|l| l.contains("No pages of output")) {
         return "No pages of output. Add visible content to the document body.".to_string();
     }
 
@@ -134,10 +150,13 @@ fn sync_source_files(src: &Path, dst: &Path) -> std::io::Result<()> {
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+        let file_name = entry.file_name();
+        let dst_path = dst.join(&file_name);
         if src_path.is_dir() {
-            let name = entry.file_name();
-            if name.to_string_lossy().starts_with('.') {
+            let name = file_name.to_string_lossy();
+            if name.starts_with('.')
+                || matches!(name.as_ref(), "node_modules" | "target" | "dist")
+            {
                 continue;
             }
             sync_source_files(&src_path, &dst_path)?;
@@ -173,6 +192,21 @@ fn sync_source_files(src: &Path, dst: &Path) -> std::io::Result<()> {
                 // Cloud storage (Dropbox/iCloud) may keep files as online-only
                 // placeholders with 0 bytes. Reading the file forces a download.
                 let metadata = std::fs::metadata(&src_path)?;
+
+                if metadata.len() > 0 {
+                    if let Ok(dst_meta) = std::fs::metadata(&dst_path) {
+                        if metadata.len() == dst_meta.len() {
+                            if let (Ok(src_m), Ok(dst_m)) =
+                                (metadata.modified(), dst_meta.modified())
+                            {
+                                if src_m == dst_m {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if metadata.len() == 0 {
                     // Attempt to materialize the file by reading it
                     let data = std::fs::read(&src_path)?;
@@ -752,8 +786,9 @@ mod tests {
             log.push_str(&format!("! Error number {}\n", i));
         }
         let result = extract_error_lines(&log);
+        assert!(result.contains("---- Engine output ----"));
         let count = result.lines().count();
-        assert!(count <= 10);
+        assert!(count <= 120);
     }
 
     // --- persistent_build_dir ---
