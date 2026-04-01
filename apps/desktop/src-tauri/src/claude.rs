@@ -174,25 +174,38 @@ fn find_claude_binary() -> Result<String, String> {
         }
     }
 
+    // 2b. Check PNPM_HOME before PATH probing.
+    //     GUI apps on macOS often miss shell-initialized PATH entries, but
+    //     package-manager homes may still be available as environment vars.
+    #[cfg(not(target_os = "windows"))]
+    if let Some(path) = dirs::home_dir().and_then(|home| {
+        unix_claude_candidate_paths(&home, std::env::var_os("PNPM_HOME"))
+            .into_iter()
+            .find(|path| path.exists())
+    }) {
+        return Ok(path.to_string_lossy().to_string());
+    }
+
     // 3. Try to find claude on PATH
     if let Ok(path) = which::which("claude") {
         return Ok(path.to_string_lossy().to_string());
     }
 
-    // 4. On macOS/Linux, ask a login shell for the real PATH.
-    //    GUI apps inherit a minimal PATH that misses ~/.nvm, homebrew, etc.
-    //    A login shell sources ~/.zshrc / ~/.bashrc where NVM/Homebrew are set up.
+    // 4. On macOS/Linux, ask a login shell for the real PATH and package-manager
+    //    homes. GUI apps inherit a minimal PATH that misses ~/.nvm, homebrew,
+    //    pnpm/npm custom prefixes, etc.
     #[cfg(not(target_os = "windows"))]
     {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-        if let Ok(output) = std::process::Command::new(&shell)
-            .args(["-l", "-c", "which claude"])
-            .output()
-        {
-            if output.status.success() {
-                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path_str.is_empty() && PathBuf::from(&path_str).exists() {
-                    return Ok(path_str);
+        if let Some(path_str) = run_login_shell_command("command -v claude") {
+            if PathBuf::from(&path_str).exists() {
+                return Ok(path_str);
+            }
+        }
+
+        if let Some(home) = dirs::home_dir() {
+            for path in unix_shell_manager_candidate_paths(&home) {
+                if path.exists() {
+                    return Ok(path.to_string_lossy().to_string());
                 }
             }
         }
@@ -285,13 +298,7 @@ fn find_claude_binary() -> Result<String, String> {
     // 8. Check user-specific paths
     if let Some(home) = dirs::home_dir() {
         #[cfg(not(target_os = "windows"))]
-        let user_paths = vec![
-            home.join(".claude").join("local").join("claude"),
-            home.join(".npm-global").join("bin").join("claude"),
-            home.join(".yarn").join("bin").join("claude"),
-            home.join(".bun").join("bin").join("claude"),
-            home.join("bin").join("claude"),
-        ];
+        let user_paths = unix_claude_candidate_paths(&home, std::env::var_os("PNPM_HOME"));
         #[cfg(target_os = "windows")]
         let user_paths = vec![
             home.join(".claude").join("local").join("claude.exe"),
@@ -327,6 +334,126 @@ fn find_claude_binary() -> Result<String, String> {
     }
 
     Err("Not found in any known location. Install from https://claude.ai".to_string())
+}
+
+#[cfg(any(test, not(target_os = "windows")))]
+fn unix_claude_candidate_paths(home: &std::path::Path, pnpm_home: Option<std::ffi::OsString>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(pnpm_home) = pnpm_home.filter(|value| !value.is_empty()) {
+        paths.push(PathBuf::from(pnpm_home).join("claude"));
+    }
+    paths.extend([
+        home.join("Library").join("pnpm").join("claude"),
+        home.join(".local").join("share").join("pnpm").join("claude"),
+        home.join(".pnpm").join("claude"),
+        home.join(".claude").join("local").join("claude"),
+        home.join(".npm-global").join("bin").join("claude"),
+        home.join(".yarn").join("bin").join("claude"),
+        home.join(".bun").join("bin").join("claude"),
+        home.join("bin").join("claude"),
+    ]);
+    paths
+}
+
+#[cfg(any(test, not(target_os = "windows")))]
+fn unix_claude_path_from_bin_dir(bin_dir: impl Into<PathBuf>) -> PathBuf {
+    bin_dir.into().join("claude")
+}
+
+#[cfg(any(test, not(target_os = "windows")))]
+fn unix_claude_path_from_npm_prefix(prefix: impl Into<PathBuf>) -> PathBuf {
+    prefix.into().join("bin").join("claude")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn run_login_shell_command(command: &str) -> Option<String> {
+    let shell_env = std::env::var("SHELL").ok();
+    let mut shells = Vec::new();
+    if let Some(shell) = shell_env {
+        shells.push(shell);
+    }
+    for fallback in ["/bin/zsh", "/bin/bash", "/bin/sh"] {
+        if !shells.iter().any(|shell| shell == fallback) && PathBuf::from(fallback).exists() {
+            shells.push(fallback.to_string());
+        }
+    }
+
+    for shell in shells {
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", command])
+            .output()
+        {
+            if output.status.success() {
+                let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !value.is_empty() && value != "undefined" && value != "null" {
+                    return Some(value);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unix_shell_manager_candidate_paths(home: &std::path::Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    if let Some(pnpm_bin) =
+        run_login_shell_command("command -v pnpm >/dev/null 2>&1 && pnpm bin -g 2>/dev/null")
+    {
+        paths.push(unix_claude_path_from_bin_dir(pnpm_bin));
+    }
+
+    if let Some(npm_prefix) = run_login_shell_command(
+        "command -v npm >/dev/null 2>&1 && npm config get prefix 2>/dev/null",
+    ) {
+        paths.push(unix_claude_path_from_npm_prefix(npm_prefix));
+    }
+
+    if let Some(yarn_bin) = run_login_shell_command(
+        "command -v yarn >/dev/null 2>&1 && yarn global bin 2>/dev/null",
+    ) {
+        paths.push(unix_claude_path_from_bin_dir(yarn_bin));
+    }
+
+    paths.extend(unix_known_pnpm_claude_paths(home));
+
+    paths
+}
+
+#[cfg(any(test, not(target_os = "windows")))]
+fn unix_known_pnpm_claude_paths(home: &std::path::Path) -> Vec<PathBuf> {
+    vec![
+        home.join("Library").join("pnpm").join("claude"),
+        home.join("Library").join("pnpm").join("global").join("bin").join("claude"),
+        home.join(".local").join("share").join("pnpm").join("claude"),
+        home.join(".local").join("share").join("pnpm").join("global").join("bin").join("claude"),
+        home.join(".pnpm").join("claude"),
+        home.join(".pnpm").join("global").join("bin").join("claude"),
+    ]
+}
+
+#[cfg(any(test, not(target_os = "windows")))]
+fn unix_extra_tool_dirs(home: &std::path::Path, pnpm_home: Option<std::ffi::OsString>) -> Vec<PathBuf> {
+    let mut dirs = vec![
+        home.join(".local").join("bin"),
+        home.join(".cargo").join("bin"),
+        home.join(".bun").join("bin"),
+        home.join("Library").join("pnpm"),
+        home.join("Library").join("pnpm").join("global").join("bin"),
+        home.join(".local").join("share").join("pnpm"),
+        home.join(".local").join("share").join("pnpm").join("global").join("bin"),
+        home.join(".pnpm"),
+        home.join(".pnpm").join("global").join("bin"),
+        "/opt/homebrew/bin".into(),
+        "/opt/homebrew/sbin".into(),
+        "/usr/local/bin".into(),
+    ];
+    if let Some(pnpm_home) = pnpm_home.filter(|value| !value.is_empty()) {
+        dirs.insert(0, PathBuf::from(pnpm_home));
+    }
+    dirs
 }
 
 /// Strip ANSI escape sequences from CLI output before sending to the frontend.
@@ -606,14 +733,7 @@ fn create_command(
     // to all child processes.  Fixes #87 and #90.
     #[cfg(not(target_os = "windows"))]
     if let Some(home) = dirs::home_dir() {
-        let extra_dirs: Vec<std::path::PathBuf> = vec![
-            home.join(".local").join("bin"),
-            home.join(".cargo").join("bin"),
-            home.join(".bun").join("bin"),
-            "/opt/homebrew/bin".into(),
-            "/opt/homebrew/sbin".into(),
-            "/usr/local/bin".into(),
-        ];
+        let extra_dirs = unix_extra_tool_dirs(&home, std::env::var_os("PNPM_HOME"));
         // Also check NVM: if NVM_BIN is set, use it; otherwise scan ~/.nvm
         if let Ok(nvm_bin) = std::env::var("NVM_BIN") {
             let nvm_bin_path = std::path::PathBuf::from(&nvm_bin);
@@ -2058,6 +2178,85 @@ mod tests {
         assert!(dirs.contains(&home.join(".local").join("share").join("claude")));
         assert!(dirs.contains(&home.join(".local").join("state").join("claude")));
         assert!(dirs.contains(&home.join(".claude")));
+    }
+
+    #[test]
+    fn test_unix_claude_candidate_paths_include_pnpm_locations() {
+        let home = PathBuf::from("/Users/test");
+        let paths = unix_claude_candidate_paths(
+            &home,
+            Some(std::ffi::OsString::from("/custom/pnpm")),
+        );
+        assert!(paths.contains(&PathBuf::from("/custom/pnpm").join("claude")));
+        assert!(paths.contains(&home.join("Library").join("pnpm").join("claude")));
+        assert!(paths.contains(&home.join(".local").join("share").join("pnpm").join("claude")));
+        assert!(paths.contains(&home.join(".pnpm").join("claude")));
+        assert!(paths.contains(&home.join(".claude").join("local").join("claude")));
+    }
+
+    #[test]
+    fn test_unix_claude_path_from_bin_dir_appends_claude() {
+        assert_eq!(
+            unix_claude_path_from_bin_dir("/custom/bin"),
+            PathBuf::from("/custom/bin").join("claude")
+        );
+    }
+
+    #[test]
+    fn test_unix_claude_path_from_npm_prefix_appends_bin_claude() {
+        assert_eq!(
+            unix_claude_path_from_npm_prefix("/custom/prefix"),
+            PathBuf::from("/custom/prefix").join("bin").join("claude")
+        );
+    }
+
+    #[test]
+    fn test_unix_known_pnpm_claude_paths_include_known_layouts() {
+        let home = PathBuf::from("/Users/test");
+        let paths = unix_known_pnpm_claude_paths(&home);
+        assert!(paths.contains(&home.join("Library").join("pnpm").join("claude")));
+        assert!(paths.contains(
+            &home
+                .join("Library")
+                .join("pnpm")
+                .join("global")
+                .join("bin")
+                .join("claude")
+        ));
+        assert!(paths.contains(&home.join(".local").join("share").join("pnpm").join("claude")));
+        assert!(paths.contains(
+            &home
+                .join(".local")
+                .join("share")
+                .join("pnpm")
+                .join("global")
+                .join("bin")
+                .join("claude")
+        ));
+        assert!(paths.contains(&home.join(".pnpm").join("claude")));
+        assert!(paths.contains(
+            &home.join(".pnpm").join("global").join("bin").join("claude")
+        ));
+    }
+
+    #[test]
+    fn test_unix_extra_tool_dirs_include_pnpm_dirs() {
+        let home = PathBuf::from("/Users/test");
+        let dirs = unix_extra_tool_dirs(&home, Some(std::ffi::OsString::from("/custom/pnpm")));
+        assert_eq!(dirs.first(), Some(&PathBuf::from("/custom/pnpm")));
+        assert!(dirs.contains(&home.join("Library").join("pnpm")));
+        assert!(dirs.contains(&home.join("Library").join("pnpm").join("global").join("bin")));
+        assert!(dirs.contains(&home.join(".local").join("share").join("pnpm")));
+        assert!(dirs.contains(
+            &home
+                .join(".local")
+                .join("share")
+                .join("pnpm")
+                .join("global")
+                .join("bin")
+        ));
+        assert!(dirs.contains(&home.join(".pnpm")));
+        assert!(dirs.contains(&home.join(".pnpm").join("global").join("bin")));
     }
 
     // --- try_create_dirs ---
