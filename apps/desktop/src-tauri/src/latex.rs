@@ -6,6 +6,14 @@ use tokio::sync::{Mutex, Semaphore};
 
 const MAX_CONCURRENT: usize = 3;
 
+/// Windows CREATE_NO_WINDOW flag to prevent console windows from flashing
+/// when spawning TeXLive/Tectonic child processes from the GUI app.
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 struct BuildInfo {
     work_dir: PathBuf,
     main_file_name: String,
@@ -408,10 +416,13 @@ fn compile_with_tectonic_subprocess(work_dir: &Path, main_file: &str) -> Result<
     let exe = std::env::current_exe()
         .map_err(|e| format!("Failed to get current executable path: {}", e))?;
 
-    let output = std::process::Command::new(&exe)
-        .args(["--tectonic-compile", &work_dir.to_string_lossy(), main_file])
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(["--tectonic-compile", &work_dir.to_string_lossy(), main_file])
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to spawn tectonic subprocess: {}", e))?;
 
@@ -437,7 +448,14 @@ fn texlive_env_path(engine: &Path) -> String {
     if current_path.contains(&texbin) {
         current_path
     } else {
-        format!("{}:{}", texbin, current_path)
+        #[cfg(target_os = "windows")]
+        {
+            format!("{};{}", texbin, current_path)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            format!("{}:{}", texbin, current_path)
+        }
     }
 }
 
@@ -451,13 +469,16 @@ fn run_texlive_pass(
     main_file: &Path,
     work_dir: &Path,
 ) -> Result<(), String> {
-    let output = std::process::Command::new(engine)
-        .args(args)
+    let mut cmd = std::process::Command::new(engine);
+    cmd.args(args)
         .arg(main_file)
         .current_dir(work_dir)
         .env("PATH", texlive_env_path(engine))
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to launch {}: {}", engine.display(), e))?;
 
@@ -517,12 +538,15 @@ fn compile_with_texlive(
     match bib_tool {
         BibTool::Biber => {
             let biber_path = find_texlive_binary("biber")?;
-            let output = std::process::Command::new(&biber_path)
-                .arg(main_stem)
+            let mut cmd = std::process::Command::new(&biber_path);
+            cmd.arg(main_stem)
                 .current_dir(work_dir)
                 .env("PATH", &env_path)
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            let output = cmd
                 .output()
                 .map_err(|e| format!("Failed to run biber: {}", e))?;
             if !output.status.success() {
@@ -535,12 +559,15 @@ fn compile_with_texlive(
         BibTool::BibTeX => {
             let bibtex_path = find_texlive_binary("bibtex")?;
             let aux_file = work_dir.join(format!("{}.aux", main_stem));
-            let output = std::process::Command::new(&bibtex_path)
-                .arg(&aux_file)
+            let mut cmd = std::process::Command::new(&bibtex_path);
+            cmd.arg(&aux_file)
                 .current_dir(work_dir)
                 .env("PATH", &env_path)
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            let output = cmd
                 .output()
                 .map_err(|e| format!("Failed to run bibtex: {}", e))?;
             if !output.status.success() {
@@ -569,13 +596,16 @@ fn compile_with_texlive(
     if !pdf_path.exists() && xdv_path.exists() {
         eprintln!("[texlive] .xdv exists but no .pdf — running xdvipdfmx manually");
         if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx") {
-            let output = std::process::Command::new(&xdvipdfmx)
-                .args(["-o", &pdf_path.to_string_lossy()])
+            let mut cmd = std::process::Command::new(&xdvipdfmx);
+            cmd.args(["-o", &pdf_path.to_string_lossy()])
                 .arg(&xdv_path)
                 .current_dir(work_dir)
                 .env("PATH", &env_path)
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            let output = cmd
                 .output()
                 .map_err(|e| format!("Failed to launch xdvipdfmx: {}", e))?;
             if !output.status.success() {
@@ -753,16 +783,16 @@ pub fn detect_texlive() -> TexliveStatus {
     }
 
     let version = find_texlive_binary("pdflatex").ok().and_then(|path| {
-        std::process::Command::new(&path)
-            .arg("--version")
+        let mut cmd = std::process::Command::new(&path);
+        cmd.arg("--version")
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .ok()
-            .and_then(|o| {
-                let stdout = String::from_utf8_lossy(&o.stdout);
-                stdout.lines().next().map(|l| l.to_string())
-            })
+            .stderr(std::process::Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.output().ok().and_then(|o| {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines().next().map(|l| l.to_string())
+        })
     });
 
     TexliveStatus {
