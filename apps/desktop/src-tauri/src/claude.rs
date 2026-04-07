@@ -846,12 +846,18 @@ async fn spawn_claude_process(
     })?;
 
     if let Some(payload) = stdin_payload {
-        if let Some(mut stdin) = child.stdin.take() {
-            tokio::spawn(async move {
-                let _ = stdin.write_all(payload.as_bytes()).await;
-                let _ = stdin.shutdown().await;
-            });
-        }
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to acquire stdin for Claude process".to_string())?;
+        stdin
+            .write_all(payload.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write prompt to Claude process stdin: {}", e))?;
+        stdin
+            .shutdown()
+            .await
+            .map_err(|e| format!("Failed to close Claude process stdin: {}", e))?;
     }
 
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
