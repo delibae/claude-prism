@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { readDir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import {
+  readDir,
+  readTextFile,
+  stat,
+  writeTextFile,
+} from "@tauri-apps/plugin-fs";
 import {
   useDocumentStore,
   getCurrentPdfBytes,
@@ -114,6 +119,44 @@ describe("useDocumentStore", () => {
       await openProjectPromise;
 
       expect(readDir).toHaveBeenCalled();
+    });
+
+    it("skips Python cache directories and bytecode files during open", async () => {
+      vi.mocked(invoke).mockResolvedValue(undefined as never);
+      vi.mocked(readDir).mockImplementation(async (dir: string) => {
+        if (dir === "/project") {
+          return [
+            { name: "__pycache__", isDirectory: true },
+            { name: "main.tex", isDirectory: false },
+            { name: "tool.py", isDirectory: false },
+            { name: "compiled.pyc", isDirectory: false },
+          ] as any;
+        }
+
+        throw new Error(`Unexpected readDir path: ${dir}`);
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 32 } as any);
+      vi.mocked(readTextFile).mockImplementation(async (path: string) => {
+        if (path === "/project/main.tex") {
+          return "\\documentclass{article}";
+        }
+        if (path === "/project/tool.py") {
+          return "print('hello')";
+        }
+        throw new Error(`Unexpected readTextFile path: ${path}`);
+      });
+
+      await useDocumentStore.getState().openProject("/project");
+
+      expect(readDir).toHaveBeenCalledWith("/project");
+      expect(readDir).not.toHaveBeenCalledWith("/project/__pycache__");
+      expect(stat).toHaveBeenCalledTimes(1);
+      expect(stat).toHaveBeenCalledWith("/project/tool.py");
+      expect(readTextFile).toHaveBeenCalledTimes(2);
+      expect(readTextFile).not.toHaveBeenCalledWith("/project/compiled.pyc");
+      expect(
+        useDocumentStore.getState().files.map((file) => file.relativePath),
+      ).toEqual(["main.tex", "tool.py"]);
     });
   });
 

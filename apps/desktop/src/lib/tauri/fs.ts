@@ -55,6 +55,13 @@ const STYLE_EXTENSIONS = new Set([
   ".ins",
 ]);
 
+const IGNORED_DIRECTORY_NAMES = new Set([
+  "node_modules",
+  "__pycache__",
+  "venv",
+  "env",
+]);
+
 const IGNORED_EXTENSIONS = new Set([
   // Ignored file extensions: LaTeX build artifacts and other non-editable/binary files
   ".aux",
@@ -93,11 +100,14 @@ const IGNORED_EXTENSIONS = new Set([
   ".gz",
   ".exe",
   ".dll",
+  ".pyd",
   ".so",
   ".dylib",
   ".o",
   ".obj",
   ".bin",
+  ".pyc",
+  ".pyo",
   ".dat",
   ".iso",
   ".dmg",
@@ -117,7 +127,13 @@ const IGNORED_EXTENSIONS = new Set([
   ".db",
 ]);
 
-function getFileType(name: string): ProjectFileType | null {
+export function shouldSkipProjectDirectory(name: string): boolean {
+  return (
+    name.startsWith(".") || IGNORED_DIRECTORY_NAMES.has(name.toLowerCase())
+  );
+}
+
+export function getProjectFileType(name: string): ProjectFileType | null {
   const lower = name.toLowerCase();
   // Skip ignored file extensions (build artifacts, binary/non-text files)
   for (const ext of IGNORED_EXTENSIONS) {
@@ -153,13 +169,13 @@ export async function scanProjectFolder(rootPath: string): Promise<ScanResult> {
 
       if (entry.isDirectory) {
         // Skip hidden directories and common non-project dirs
-        if (entry.name.startsWith(".") || entry.name === "node_modules") {
+        if (shouldSkipProjectDirectory(entry.name)) {
           continue;
         }
         folders.push(relativePath);
         await walk(entryPath, relativePath);
       } else {
-        const type = getFileType(entry.name);
+        const type = getProjectFileType(entry.name);
         if (type) {
           // Only stat files that may be skipped by the large-file threshold
           // (image and other). tex/bib/style are always loaded, pdf is always lazy.
