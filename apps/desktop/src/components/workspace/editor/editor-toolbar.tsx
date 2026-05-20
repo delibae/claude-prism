@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDocumentStore } from "@/stores/document-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 interface EditorInfo {
   id: string;
@@ -67,6 +68,9 @@ export function EditorToolbar({
   cropMode,
   onCropToggle,
 }: EditorToolbarProps) {
+  const vimMode = useSettingsStore((s) => s.vimMode);
+  const setVimMode = useSettingsStore((s) => s.setVimMode);
+
   const fileName = useDocumentStore((s) => {
     const activeFile = s.files.find((f) => f.id === s.activeFileId);
     return activeFile?.name ?? "main.tex";
@@ -289,6 +293,16 @@ export function EditorToolbar({
       >
         <BookMarkedIcon className="size-4" />
       </TooltipIconButton>
+      <div className="mx-2 h-4 w-px bg-border" />
+      <Button
+        variant={vimMode ? "default" : "ghost"}
+        size="sm"
+        className="h-6 px-2 font-mono text-xs"
+        onClick={() => setVimMode(!vimMode)}
+        title="Toggle Vim mode"
+      >
+        VIM
+      </Button>
       <div data-tauri-drag-region className="flex-1 self-stretch" />
       {editors.length === 1 && (
         <TooltipIconButton

@@ -162,11 +162,13 @@ export function LatexEditor() {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const { resolvedTheme } = useTheme();
+  const vimMode = useSettingsStore((s) => s.vimMode);
 
   const compileRef = useRef<() => void>(() => {});
   const isSearchOpenRef = useRef(false);
   const themeCompartmentRef = useRef(new Compartment());
   const mergeCompartmentRef = useRef(new Compartment());
+  const vimCompartmentRef = useRef(new Compartment());
   const isMergeActiveRef = useRef(false);
   const pendingChangeRef = useRef<ProposedChange | null>(null);
   const handleKeepAllRef = useRef<() => void>(() => {});
@@ -670,6 +672,7 @@ export function LatexEditor() {
         search(),
         highlightSelectionMatches(),
         mergeCompartmentRef.current.of([]),
+        vimCompartmentRef.current.of([]),
         updateListener,
         EditorView.lineWrapping,
         scrollPastEnd(),
@@ -820,6 +823,23 @@ export function LatexEditor() {
       effects: themeCompartmentRef.current.reconfigure(extensions),
     });
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (!vimMode) {
+      view.dispatch({
+        effects: vimCompartmentRef.current.reconfigure([]),
+      });
+      return;
+    }
+    import("@replit/codemirror-vim").then(({ vim }) => {
+      if (viewRef.current !== view) return;
+      view.dispatch({
+        effects: vimCompartmentRef.current.reconfigure(vim()),
+      });
+    });
+  }, [vimMode]);
 
   useEffect(() => {
     const view = viewRef.current;

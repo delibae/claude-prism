@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.1",
+    "@replit/codemirror-vim": "^6.3.0",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.12.1",
     "@codemirror/lint": "^6.8.4",
