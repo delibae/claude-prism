@@ -839,7 +839,7 @@ export function LatexEditor() {
         effects: vimCompartmentRef.current.reconfigure(vim()),
       });
     });
-  }, [vimMode]);
+  }, [vimMode, activeFileId, isTextFile]);
 
   useEffect(() => {
     const view = viewRef.current;
