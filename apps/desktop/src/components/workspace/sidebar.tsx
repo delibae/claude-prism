@@ -44,6 +44,11 @@ import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { cn } from "@/lib/utils";
 import { ZoteroPanel, ZoteroHeader } from "@/components/workspace/zotero-panel";
+import {
+  CommentsPanel,
+  CommentsHeader,
+} from "@/components/workspace/comments-panel";
+import { useCommentsStore } from "@/stores/comments-store";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -795,13 +800,27 @@ export function Sidebar() {
         <PanelResizeHandle className="h-px bg-sidebar-border transition-colors hover:bg-ring data-resize-handle-active:bg-ring" />
 
         {/* Zotero */}
-        <Panel defaultSize={15} minSize={10}>
+        <Panel defaultSize={12} minSize={8}>
           <div className="flex h-full flex-col">
             <div className="flex h-8 shrink-0 items-center">
               <ZoteroHeader />
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
               <ZoteroPanel />
+            </div>
+          </div>
+        </Panel>
+
+        <PanelResizeHandle className="h-px bg-sidebar-border transition-colors hover:bg-ring data-resize-handle-active:bg-ring" />
+
+        {/* Comments */}
+        <Panel defaultSize={18} minSize={10}>
+          <div className="flex h-full flex-col">
+            <div className="flex h-8 shrink-0 items-center">
+              <CommentsHeader />
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <CommentsPanel />
             </div>
           </div>
         </Panel>
@@ -1149,9 +1168,10 @@ function FileTreeNode({
           >
             {getFileIcon(file)}
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <FileCommentBadge filePath={file.relativePath} />
             {file.isDirty && (
               <span
-                className="ml-auto size-2 shrink-0 rounded-full bg-blue-500"
+                className="size-2 shrink-0 rounded-full bg-blue-500"
                 title="Modified"
               />
             )}
@@ -1173,6 +1193,40 @@ function FileTreeNode({
         </ContextMenuContent>
       </ContextMenu>
     </DraggableItem>
+  );
+}
+
+// ─── File-tree comment count badge ───
+//
+// Small chip next to each file showing the open-comment count. Hidden when
+// there are no open comments. Click intentionally not handled separately —
+// the file row already handles selection.
+
+function FileCommentBadge({ filePath }: { filePath: string }) {
+  const count = useCommentsStore(
+    (s) =>
+      s.comments.filter((c) => c.file_path === filePath && c.status === "open")
+        .length,
+  );
+  const hasClaude = useCommentsStore((s) =>
+    s.comments.some(
+      (c) =>
+        c.file_path === filePath &&
+        c.status === "open" &&
+        c.author === "claude",
+    ),
+  );
+  if (count === 0) return null;
+  return (
+    <span
+      className={cn(
+        "flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 font-bold text-[9px] text-white leading-none",
+        hasClaude ? "bg-violet-600" : "bg-amber-600",
+      )}
+      title={`${count} open comment${count === 1 ? "" : "s"}`}
+    >
+      {count}
+    </span>
   );
 }
 

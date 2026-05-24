@@ -81,6 +81,10 @@ import { ProblemsPanel, type DiagnosticItem } from "./problems-panel";
 import { PdfViewer } from "@/components/workspace/preview/pdf-viewer";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { createLogger } from "@/lib/debug/logger";
+import { commentsExtension, setCommentsEffect } from "./comments-extension";
+import { CommentComposer } from "./comment-composer";
+import { useCommentsStore } from "@/stores/comments-store";
+import { MessageSquareIcon, LightbulbIcon } from "lucide-react";
 
 const log = createLogger("merge-view");
 
@@ -670,6 +674,7 @@ export function LatexEditor() {
         search(),
         highlightSelectionMatches(),
         mergeCompartmentRef.current.of([]),
+        ...commentsExtension,
         updateListener,
         EditorView.lineWrapping,
         scrollPastEnd(),
@@ -933,6 +938,172 @@ export function LatexEditor() {
     clearJumpRequest();
   }, [jumpToPosition, clearJumpRequest]);
 
+  // === Comments: attach/detach the store to the current project ===
+  useEffect(() => {
+    if (!projectRoot) return;
+    useCommentsStore
+      .getState()
+      .attachToProject(projectRoot)
+      .catch((e) => log.error("comments attach failed", { error: String(e) }));
+    return () => {
+      useCommentsStore
+        .getState()
+        .detach()
+        .catch(() => {});
+    };
+  }, [projectRoot]);
+
+  // === Comments: re-dispatch decoration set when comments for the active
+  //     file change. The CodeMirror StateField only renders what we feed it. ===
+  const allComments = useCommentsStore((s) => s.comments);
+  const activeFileRelPath = activeFile?.relativePath ?? null;
+  const commentsForActiveFile = useMemo(
+    () =>
+      activeFileRelPath
+        ? allComments.filter((c) => c.file_path === activeFileRelPath)
+        : [],
+    [allComments, activeFileRelPath],
+  );
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: setCommentsEffect.of(commentsForActiveFile),
+    });
+  }, [commentsForActiveFile]);
+
+  // === Comments: dispatch active-comment-id based on cursor position so the
+  //     sidebar can highlight the matching row. ===
+  const cursorPosition = useDocumentStore((s) => s.cursorPosition);
+  useEffect(() => {
+    if (!activeFileRelPath) {
+      window.dispatchEvent(
+        new CustomEvent("comments:active-set", { detail: { id: null } }),
+      );
+      return;
+    }
+    const hit = commentsForActiveFile.find(
+      (c) =>
+        c.status !== "rejected" &&
+        c.anchor.char_start <= cursorPosition &&
+        cursorPosition <= c.anchor.char_end,
+    );
+    window.dispatchEvent(
+      new CustomEvent("comments:active-set", {
+        detail: { id: hit?.id ?? null },
+      }),
+    );
+  }, [cursorPosition, commentsForActiveFile, activeFileRelPath]);
+
+  // === Comments: keyboard shortcuts (Cmd+Shift+M / Cmd+Shift+S) ===
+  // Uses a ref so we can reference handleToolbarAction (declared later in
+  // the function) without TDZ issues.
+  const toolbarActionRef = useRef<((actionId: string) => void) | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "m" && key !== "s") return;
+      const view = viewRef.current;
+      if (!view) return;
+      const active = document.activeElement;
+      const editorDom = view.dom;
+      if (active && active !== document.body && !editorDom.contains(active)) {
+        return;
+      }
+      const sel = view.state.selection.main;
+      if (sel.empty) return;
+      e.preventDefault();
+      toolbarActionRef.current?.(key === "s" ? "suggest" : "comment");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // === Comments: open the composer from a PDF-side selection. The
+  //     pdf-preview component resolved the source location via SyncTeX
+  //     and pre-computed the anchor; we just pop the composer here. ===
+  useEffect(() => {
+    const onStartFromPdf = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          mode: "comment" | "suggestion";
+          filePath: string;
+          anchor: {
+            line_start: number;
+            line_end: number;
+            char_start: number;
+            char_end: number;
+            quoted_text: string;
+          };
+        }>
+      ).detail;
+      if (!detail) return;
+      setComposerState({
+        open: true,
+        mode: detail.mode,
+        filePath: detail.filePath,
+        anchor: detail.anchor,
+      });
+    };
+    window.addEventListener(
+      "comments:start-from-pdf",
+      onStartFromPdf as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        "comments:start-from-pdf",
+        onStartFromPdf as EventListener,
+      );
+  }, []);
+
+  // === Comments: listen for "jump to comment" + "apply suggestion" events
+  //     dispatched by the CommentsPanel sidebar. ===
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const detail = (e as CustomEvent<{ from: number; to: number }>).detail;
+      if (!detail) return;
+      const docLen = view.state.doc.length;
+      const from = Math.max(0, Math.min(detail.from, docLen));
+      const to = Math.max(from, Math.min(detail.to, docLen));
+      view.dispatch({
+        selection: { anchor: from, head: to },
+        effects: EditorView.scrollIntoView(from, { y: "center" }),
+      });
+      view.focus();
+    };
+    const onApply = (e: Event) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const detail = (
+        e as CustomEvent<{ from: number; to: number; replacement: string }>
+      ).detail;
+      if (!detail) return;
+      const docLen = view.state.doc.length;
+      const from = Math.max(0, Math.min(detail.from, docLen));
+      const to = Math.max(from, Math.min(detail.to, docLen));
+      view.dispatch({
+        changes: { from, to, insert: detail.replacement },
+        selection: { anchor: from + detail.replacement.length },
+      });
+      view.focus();
+    };
+    window.addEventListener("comments:jump", onJump as EventListener);
+    window.addEventListener(
+      "comments:apply-suggestion",
+      onApply as EventListener,
+    );
+    return () => {
+      window.removeEventListener("comments:jump", onJump as EventListener);
+      window.removeEventListener(
+        "comments:apply-suggestion",
+        onApply as EventListener,
+      );
+    };
+  }, []);
+
   // Selection toolbar: compute context label and container-relative position
   const selectionRange = useDocumentStore((s) => s.selectionRange);
   const selectionLabel = useMemo(() => {
@@ -981,12 +1152,61 @@ export function LatexEditor() {
         label: "Proofread",
         icon: <SpellCheckIcon className="size-4" />,
       },
+      {
+        id: "comment",
+        label: "Comment",
+        icon: <MessageSquareIcon className="size-4" />,
+      },
+      {
+        id: "suggest",
+        label: "Suggest",
+        icon: <LightbulbIcon className="size-4" />,
+      },
     ],
     [],
   );
 
+  const [composerState, setComposerState] = useState<{
+    open: boolean;
+    mode: "comment" | "suggestion";
+    filePath: string;
+    anchor: {
+      line_start: number;
+      line_end: number;
+      char_start: number;
+      char_end: number;
+      quoted_text: string;
+    };
+  } | null>(null);
+
   const handleToolbarAction = useCallback(
     (actionId: string) => {
+      if (actionId === "comment" || actionId === "suggest") {
+        const view = viewRef.current;
+        const docState = useDocumentStore.getState();
+        const file = docState.files.find((f) => f.id === docState.activeFileId);
+        const sel = view?.state.selection.main;
+        if (!view || !file || !sel || sel.empty) return;
+        const startLine = view.state.doc.lineAt(sel.from);
+        const endLine = view.state.doc.lineAt(sel.to);
+        const quoted = view.state.doc.sliceString(sel.from, sel.to);
+        setComposerState({
+          open: true,
+          mode: actionId === "suggest" ? "suggestion" : "comment",
+          filePath: file.relativePath,
+          anchor: {
+            line_start: startLine.number,
+            line_end: endLine.number,
+            char_start: sel.from,
+            char_end: sel.to,
+            quoted_text: quoted,
+          },
+        });
+        // Dismiss the toolbar but keep selection visible behind the dialog
+        toolbarStickyRef.current = false;
+        setSelectionCoords(null);
+        return;
+      }
       toolbarStickyRef.current = false;
       setSelectionCoords(null);
       setSelectionRange(null);
@@ -1004,6 +1224,11 @@ export function LatexEditor() {
     setSelectionCoords(null);
     setSelectionRange(null);
   }, [setSelectionRange]);
+
+  // Keep the keyboard-shortcut ref in sync with the latest handleToolbarAction
+  useEffect(() => {
+    toolbarActionRef.current = handleToolbarAction;
+  }, [handleToolbarAction]);
 
   // History review action handlers
   const handleHistoryRestore = useCallback(async () => {
@@ -1193,6 +1418,42 @@ export function LatexEditor() {
                   onDismiss={handleToolbarDismiss}
                 />
               )}
+            {composerState?.open && (
+              <CommentComposer
+                open={composerState.open}
+                mode={composerState.mode}
+                quotedText={composerState.anchor.quoted_text}
+                initialReplacement={
+                  composerState.mode === "suggestion"
+                    ? composerState.anchor.quoted_text
+                    : undefined
+                }
+                onCancel={() => {
+                  setComposerState(null);
+                  setSelectionRange(null);
+                }}
+                onSubmit={async ({ comment, replacement }) => {
+                  const snap = composerState;
+                  if (!snap) return;
+                  try {
+                    await useCommentsStore.getState().addComment({
+                      filePath: snap.filePath,
+                      anchor: snap.anchor,
+                      type: snap.mode,
+                      author: "user",
+                      comment,
+                      proposedReplacement:
+                        snap.mode === "suggestion" ? replacement : null,
+                    });
+                  } catch (e) {
+                    log.error("add comment failed", { error: String(e) });
+                  } finally {
+                    setComposerState(null);
+                    setSelectionRange(null);
+                  }
+                }}
+              />
+            )}
             {activeFileChange && mergeChunkInfo.total > 0 && (
               <div className="absolute top-3 right-3 z-20 flex items-center gap-1 rounded-lg border border-border bg-background/95 px-2 py-1 shadow-lg backdrop-blur-sm">
                 <span className="px-1 font-mono text-muted-foreground text-xs">

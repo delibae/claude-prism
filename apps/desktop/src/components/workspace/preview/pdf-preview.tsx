@@ -13,6 +13,8 @@ import {
   CrosshairIcon,
   ChevronUpIcon,
   ChevronDownIcon,
+  MessageSquareIcon,
+  LightbulbIcon,
 } from "lucide-react";
 import { writeFile, mkdir, exists } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
@@ -338,6 +340,16 @@ export function PdfPreview() {
   const pdfToolbarActions: ToolbarAction[] = useMemo(
     () => [
       {
+        id: "pdf-comment",
+        label: "Comment",
+        icon: <MessageSquareIcon className="size-4" />,
+      },
+      {
+        id: "pdf-suggest",
+        label: "Suggest",
+        icon: <LightbulbIcon className="size-4" />,
+      },
+      {
         id: "proofread",
         label: "Proofread",
         icon: <SpellCheckIcon className="size-4" />,
@@ -357,6 +369,89 @@ export function PdfPreview() {
       if (!pdfSelection) return;
       const label = pdfContextLabel;
       const sel = pdfSelection;
+
+      // --- New: PDF-side commenting on selected text ---
+      if (actionId === "pdf-comment" || actionId === "pdf-suggest") {
+        if (!resolvedSource) {
+          // Synctex couldn't map this region to source. Tell the user.
+          // (The lookup may still be in-flight if the selection was very fresh.)
+          import("sonner").then(({ toast }) => {
+            toast.error(
+              "Couldn't locate the source for this PDF selection. " +
+                "Try again, or use the Navigate button to jump first.",
+            );
+          });
+          return;
+        }
+        const normalize = (p: string) =>
+          p.replace(/\\/g, "/").replace(/^\.\//, "");
+        const target = files.find(
+          (f) => normalize(f.relativePath) === normalize(resolvedSource.file),
+        );
+        if (!target) {
+          import("sonner").then(({ toast }) => {
+            toast.error(`Source file not in project: ${resolvedSource.file}`);
+          });
+          return;
+        }
+        const fileContent = target.content ?? "";
+        const lines = fileContent.split("\n");
+        const lineIdx = Math.max(
+          0,
+          Math.min(resolvedSource.line - 1, lines.length - 1),
+        );
+        const line = lines[lineIdx] ?? "";
+
+        // Compute absolute offset of the start of the synctex line
+        let lineStartOffset = 0;
+        for (let i = 0; i < lineIdx; i++)
+          lineStartOffset += lines[i].length + 1;
+
+        // Try to find the selected text within the resolved line. Fall back
+        // to anchoring on the whole line if not found.
+        const selText = sel.text.trim();
+        let charStart = lineStartOffset;
+        let charEnd = lineStartOffset + line.length;
+        let quoted = line;
+        if (selText) {
+          const idx = line.indexOf(selText);
+          if (idx >= 0) {
+            charStart = lineStartOffset + idx;
+            charEnd = charStart + selText.length;
+            quoted = selText;
+          }
+        }
+
+        // Switch to the target file if needed, then dispatch
+        const needsSwitch =
+          useDocumentStore.getState().activeFileId !== target.id;
+        if (needsSwitch) setActiveFile(target.id);
+
+        setPdfSelection(null);
+        window.getSelection()?.removeAllRanges();
+
+        const dispatchEvent = () => {
+          window.dispatchEvent(
+            new CustomEvent("comments:start-from-pdf", {
+              detail: {
+                mode: actionId === "pdf-suggest" ? "suggestion" : "comment",
+                filePath: target.relativePath,
+                anchor: {
+                  line_start: lineIdx + 1,
+                  line_end: lineIdx + 1,
+                  char_start: charStart,
+                  char_end: charEnd,
+                  quoted_text: quoted,
+                },
+              },
+            }),
+          );
+        };
+        if (needsSwitch) setTimeout(dispatchEvent, 100);
+        else dispatchEvent();
+        return;
+      }
+
       setPdfSelection(null);
       window.getSelection()?.removeAllRanges();
       if (actionId === "proofread") {
@@ -377,6 +472,8 @@ export function PdfPreview() {
       resolvedSource,
       navigateToSource,
       buildPdfContext,
+      files,
+      setActiveFile,
     ],
   );
 
