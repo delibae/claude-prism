@@ -1,6 +1,7 @@
 mod claude;
 mod history;
 mod latex;
+pub(crate) mod provider;
 mod skills;
 mod slash_commands;
 mod uv;
@@ -339,7 +340,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
-        .manage(claude::ClaudeProcessState::default())
+        .manage(crate::provider::AiProcessState::default())
         .manage(latex::LatexCompilerState::default())
         .manage(zotero::ZoteroOAuthState::default())
         .setup(|app| {
@@ -469,9 +470,9 @@ pub fn run() {
                 ..
             } => {
                 // Kill Claude process associated with this window
-                let claude_state = app_handle.state::<claude::ClaudeProcessState>();
+                let ai_state = app_handle.state::<crate::provider::AiProcessState>();
                 let label_clone = label.clone();
-                let state_clone = claude_state.inner().clone();
+                let state_clone = ai_state.inner().clone();
                 tauri::async_runtime::spawn(async move {
                     claude::kill_process_for_window(&state_clone, &label_clone).await;
                 });

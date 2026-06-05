@@ -1,38 +1,77 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, WebviewWindow};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
-/// Check if an environment variable should be explicitly passed to child processes.
-///
-/// NOTE: This is NOT a true whitelist — we do NOT call `env_clear()`, so the
-/// child inherits the full parent environment.  This helper only identifies vars
-/// that we *explicitly* re-set via `cmd.env()` to guarantee they are present
-/// even when other per-key overrides are applied (e.g. prepending to PATH).
-/// Uses case-insensitive comparison for Windows compatibility.
-pub(crate) fn is_essential_env_var(key: &str) -> bool {
-    let k = key.to_ascii_uppercase();
-    // Cross-platform
-    matches!(
-        k.as_str(),
-        "HOME" | "USER" | "SHELL" | "LANG"
-        | "HOMEBREW_PREFIX" | "HOMEBREW_CELLAR"
-        | "HTTP_PROXY" | "HTTPS_PROXY" | "NO_PROXY" | "ALL_PROXY"
-    ) || k.starts_with("LC_")
-    // Windows-specific
-    || matches!(
-        k.as_str(),
-        "USERPROFILE" | "APPDATA" | "LOCALAPPDATA"
-        | "TEMP" | "TMP"
-        | "SYSTEMROOT" | "SYSTEMDRIVE"
-        | "COMPUTERNAME" | "USERNAME"
-        | "PROGRAMFILES" | "PROGRAMFILES(X86)" | "COMMONPROGRAMFILES"
-        | "PATHEXT" | "PSMODULEPATH" | "WINDIR"
-    )
+use crate::provider::{AiProcessState, AiProvider, ProviderEvent, spawn_ai_process};
+
+pub const LATEX_SYSTEM_PROMPT: &str = concat!(
+    "You are an AI assistant integrated into a LaTeX document editor (Prism). ",
+    "Follow these rules strictly:\n",
+    "1. PLANNING FIRST: Before making changes, use TodoWrite to create a step-by-step plan. ",
+    "Break large tasks into small, incremental steps (one section or one logical unit per step).\n",
+    "2. INCREMENTAL EDITS: Use the Edit tool to make small, targeted changes — one step at a time. ",
+    "NEVER write or rewrite an entire file at once. Always prefer editing existing content over replacing it wholesale.\n",
+    "3. STEP BY STEP: After each edit, mark the todo item as completed, then proceed to the next step. ",
+    "This lets the user review changes incrementally.\n",
+    "4. PRESERVE EXISTING CONTENT: Always read the file first. Keep the existing preamble, packages, ",
+    "and structure intact. Only add or modify what is needed for the current step.\n",
+    "5. LaTeX BEST PRACTICES: Use proper sectioning (\\chapter, \\section, \\subsection), ",
+    "citations (\\cite), cross-references (\\label, \\ref), and BibTeX for bibliographies.\n",
+    "6. SKILLS: If scientific skills are installed in .claude/skills/, follow their guidelines ",
+    "for domain-specific tasks. Use skill-provided LaTeX packages (.sty) and code patterns.\n",
+    "7. PYTHON: If a .venv/ exists in the project, it is already activated. ",
+    "Use `uv pip install` to add packages and `python` to run scripts."
+);
+
+pub struct ClaudeProvider;
+
+impl AiProvider for ClaudeProvider {
+    fn name(&self) -> &'static str {
+        "claude"
+    }
+
+    fn find_binary(&self) -> Result<String, String> {
+        find_claude_binary()
+    }
+
+    fn build_args(
+        &self,
+        prompt: &str,
+        model: &str,
+        session_id: Option<&str>,
+        system_prompt: &str,
+    ) -> (Vec<String>, Option<String>) {
+        let mut prefix_args = Vec::new();
+        if let Some(sid) = session_id {
+            prefix_args.push("--resume".to_string());
+            prefix_args.push(sid.to_string());
+        }
+        let (mut args, stdin_payload) = with_prompt_transport(prefix_args, prompt.to_string());
+        args.push("--model".to_string());
+        args.push(model.to_string());
+        args.extend(common_claude_args(system_prompt));
+        (args, stdin_payload)
+    }
+
+    fn parse_output_line(&self, line: &str) -> ProviderEvent {
+        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) {
+            if msg.get("type").and_then(|v| v.as_str()) == Some("system")
+                && msg.get("subtype").and_then(|v| v.as_str()) == Some("init")
+            {
+                if let Some(sid) = msg.get("session_id").and_then(|v| v.as_str()) {
+                    return ProviderEvent::SessionInit(sid.to_string());
+                }
+            }
+        }
+        ProviderEvent::Line(line.to_string())
+    }
+
+    fn setup_env(&self, cmd: &mut tokio::process::Command, effort_level: Option<&str>) {
+        cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
+    }
 }
 
 /// Windows CREATE_NO_WINDOW flag to prevent console windows from flashing
@@ -42,19 +81,6 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-
-#[derive(Clone)]
-pub struct ClaudeProcessState {
-    pub processes: Arc<Mutex<HashMap<String, Child>>>,
-}
-
-impl Default for ClaudeProcessState {
-    fn default() -> Self {
-        Self {
-            processes: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
 
 /// On Windows, read User + System PATH from the registry and search for claude.
 /// This catches cases where claude was installed after the GUI app launched,
@@ -434,28 +460,6 @@ fn unix_known_pnpm_claude_paths(home: &std::path::Path) -> Vec<PathBuf> {
     ]
 }
 
-#[cfg(any(test, not(target_os = "windows")))]
-fn unix_extra_tool_dirs(home: &std::path::Path, pnpm_home: Option<std::ffi::OsString>) -> Vec<PathBuf> {
-    let mut dirs = vec![
-        home.join(".local").join("bin"),
-        home.join(".cargo").join("bin"),
-        home.join(".bun").join("bin"),
-        home.join("Library").join("pnpm"),
-        home.join("Library").join("pnpm").join("global").join("bin"),
-        home.join(".local").join("share").join("pnpm"),
-        home.join(".local").join("share").join("pnpm").join("global").join("bin"),
-        home.join(".pnpm"),
-        home.join(".pnpm").join("global").join("bin"),
-        "/opt/homebrew/bin".into(),
-        "/opt/homebrew/sbin".into(),
-        "/usr/local/bin".into(),
-    ];
-    if let Some(pnpm_home) = pnpm_home.filter(|value| !value.is_empty()) {
-        dirs.insert(0, PathBuf::from(pnpm_home));
-    }
-    dirs
-}
-
 /// Strip ANSI escape sequences from CLI output before sending to the frontend.
 /// Handles CSI sequences (e.g. colors, cursor), OSC sequences, and private mode
 /// sequences like `\x1b[?2026h` emitted by modern CLIs.
@@ -506,21 +510,6 @@ fn strip_ansi(s: &str) -> Cow<'_, str> {
         }
     }
     Cow::Owned(out)
-}
-
-/// Strip interior nul bytes that would cause Command::spawn() to fail.
-/// This can happen when prompts contain clipboard artifacts or encoding issues.
-/// Returns a borrowed reference when no nul bytes are present (zero-alloc fast path).
-fn strip_nul(s: &str) -> Cow<'_, str> {
-    if s.contains('\0') {
-        eprintln!(
-            "[claude-spawn] stripped {} nul byte(s) from input",
-            s.matches('\0').count()
-        );
-        Cow::Owned(s.replace('\0', ""))
-    } else {
-        Cow::Borrowed(s)
-    }
 }
 
 /// Environment variables needed by child processes on Linux desktops.
@@ -643,148 +632,6 @@ fn new_sync_command(program: &str) -> std::process::Command {
     std::process::Command::new(program)
 }
 
-/// Create a tokio Command with appropriate environment variables.
-fn create_command(
-    program: &str,
-    args: Vec<String>,
-    cwd: &str,
-    effort_level: Option<&str>,
-) -> Command {
-    let clean_program = strip_nul(program);
-    let clean_args: Vec<Cow<str>> = args.iter().map(|a| strip_nul(a)).collect();
-    let clean_cwd = strip_nul(cwd);
-
-    #[cfg(target_os = "windows")]
-    let mut cmd = {
-
-        let (resolved, prefix) = resolve_cmd_to_node(clean_program.as_ref());
-        let mut c = Command::new(&resolved);
-        c.creation_flags(CREATE_NO_WINDOW);
-        if !prefix.is_empty() {
-            c.args(&prefix);
-        }
-        c.args(clean_args.iter().map(|a| a.as_ref()));
-        c
-    };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut c = Command::new(clean_program.as_ref());
-        c.args(clean_args.iter().map(|a| a.as_ref()));
-        c
-    };
-    cmd.current_dir(clean_cwd.as_ref());
-
-    // Pipe stdout and stderr for streaming
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-
-    // On Linux AppImage, restore original environment so child processes work correctly
-    #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
-
-    // Remove all Claude Code internal env vars to prevent nested session detection
-    // and other interference. Tauri inherits these when launched from a Claude Code session.
-    cmd.env_remove("CLAUDECODE");
-    cmd.env_remove("CLAUDE_AGENT_SDK_VERSION");
-    for (key, _) in std::env::vars() {
-        // Keep CLAUDE_CODE_GIT_BASH_PATH — Claude Code needs it on Windows to locate git-bash
-        if key == "CLAUDE_CODE_GIT_BASH_PATH" {
-            continue;
-        }
-        if key.starts_with("CLAUDE_CODE_") || key.starts_with("CLAUDE_AGENT_") {
-            cmd.env_remove(&key);
-        }
-    }
-    // Set effort level (default: low for fast responses)
-    cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
-
-    // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set.
-    // Claude Code requires git-bash to run on Windows.
-    // Uses find_git_bash() which also validates user-specified paths.
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(bash_path) = find_git_bash() {
-            cmd.env("CLAUDE_CODE_GIT_BASH_PATH", bash_path);
-        }
-    }
-
-    // Build PATH: start with current PATH, prepend program dir and venv bin
-    // Strip nul bytes from inherited PATH to prevent spawn failures
-    let mut current_path = strip_nul(&std::env::var("PATH").unwrap_or_default()).into_owned();
-    #[cfg(target_os = "windows")]
-    let sep = ";";
-    #[cfg(not(target_os = "windows"))]
-    let sep = ":";
-
-    // Add the program's parent directory to PATH if not already present
-    if let Some(program_dir) = std::path::Path::new(program).parent() {
-        let program_dir_str = program_dir.to_string_lossy();
-        if !current_path.contains(program_dir_str.as_ref()) {
-            current_path = format!("{}{}{}", program_dir_str, sep, current_path);
-        }
-    }
-
-    // GUI apps (launched from Dock/Spotlight/Finder) inherit a minimal PATH
-    // that lacks directories like /opt/homebrew/bin or ~/.local/bin.
-    // MCP servers and other child processes that rely on tools installed there
-    // (e.g. `uv`, `node`, `python`) would fail to start.
-    // Prepend common tool directories so child processes can find them.
-    // This mirrors the approach used by find_claude_binary() and extends it
-    // to all child processes.  Fixes #87 and #90.
-    #[cfg(not(target_os = "windows"))]
-    if let Some(home) = dirs::home_dir() {
-        let extra_dirs = unix_extra_tool_dirs(&home, std::env::var_os("PNPM_HOME"));
-        // Also check NVM: if NVM_BIN is set, use it; otherwise scan ~/.nvm
-        if let Ok(nvm_bin) = std::env::var("NVM_BIN") {
-            let nvm_bin_path = std::path::PathBuf::from(&nvm_bin);
-            if nvm_bin_path.exists() && !current_path.contains(&nvm_bin) {
-                current_path = format!("{}{}{}", nvm_bin, sep, current_path);
-            }
-        } else {
-            let nvm_dir = home.join(".nvm").join("versions").join("node");
-            if nvm_dir.exists() {
-                if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
-                    let mut candidates: Vec<std::path::PathBuf> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.path().join("bin"))
-                        .filter(|p| p.exists())
-                        .collect();
-                    candidates.sort();
-                    candidates.reverse(); // prefer latest version
-                    if let Some(nvm_bin_path) = candidates.first() {
-                        let nvm_bin_str = nvm_bin_path.to_string_lossy();
-                        if !current_path.contains(nvm_bin_str.as_ref()) {
-                            current_path =
-                                format!("{}{}{}", nvm_bin_str, sep, current_path);
-                        }
-                    }
-                }
-            }
-        }
-        for dir in extra_dirs {
-            let dir_str = dir.to_string_lossy().to_string();
-            if dir.exists() && !current_path.contains(&dir_str) {
-                current_path = format!("{}{}{}", dir_str, sep, current_path);
-            }
-        }
-    }
-
-    // Auto-detect project venv and inject VIRTUAL_ENV + PATH
-    let venv_dir = std::path::Path::new(cwd).join(".venv");
-    if venv_dir.exists() {
-        cmd.env("VIRTUAL_ENV", &venv_dir);
-        #[cfg(not(target_os = "windows"))]
-        let venv_bin = venv_dir.join("bin");
-        #[cfg(target_os = "windows")]
-        let venv_bin = venv_dir.join("Scripts");
-        current_path = format!("{}{}{}", venv_bin.to_string_lossy(), sep, current_path);
-    }
-
-    cmd.env("PATH", current_path);
-
-    cmd
-}
-
 fn with_prompt_transport(mut args: Vec<String>, prompt: String) -> (Vec<String>, Option<String>) {
     args.push("-p".to_string());
     #[cfg(target_os = "windows")]
@@ -796,225 +643,6 @@ fn with_prompt_transport(mut args: Vec<String>, prompt: String) -> (Vec<String>,
         args.push(prompt);
         (args, None)
     }
-}
-
-// ─── Event payloads (include tab_id for multi-tab routing) ───
-
-#[derive(Clone, serde::Serialize)]
-struct ClaudeOutputEvent {
-    tab_id: String,
-    data: String,
-}
-
-#[derive(Clone, serde::Serialize)]
-struct ClaudeCompleteEvent {
-    tab_id: String,
-    success: bool,
-}
-
-#[derive(Clone, serde::Serialize)]
-struct ClaudeErrorEvent {
-    tab_id: String,
-    data: String,
-}
-
-/// Spawn the Claude CLI process and stream output via Tauri events.
-/// Events are emitted only to the originating window, tagged with tab_id.
-async fn spawn_claude_process(
-    window: WebviewWindow,
-    mut cmd: Command,
-    tab_id: String,
-    stdin_payload: Option<String>,
-) -> Result<(), String> {
-    let window_label = window.label().to_string();
-    let process_key = format!("{}:{}", window_label, tab_id);
-
-    if stdin_payload.is_some() {
-        cmd.stdin(std::process::Stdio::piped());
-    }
-
-    // Spawn the process
-    let mut child = cmd.spawn().map_err(|e| {
-        eprintln!(
-            "[claude-spawn] Failed to spawn process for tab {}: {}",
-            tab_id, e
-        );
-        format!(
-            "Failed to spawn Claude process: {}. Is Claude Code CLI installed?",
-            e
-        )
-    })?;
-
-    if let Some(payload) = stdin_payload {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Failed to acquire stdin for Claude process".to_string())?;
-        stdin
-            .write_all(payload.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write prompt to Claude process stdin: {}", e))?;
-        stdin
-            .shutdown()
-            .await
-            .map_err(|e| format!("Failed to close Claude process stdin: {}", e))?;
-    }
-
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-
-    // Get a clone of the process state Arc before any moves
-    let process_arc = window
-        .state::<ClaudeProcessState>()
-        .inner()
-        .processes
-        .clone();
-
-    // Store the child process in state (kill any existing process for this tab)
-    {
-        let mut processes = process_arc.lock().await;
-        if let Some(mut existing) = processes.remove(&process_key) {
-            let _ = existing.kill().await;
-        }
-        processes.insert(process_key.clone(), child);
-    }
-
-    let stdout_reader = BufReader::new(stdout);
-    let stderr_reader = BufReader::new(stderr);
-    let session_id_holder: Arc<std::sync::Mutex<Option<String>>> =
-        Arc::new(std::sync::Mutex::new(None));
-
-    let start_time = std::time::Instant::now();
-
-    // Spawn stdout streaming task — emit only to the originating window
-    let win_stdout = window.clone();
-    let session_id_stdout = session_id_holder.clone();
-    let tab_id_stdout = tab_id.clone();
-    let stdout_task = tokio::spawn(async move {
-        let mut lines = stdout_reader.lines();
-        let mut line_count: u64 = 0;
-        while let Ok(Some(line)) = lines.next_line().await {
-            line_count += 1;
-            let elapsed = start_time.elapsed().as_secs_f64();
-
-            // Parse for system:init to extract session_id
-            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
-                let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("?");
-                let msg_sub = msg.get("subtype").and_then(|v| v.as_str()).unwrap_or("");
-                eprintln!(
-                    "[claude-stdout] [{}] +{:.1}s #{} type={} sub={} len={}",
-                    tab_id_stdout,
-                    elapsed,
-                    line_count,
-                    msg_type,
-                    msg_sub,
-                    line.len()
-                );
-
-                if msg.get("type").and_then(|v| v.as_str()) == Some("system")
-                    && msg.get("subtype").and_then(|v| v.as_str()) == Some("init")
-                {
-                    if let Some(sid) = msg.get("session_id").and_then(|v| v.as_str()) {
-                        if let Ok(mut guard) = session_id_stdout.lock() {
-                            *guard = Some(sid.to_string());
-                        }
-                    }
-                }
-            }
-
-            // Emit output event to this window with tab_id
-            let _ = win_stdout.emit(
-                "claude-output",
-                ClaudeOutputEvent {
-                    tab_id: tab_id_stdout.clone(),
-                    data: line,
-                },
-            );
-        }
-        eprintln!(
-            "[claude-stdout] [{}] stream ended after {} lines ({:.1}s)",
-            tab_id_stdout,
-            line_count,
-            start_time.elapsed().as_secs_f64()
-        );
-    });
-
-    // Spawn stderr streaming task — emit only to the originating window
-    let win_stderr = window.clone();
-    let tab_id_stderr = tab_id.clone();
-    let stderr_task = tokio::spawn(async move {
-        let mut lines = stderr_reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            eprintln!(
-                "[claude-stderr] [{}] +{:.1}s {}",
-                tab_id_stderr,
-                start_time.elapsed().as_secs_f64(),
-                &line[..line.len().min(200)]
-            );
-            let _ = win_stderr.emit(
-                "claude-error",
-                ClaudeErrorEvent {
-                    tab_id: tab_id_stderr.clone(),
-                    data: line,
-                },
-            );
-        }
-    });
-
-    // Spawn wait task — wait for process completion
-    let process_arc_wait = process_arc.clone();
-    let win_wait = window;
-    let process_key_wait = process_key;
-    let tab_id_wait = tab_id;
-    tokio::spawn(async move {
-        // Wait for stdout/stderr to finish
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
-
-        // Wait for process exit and remove from map
-        let mut processes = process_arc_wait.lock().await;
-        let success = if let Some(mut child) = processes.remove(&process_key_wait) {
-            match child.wait().await {
-                Ok(status) => {
-                    eprintln!(
-                        "[claude-process] [{}] exited with status={} ({:.1}s)",
-                        tab_id_wait,
-                        status,
-                        start_time.elapsed().as_secs_f64()
-                    );
-                    status.success()
-                }
-                Err(e) => {
-                    eprintln!(
-                        "[claude-process] [{}] wait error: {} ({:.1}s)",
-                        tab_id_wait,
-                        e,
-                        start_time.elapsed().as_secs_f64()
-                    );
-                    false
-                }
-            }
-        } else {
-            eprintln!(
-                "[claude-process] [{}] no child found in map ({:.1}s)",
-                tab_id_wait,
-                start_time.elapsed().as_secs_f64()
-            );
-            false
-        };
-        drop(processes);
-
-        // Emit completion event to this window with tab_id
-        let _ = win_wait.emit(
-            "claude-complete",
-            ClaudeCompleteEvent {
-                tab_id: tab_id_wait,
-                success,
-            },
-        );
-    });
-
-    Ok(())
 }
 
 // ─── Setup / Status Commands ───
@@ -1033,7 +661,7 @@ pub struct ClaudeStatus {
 
 /// Find the path to git-bash on Windows.
 /// Returns `Some(path)` if found, `None` otherwise.
-/// Used by both `create_command` (to set the env var) and `check_claude_status` (to report status).
+/// Used by `check_claude_status` to report missing-git status.
 #[cfg(target_os = "windows")]
 fn find_git_bash() -> Option<String> {
     // 1. User-specified override (only if the path actually exists)
@@ -1315,7 +943,7 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<(), String> {
             } else {
                 cmd.env("PATH", &value);
             }
-        } else if is_essential_env_var(&key) {
+        } else if crate::provider::is_essential_env_var(&key) {
             cmd.env(&key, &value);
         }
     }
@@ -1406,7 +1034,7 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
 
     // Inherit essential environment variables
     for (key, value) in std::env::vars() {
-        if key.eq_ignore_ascii_case("PATH") || is_essential_env_var(&key) {
+        if key.eq_ignore_ascii_case("PATH") || crate::provider::is_essential_env_var(&key) {
             cmd.env(&key, &value);
         }
     }
@@ -1473,31 +1101,14 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
 }
 
 /// Common CLI flags shared across all Claude invocations.
-fn common_claude_args() -> Vec<String> {
+fn common_claude_args(system_prompt: &str) -> Vec<String> {
     vec![
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--dangerously-skip-permissions".to_string(),
         "--append-system-prompt".to_string(),
-        concat!(
-            "You are an AI assistant integrated into a LaTeX document editor (Prism). ",
-            "Follow these rules strictly:\n",
-            "1. PLANNING FIRST: Before making changes, use TodoWrite to create a step-by-step plan. ",
-            "Break large tasks into small, incremental steps (one section or one logical unit per step).\n",
-            "2. INCREMENTAL EDITS: Use the Edit tool to make small, targeted changes — one step at a time. ",
-            "NEVER write or rewrite an entire file at once. Always prefer editing existing content over replacing it wholesale.\n",
-            "3. STEP BY STEP: After each edit, mark the todo item as completed, then proceed to the next step. ",
-            "This lets the user review changes incrementally.\n",
-            "4. PRESERVE EXISTING CONTENT: Always read the file first. Keep the existing preamble, packages, ",
-            "and structure intact. Only add or modify what is needed for the current step.\n",
-            "5. LaTeX BEST PRACTICES: Use proper sectioning (\\chapter, \\section, \\subsection), ",
-            "citations (\\cite), cross-references (\\label, \\ref), and BibTeX for bibliographies.\n",
-            "6. SKILLS: If scientific skills are installed in .claude/skills/, follow their guidelines ",
-            "for domain-specific tasks. Use skill-provided LaTeX packages (.sty) and code patterns.\n",
-            "7. PYTHON: If a .venv/ exists in the project, it is already activated. ",
-            "Use `uv pip install` to add packages and `python` to run scripts."
-        ).to_string(),
+        system_prompt.to_string(),
     ]
 }
 
@@ -1512,17 +1123,18 @@ pub async fn execute_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
-    let claude_path = find_claude_binary()?;
-
-    let (mut args, stdin_payload) = with_prompt_transport(Vec::new(), prompt);
-    if let Some(m) = model {
-        args.push("--model".to_string());
-        args.push(m);
-    }
-    args.extend(common_claude_args());
-
-    let cmd = create_command(&claude_path, args, &project_path, effort_level.as_deref());
-    spawn_claude_process(window, cmd, tab_id, stdin_payload).await
+    spawn_ai_process(
+        window,
+        Arc::new(ClaudeProvider),
+        &project_path,
+        &prompt,
+        model.as_deref().unwrap_or("sonnet"),
+        tab_id,
+        None,
+        LATEX_SYSTEM_PROMPT,
+        effort_level.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1534,17 +1146,18 @@ pub async fn continue_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
-    let claude_path = find_claude_binary()?;
-
-    let (mut args, stdin_payload) = with_prompt_transport(vec!["-c".to_string()], prompt);
-    if let Some(m) = model {
-        args.push("--model".to_string());
-        args.push(m);
-    }
-    args.extend(common_claude_args());
-
-    let cmd = create_command(&claude_path, args, &project_path, effort_level.as_deref());
-    spawn_claude_process(window, cmd, tab_id, stdin_payload).await
+    spawn_ai_process(
+        window,
+        Arc::new(ClaudeProvider),
+        &project_path,
+        &prompt,
+        model.as_deref().unwrap_or("sonnet"),
+        tab_id,
+        None,
+        LATEX_SYSTEM_PROMPT,
+        effort_level.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1557,31 +1170,31 @@ pub async fn resume_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
-    let claude_path = find_claude_binary()?;
-
-    let (mut args, stdin_payload) =
-        with_prompt_transport(vec!["--resume".to_string(), session_id], prompt);
-    if let Some(m) = model {
-        args.push("--model".to_string());
-        args.push(m);
-    }
-    args.extend(common_claude_args());
-
-    let cmd = create_command(&claude_path, args, &project_path, effort_level.as_deref());
-    spawn_claude_process(window, cmd, tab_id, stdin_payload).await
+    spawn_ai_process(
+        window,
+        Arc::new(ClaudeProvider),
+        &project_path,
+        &prompt,
+        model.as_deref().unwrap_or("sonnet"),
+        tab_id,
+        Some(&session_id),
+        LATEX_SYSTEM_PROMPT,
+        effort_level.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn cancel_claude_execution(window: WebviewWindow, tab_id: String) -> Result<(), String> {
     let window_label = window.label().to_string();
     let process_key = format!("{}:{}", window_label, tab_id);
-    let claude_state = window.state::<ClaudeProcessState>();
-    let mut processes = claude_state.processes.lock().await;
+    let ai_state = window.state::<AiProcessState>();
+    let mut processes = ai_state.processes.lock().await;
     if let Some(mut child) = processes.remove(&process_key) {
         let _ = child.kill().await;
         let _ = window.emit(
             "claude-complete",
-            ClaudeCompleteEvent {
+            crate::provider::AiCompleteEvent {
                 tab_id,
                 success: false,
             },
@@ -1590,9 +1203,9 @@ pub async fn cancel_claude_execution(window: WebviewWindow, tab_id: String) -> R
     Ok(())
 }
 
-/// Kill all Claude processes associated with a specific window label.
+/// Kill all AI processes associated with a specific window label.
 /// Called when a window is destroyed.
-pub async fn kill_process_for_window(state: &ClaudeProcessState, window_label: &str) {
+pub async fn kill_process_for_window(state: &AiProcessState, window_label: &str) {
     let mut processes = state.processes.lock().await;
     let prefix = format!("{}:", window_label);
     let keys_to_remove: Vec<String> = processes
@@ -1861,7 +1474,7 @@ pub async fn run_shell_command(command: String, cwd: String) -> Result<ShellComm
     let (shell, args) = ("sh", vec!["-c".to_string(), command]);
     #[cfg(target_os = "windows")]
     let (shell, args) = ("cmd", vec!["/C".to_string(), command]);
-    let mut cmd = create_command(shell, args, &cwd, None);
+    let mut cmd = crate::provider::create_command(shell, args, &cwd);
 
     let child = cmd
         .spawn()
@@ -2027,7 +1640,7 @@ mod tests {
 
     #[test]
     fn test_common_claude_args_has_required_flags() {
-        let args = common_claude_args();
+        let args = common_claude_args(LATEX_SYSTEM_PROMPT);
         assert!(args.contains(&"--output-format".to_string()));
         assert!(args.contains(&"stream-json".to_string()));
         assert!(args.contains(&"--verbose".to_string()));
@@ -2037,7 +1650,7 @@ mod tests {
 
     #[test]
     fn test_common_claude_args_system_prompt_mentions_latex() {
-        let args = common_claude_args();
+        let args = common_claude_args(LATEX_SYSTEM_PROMPT);
         let prompt_idx = args
             .iter()
             .position(|a| a == "--append-system-prompt")
@@ -2063,12 +1676,12 @@ mod tests {
         }
     }
 
-    // --- create_command ---
+    // --- create_command (via provider) ---
 
     #[test]
     fn test_create_command_sets_args_and_cwd() {
         let args = vec!["--version".to_string()];
-        let cmd = create_command("/usr/bin/claude", args, "/tmp/project", None);
+        let cmd = crate::provider::create_command("/usr/bin/claude", args, "/tmp/project");
         // Command is created — we can verify via its Debug representation
         let debug_str = format!("{:?}", cmd);
         assert!(debug_str.contains("--version"));
@@ -2076,7 +1689,7 @@ mod tests {
 
     #[test]
     fn test_create_command_default_effort_level() {
-        let cmd = create_command("/usr/bin/claude", vec![], "/tmp", None);
+        let cmd = crate::provider::create_command("/usr/bin/claude", vec![], "/tmp");
         let debug_str = format!("{:?}", cmd);
         // The env setup is internal; just verify the command is created
         assert!(debug_str.contains("claude"));
@@ -2084,7 +1697,8 @@ mod tests {
 
     #[test]
     fn test_create_command_custom_effort_level() {
-        let cmd = create_command("/usr/bin/claude", vec![], "/tmp", Some("high"));
+        let mut cmd = crate::provider::create_command("/usr/bin/claude", vec![], "/tmp");
+        cmd.env("CLAUDE_CODE_EFFORT_LEVEL", "high");
         let debug_str = format!("{:?}", cmd);
         assert!(debug_str.contains("claude"));
     }
@@ -2290,26 +1904,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_unix_extra_tool_dirs_include_pnpm_dirs() {
-        let home = PathBuf::from("/Users/test");
-        let dirs = unix_extra_tool_dirs(&home, Some(std::ffi::OsString::from("/custom/pnpm")));
-        assert_eq!(dirs.first(), Some(&PathBuf::from("/custom/pnpm")));
-        assert!(dirs.contains(&home.join("Library").join("pnpm")));
-        assert!(dirs.contains(&home.join("Library").join("pnpm").join("global").join("bin")));
-        assert!(dirs.contains(&home.join(".local").join("share").join("pnpm")));
-        assert!(dirs.contains(
-            &home
-                .join(".local")
-                .join("share")
-                .join("pnpm")
-                .join("global")
-                .join("bin")
-        ));
-        assert!(dirs.contains(&home.join(".pnpm")));
-        assert!(dirs.contains(&home.join(".pnpm").join("global").join("bin")));
-    }
-
     // --- try_create_dirs ---
 
     #[cfg(not(target_os = "windows"))]
@@ -2391,5 +1985,36 @@ mod tests {
         // Paths are single-quoted to handle spaces
         assert!(script.contains("'/Users/my user/.local/bin'"));
         assert!(script.contains("'/Users/my user/.local'"));
+    }
+
+    // --- ClaudeProvider ---
+
+    #[test]
+    fn test_claude_provider_parse_session_init() {
+        let p = ClaudeProvider;
+        let line = r#"{"type":"system","subtype":"init","session_id":"abc-123","cwd":"/tmp","tools":[]}"#;
+        match p.parse_output_line(line) {
+            crate::provider::ProviderEvent::SessionInit(id) => assert_eq!(id, "abc-123"),
+            _ => panic!("expected SessionInit"),
+        }
+    }
+
+    #[test]
+    fn test_claude_provider_parse_regular_line() {
+        let p = ClaudeProvider;
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+        match p.parse_output_line(line) {
+            crate::provider::ProviderEvent::Line(s) => assert_eq!(s, line),
+            _ => panic!("expected Line"),
+        }
+    }
+
+    #[test]
+    fn test_claude_provider_parse_non_json_passthrough() {
+        let p = ClaudeProvider;
+        match p.parse_output_line("not json") {
+            crate::provider::ProviderEvent::Line(s) => assert_eq!(s, "not json"),
+            _ => panic!("expected Line passthrough"),
+        }
     }
 }
