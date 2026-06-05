@@ -16,6 +16,16 @@ export function offsetToLineCol(
   return { line: lines.length, col: lines[lines.length - 1].length + 1 };
 }
 
+// ─── Provider constants ───
+
+export const CLAUDE_MODELS = ["sonnet", "opus", "haiku", "opusplan"] as const;
+export const GEMINI_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"] as const;
+
+export type Provider = "claude" | "gemini";
+export type ClaudeModel = (typeof CLAUDE_MODELS)[number];
+export type GeminiModel = (typeof GEMINI_MODELS)[number];
+export type AiModel = ClaudeModel | GeminiModel;
+
 // ─── Types ───
 
 export interface ContentBlock {
@@ -173,11 +183,17 @@ interface ClaudeChatState {
     imageDataUrl?: string;
   }[];
 
-  /** Currently selected model (passed per-prompt to Claude CLI) */
-  selectedModel: "sonnet" | "opus" | "haiku" | "opusplan";
-  setSelectedModel: (model: "sonnet" | "opus" | "haiku" | "opusplan") => void;
+  /** Active AI provider */
+  provider: Provider;
+  setProvider: (provider: Provider) => void;
+  geminiInstalled: boolean;
+  checkGeminiStatus: () => Promise<void>;
 
-  /** Effort level for Opus 4.6 adaptive reasoning */
+  /** Currently selected model (passed per-prompt to the AI CLI) */
+  selectedModel: AiModel;
+  setSelectedModel: (model: AiModel) => void;
+
+  /** Effort level for Opus 4.6 adaptive reasoning (Claude only) */
   effortLevel: "low" | "medium" | "high";
   setEffortLevel: (level: "low" | "medium" | "high") => void;
 
@@ -224,7 +240,24 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
   tabs: [makeDefaultTab(DEFAULT_TAB_ID)],
   activeTabId: DEFAULT_TAB_ID,
 
-  selectedModel: "opus",
+  provider: "claude" as Provider,
+  geminiInstalled: false,
+  setProvider: (provider) => {
+    const defaultModel: AiModel = provider === "gemini" ? "gemini-2.5-pro" : "opus";
+    set({ provider, selectedModel: defaultModel });
+  },
+  checkGeminiStatus: async () => {
+    try {
+      const status = await invoke<{ installed: boolean; version: string | null }>(
+        "check_gemini_status",
+      );
+      set({ geminiInstalled: status.installed });
+    } catch {
+      set({ geminiInstalled: false });
+    }
+  },
+
+  selectedModel: "opus" as AiModel,
   setSelectedModel: (model) => set({ selectedModel: model }),
 
   effortLevel: "medium",
@@ -266,7 +299,7 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     // Guard: prevent sending from a tab that's already streaming
     if (activeTab?.isStreaming) return;
 
-    const { sessionId, selectedModel, effortLevel } = state;
+    const { sessionId, selectedModel, effortLevel, provider } = state;
 
     const sendStart = performance.now();
     log.info("sendPrompt start", {
@@ -381,23 +414,23 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
     try {
       if (sessionId) {
-        // Resume existing session
-        await invoke("resume_claude_code", {
+        await invoke("resume_ai_code", {
           projectPath,
           sessionId,
           prompt,
           tabId: activeTabId,
           model: selectedModel,
           effortLevel,
+          provider,
         });
       } else {
-        // New session
-        await invoke("execute_claude_code", {
+        await invoke("execute_ai_code", {
           projectPath,
           prompt,
           tabId: activeTabId,
           model: selectedModel,
           effortLevel,
+          provider,
         });
       }
       log.info(
@@ -609,3 +642,6 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     set((state) => applyTabUpdate(state, tabId, { error }));
   },
 }));
+
+// Check Gemini availability at startup (non-blocking)
+useClaudeChatStore.getState().checkGeminiStatus();
