@@ -1,4 +1,5 @@
 mod claude;
+mod gemini;
 mod history;
 mod latex;
 pub(crate) mod provider;
@@ -328,6 +329,64 @@ async fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
     }
 }
 
+fn resolve_provider(name: &str) -> std::sync::Arc<dyn provider::AiProvider + Send + Sync> {
+    match name {
+        "gemini" => std::sync::Arc::new(gemini::GeminiProvider),
+        _ => std::sync::Arc::new(claude::ClaudeProvider),
+    }
+}
+
+#[tauri::command]
+async fn execute_ai_code(
+    window: tauri::WebviewWindow,
+    project_path: String,
+    prompt: String,
+    tab_id: String,
+    model: Option<String>,
+    effort_level: Option<String>,
+    provider: Option<String>,
+) -> Result<(), String> {
+    let p = resolve_provider(provider.as_deref().unwrap_or("claude"));
+    crate::provider::spawn_ai_process(
+        window,
+        p,
+        &project_path,
+        &prompt,
+        model.as_deref().unwrap_or("sonnet"),
+        tab_id,
+        None,
+        claude::LATEX_SYSTEM_PROMPT,
+        effort_level.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn resume_ai_code(
+    window: tauri::WebviewWindow,
+    project_path: String,
+    session_id: String,
+    prompt: String,
+    tab_id: String,
+    model: Option<String>,
+    effort_level: Option<String>,
+    provider: Option<String>,
+) -> Result<(), String> {
+    let p = resolve_provider(provider.as_deref().unwrap_or("claude"));
+    crate::provider::spawn_ai_process(
+        window,
+        p,
+        &project_path,
+        &prompt,
+        model.as_deref().unwrap_or("sonnet"),
+        tab_id,
+        Some(&session_id),
+        claude::LATEX_SYSTEM_PROMPT,
+        effort_level.as_deref(),
+    )
+    .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load .env file (walks up from cwd to find it)
@@ -413,6 +472,9 @@ pub fn run() {
             uv::setup_project_venv,
             uv::uv_add_packages,
             uv::uv_run_command,
+            gemini::check_gemini_status,
+            execute_ai_code,
+            resume_ai_code,
             get_system_info,
             open_debug_window,
         ])
