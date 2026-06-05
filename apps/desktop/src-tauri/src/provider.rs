@@ -648,6 +648,119 @@ pub async fn spawn_ai_process(
     Ok(())
 }
 
+/// Spawn a pre-built command and stream its output via Tauri events.
+/// Use this when the caller has already constructed the Command (e.g. for
+/// Claude's `-c` continue flag which doesn't fit the build_args contract).
+/// All JSON lines are forwarded verbatim as "claude-output" events.
+pub async fn spawn_prebuilt_process(
+    window: WebviewWindow,
+    mut cmd: Command,
+    tab_id: String,
+    stdin_payload: Option<String>,
+) -> Result<(), String> {
+    let window_label = window.label().to_string();
+    let process_key = format!("{}:{}", window_label, tab_id);
+
+    if stdin_payload.is_some() {
+        cmd.stdin(std::process::Stdio::piped());
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn process: {}", e))?;
+
+    if let Some(payload) = stdin_payload {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to acquire stdin".to_string())?;
+        stdin
+            .write_all(payload.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+        stdin
+            .shutdown()
+            .await
+            .map_err(|e| format!("Failed to close stdin: {}", e))?;
+    }
+
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let process_arc = window
+        .state::<AiProcessState>()
+        .inner()
+        .processes
+        .clone();
+
+    {
+        let mut processes = process_arc.lock().await;
+        if let Some(mut existing) = processes.remove(&process_key) {
+            let _ = existing.kill().await;
+        }
+        processes.insert(process_key.clone(), child);
+    }
+
+    let stdout_reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
+    let start_time = std::time::Instant::now();
+
+    let win_stdout = window.clone();
+    let tab_id_stdout = tab_id.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut lines = stdout_reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stdout.emit(
+                "claude-output",
+                AiOutputEvent {
+                    tab_id: tab_id_stdout.clone(),
+                    data: line,
+                },
+            );
+        }
+    });
+
+    let win_stderr = window.clone();
+    let tab_id_stderr = tab_id.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut lines = stderr_reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stderr.emit(
+                "claude-error",
+                AiErrorEvent {
+                    tab_id: tab_id_stderr.clone(),
+                    data: line,
+                },
+            );
+        }
+    });
+
+    let process_arc_wait = process_arc.clone();
+    let win_wait = window;
+    let process_key_wait = process_key;
+    let tab_id_wait = tab_id;
+    tokio::spawn(async move {
+        let _ = stdout_task.await;
+        let _ = stderr_task.await;
+        let mut processes = process_arc_wait.lock().await;
+        let success = if let Some(mut child) = processes.remove(&process_key_wait) {
+            matches!(child.wait().await, Ok(s) if s.success())
+        } else {
+            false
+        };
+        drop(processes);
+        let _ = win_wait.emit(
+            "claude-complete",
+            AiCompleteEvent {
+                tab_id: tab_id_wait,
+                success,
+            },
+        );
+    });
+
+    Ok(())
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

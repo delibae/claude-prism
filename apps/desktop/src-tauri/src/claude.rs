@@ -1146,18 +1146,16 @@ pub async fn continue_claude_code(
     model: Option<String>,
     effort_level: Option<String>,
 ) -> Result<(), String> {
-    spawn_ai_process(
-        window,
-        Arc::new(ClaudeProvider),
-        &project_path,
-        &prompt,
-        model.as_deref().unwrap_or("sonnet"),
-        tab_id,
-        None,
-        LATEX_SYSTEM_PROMPT,
-        effort_level.as_deref(),
-    )
-    .await
+    let binary = find_claude_binary()?;
+    let (mut args, stdin_payload) = with_prompt_transport(vec!["-c".to_string()], prompt);
+    if let Some(m) = &model {
+        args.push("--model".to_string());
+        args.push(m.clone());
+    }
+    args.extend(common_claude_args(LATEX_SYSTEM_PROMPT));
+    let mut cmd = crate::provider::create_command(&binary, args, &project_path);
+    cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.as_deref().unwrap_or("low"));
+    crate::provider::spawn_prebuilt_process(window, cmd, tab_id, stdin_payload).await
 }
 
 #[tauri::command]
