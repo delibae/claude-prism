@@ -19,7 +19,11 @@ export function offsetToLineCol(
 // ─── Provider constants ───
 
 export const CLAUDE_MODELS = ["sonnet", "opus", "haiku", "opusplan"] as const;
-export const GEMINI_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"] as const;
+export const GEMINI_MODELS = [
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+] as const;
 
 export type Provider = "claude" | "gemini";
 export type ClaudeModel = (typeof CLAUDE_MODELS)[number];
@@ -243,14 +247,16 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
   provider: "claude" as Provider,
   geminiInstalled: false,
   setProvider: (provider) => {
-    const defaultModel: AiModel = provider === "gemini" ? "gemini-2.5-pro" : "opus";
+    const defaultModel: AiModel =
+      provider === "gemini" ? "gemini-2.5-pro" : "opus";
     set({ provider, selectedModel: defaultModel });
   },
   checkGeminiStatus: async () => {
     try {
-      const status = await invoke<{ installed: boolean; version: string | null }>(
-        "check_gemini_status",
-      );
+      const status = await invoke<{
+        installed: boolean;
+        version: string | null;
+      }>("check_gemini_status");
       set({ geminiInstalled: status.installed });
     } catch {
       set({ geminiInstalled: false });

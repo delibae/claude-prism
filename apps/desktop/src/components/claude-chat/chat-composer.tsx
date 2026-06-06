@@ -83,17 +83,45 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
   const modelOptions = useMemo(
     () =>
       provider === "claude"
-        ? ([
-            { id: "sonnet" as AiModel, name: "Sonnet", desc: "Fast, efficient for most tasks" },
-            { id: "opus" as AiModel, name: "Opus", desc: "Most capable, complex reasoning" },
-            { id: "haiku" as AiModel, name: "Haiku", desc: "Fastest, simple tasks" },
-            { id: "opusplan" as AiModel, name: "OpusPlan", desc: "Opus for planning, Sonnet for execution" },
-          ])
-        : ([
-            { id: "gemini-2.5-pro" as AiModel, name: "2.5 Pro", desc: "Most capable Gemini model" },
-            { id: "gemini-2.5-flash" as AiModel, name: "2.5 Flash", desc: "Fast and efficient" },
-            { id: "gemini-2.0-flash" as AiModel, name: "2.0 Flash", desc: "Previous generation flash" },
-          ]),
+        ? [
+            {
+              id: "sonnet" as AiModel,
+              name: "Sonnet",
+              desc: "Fast, efficient for most tasks",
+            },
+            {
+              id: "opus" as AiModel,
+              name: "Opus",
+              desc: "Most capable, complex reasoning",
+            },
+            {
+              id: "haiku" as AiModel,
+              name: "Haiku",
+              desc: "Fastest, simple tasks",
+            },
+            {
+              id: "opusplan" as AiModel,
+              name: "OpusPlan",
+              desc: "Opus for planning, Sonnet for execution",
+            },
+          ]
+        : [
+            {
+              id: "gemini-2.5-pro" as AiModel,
+              name: "2.5 Pro",
+              desc: "Most capable Gemini model",
+            },
+            {
+              id: "gemini-2.5-flash" as AiModel,
+              name: "2.5 Flash",
+              desc: "Fast and efficient",
+            },
+            {
+              id: "gemini-2.0-flash" as AiModel,
+              name: "2.0 Flash",
+              desc: "Previous generation flash",
+            },
+          ],
     [provider],
   );
   const [input, setInput] = useState("");
