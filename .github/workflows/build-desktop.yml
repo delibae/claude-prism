@@ -508,16 +508,10 @@ jobs:
           TECTONIC_DEP_BACKEND: vcpkg
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
-        run: |
-          # Replace rust-lld with a passthrough wrapper that strips -fuse-ld=lld,
-          # so cc uses system ld.bfd. rust-lld errors on vcpkg graphite2's hidden symbols.
-          GCC_LD="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld"
-          if [ -d "$GCC_LD" ]; then
-            rm -f "$GCC_LD/ld.lld"
-            printf '#!/bin/sh\nexec /usr/bin/ld "$@"\n' > "$GCC_LD/ld.lld"
-            chmod +x "$GCC_LD/ld.lld"
-          fi
-          pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
+          # mold handles both graphite2 hidden symbols (unlike lld) and
+          # Rust's anonymous version scripts (unlike ld.bfd).
+          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+        run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
 
       - name: Collect updater artifacts
         id: collect
