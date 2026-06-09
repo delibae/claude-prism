@@ -508,6 +508,9 @@ jobs:
           TECTONIC_DEP_BACKEND: vcpkg
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
+          # Rust 1.95+ enables rust-lld by default on Linux, which errors on
+          # vcpkg graphite2's hidden symbols. Disable it to use cc/ld.bfd as before.
+          RUSTFLAGS: "-Clinker-features=-lld"
         run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
 
       - name: Collect updater artifacts
