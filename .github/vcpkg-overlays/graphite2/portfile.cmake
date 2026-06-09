@@ -7,17 +7,19 @@ vcpkg_from_github(
     PATCHES disable-tests.patch
 )
 
-# Force default symbol visibility so gr_* symbols are exported in static libs.
-# Without this, static builds use -fvisibility=hidden and rust-lld/mold
-# cannot resolve the hidden symbols at link time.
+# Fix symbol visibility for static builds:
+# 1. Remove -fvisibility=hidden from COMPILE_FLAGS (target property overrides CMAKE_*_FLAGS)
+# 2. Add GRAPHITE2_EXPORTING so GR2_API = visibility("default") even in static builds
+file(READ "${SOURCE_PATH}/src/CMakeLists.txt" _src_cmake)
+string(REPLACE "-fvisibility=hidden" "" _src_cmake "${_src_cmake}")
+string(REPLACE "-fvisibility-inlines-hidden" "" _src_cmake "${_src_cmake}")
+string(REPLACE "add_definitions(-DGRAPHITE2_STATIC)" "add_definitions(-DGRAPHITE2_STATIC)\n    add_definitions(-DGRAPHITE2_EXPORTING)" _src_cmake "${_src_cmake}")
+file(WRITE "${SOURCE_PATH}/src/CMakeLists.txt" "${_src_cmake}")
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
         -DDISABLE_TESTS=ON
-        -DCMAKE_C_VISIBILITY_PRESET=default
-        -DCMAKE_CXX_VISIBILITY_PRESET=default
-        -DCMAKE_C_FLAGS=-fvisibility=default
-        -DCMAKE_CXX_FLAGS=-fvisibility=default
 )
 
 vcpkg_cmake_install()
@@ -26,7 +28,9 @@ vcpkg_cmake_config_fixup()
 vcpkg_fixup_pkgconfig()
 
 if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
-    vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/include/graphite2/Types.h" "defined GRAPHITE2_STATIC" "1")
+    # Do NOT replace with "1" — keep the original check so GRAPHITE2_EXPORTING
+    # takes effect and GR2_API = visibility("default")
+    message(STATUS "graphite2 overlay: keeping GRAPHITE2_STATIC check in Types.h (GRAPHITE2_EXPORTING overrides)")
 endif()
 
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
