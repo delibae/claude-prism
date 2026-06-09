@@ -513,9 +513,14 @@ jobs:
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
         run: |
-          # Remove rust-lld wrapper so cc uses system ld.bfd instead.
-          # rust-lld errors on vcpkg graphite2's hidden symbols.
-          rm -rf "$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld"
+          # Replace rust-lld with a passthrough wrapper that strips -fuse-ld=lld,
+          # so cc uses system ld.bfd. rust-lld errors on vcpkg graphite2's hidden symbols.
+          GCC_LD="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld"
+          if [ -d "$GCC_LD" ]; then
+            rm -f "$GCC_LD/ld.lld"
+            printf '#!/bin/sh\nexec /usr/bin/ld "$@"\n' > "$GCC_LD/ld.lld"
+            chmod +x "$GCC_LD/ld.lld"
+          fi
           pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
 
       - name: Collect updater artifacts
