@@ -436,7 +436,7 @@ jobs:
   # Linux
   # ──────────────────────────────────────────────
   build-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -449,29 +449,22 @@ jobs:
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
             autoconf autoconf-archive automake libtool pkg-config
 
-      # Static linking via vcpkg with overlay port for graphite2.
-      # The overlay rebuilds graphite2 with -fvisibility=default so symbols
-      # are exported properly in static libs (fixes rust-lld hidden symbol errors).
+      # Static linking via vcpkg — avoids runtime dependency on system ICU/harfbuzz.
+      # Without this, the binary links against the build host's libicuuc.so.70
+      # (Ubuntu 22.04) and fails on distros shipping newer ICU (e.g. Ubuntu 25.10
+      # with libicuuc.so.76). Mirrors the macOS approach (commit 9566956).
       - name: Setup vcpkg
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg $HOME/vcpkg
           $HOME/vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
 
-          # Create custom static triplet for Linux
-          cat > $HOME/vcpkg/triplets/community/x64-linux-static.cmake <<'TRIPLET'
-          set(VCPKG_TARGET_ARCHITECTURE x64)
-          set(VCPKG_CRT_LINKAGE dynamic)
-          set(VCPKG_LIBRARY_LINKAGE static)
-          set(VCPKG_CMAKE_SYSTEM_NAME Linux)
-          TRIPLET
-
       - name: Restore vcpkg cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-linux-static-overlay-v1
+          key: vcpkg-linux-x64-v1
 
       - name: Install Linux dependencies (vcpkg)
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -479,18 +472,17 @@ jobs:
           VCPKG_BINARY_SOURCES: "clear"
         run: |
           $HOME/vcpkg/vcpkg install \
-            --overlay-ports=$GITHUB_WORKSPACE/.github/vcpkg-overlays \
-            "harfbuzz[graphite2]:x64-linux-static" \
-            fontconfig:x64-linux-static \
-            freetype:x64-linux-static \
-            icu:x64-linux-static
+            "harfbuzz[graphite2]:x64-linux" \
+            fontconfig:x64-linux \
+            freetype:x64-linux \
+            icu:x64-linux
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-linux-static-overlay-v1
+          key: vcpkg-linux-x64-v1
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -508,27 +500,12 @@ jobs:
 
       - run: pnpm install
 
-      - name: Debug ICU symbols
-        run: |
-          echo "=== ICU version in headers ==="
-          grep U_ICU_VERSION_SUFFIX $HOME/vcpkg/installed/x64-linux-static/include/unicode/uvernum.h || echo "NOT FOUND in static"
-          grep U_ICU_VERSION_SUFFIX $HOME/vcpkg/installed/x64-linux/include/unicode/uvernum.h 2>/dev/null || echo "NOT FOUND in dynamic"
-          echo "=== Symbols in static libicuuc.a ==="
-          nm $HOME/vcpkg/installed/x64-linux-static/lib/libicuuc.a 2>/dev/null | grep "T ubrk_open" | head -5 || echo "NO ubrk_open in static"
-          echo "=== Symbols in static libicui18n.a ==="
-          nm $HOME/vcpkg/installed/x64-linux-static/lib/libicui18n.a 2>/dev/null | grep "T ubidi" | head -5 || echo "NO ubidi in static"
-          echo "=== U_DISABLE_RENAMING ==="
-          grep -r "U_DISABLE_RENAMING" $HOME/vcpkg/installed/x64-linux-static/include/unicode/uconfig.h | head -3 || echo "NOT FOUND"
-          echo "=== All ICU static libs ==="
-          ls -la $HOME/vcpkg/installed/x64-linux-static/lib/libicu* 2>/dev/null || echo "NO LIBS"
-
       - name: Build Tauri app
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ZOTERO_CONSUMER_KEY: ${{ secrets.ZOTERO_CONSUMER_KEY }}
           ZOTERO_CONSUMER_SECRET: ${{ secrets.ZOTERO_CONSUMER_SECRET }}
           TECTONIC_DEP_BACKEND: vcpkg
-          VCPKGRS_TRIPLET: x64-linux-static
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
         run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
