@@ -55,6 +55,20 @@
       "nsis": {
         "installMode": "perMachine"
       }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libicu72",
+          "libharfbuzz0b",
+          "libgraphite2-3",
+          "libfreetype6",
+          "libfontconfig1",
+          "libpng16-16"
+        ]
+      }
     }
   },
   "plugins": {
