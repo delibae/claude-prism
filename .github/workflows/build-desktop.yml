@@ -508,6 +508,20 @@ jobs:
 
       - run: pnpm install
 
+      - name: Debug ICU symbols
+        run: |
+          echo "=== ICU version in headers ==="
+          grep U_ICU_VERSION_SUFFIX $HOME/vcpkg/installed/x64-linux-static/include/unicode/uvernum.h || echo "NOT FOUND in static"
+          grep U_ICU_VERSION_SUFFIX $HOME/vcpkg/installed/x64-linux/include/unicode/uvernum.h 2>/dev/null || echo "NOT FOUND in dynamic"
+          echo "=== Symbols in static libicuuc.a ==="
+          nm $HOME/vcpkg/installed/x64-linux-static/lib/libicuuc.a 2>/dev/null | grep "T ubrk_open" | head -5 || echo "NO ubrk_open in static"
+          echo "=== Symbols in static libicui18n.a ==="
+          nm $HOME/vcpkg/installed/x64-linux-static/lib/libicui18n.a 2>/dev/null | grep "T ubidi" | head -5 || echo "NO ubidi in static"
+          echo "=== U_DISABLE_RENAMING ==="
+          grep -r "U_DISABLE_RENAMING" $HOME/vcpkg/installed/x64-linux-static/include/unicode/uconfig.h | head -3 || echo "NOT FOUND"
+          echo "=== All ICU static libs ==="
+          ls -la $HOME/vcpkg/installed/x64-linux-static/lib/libicu* 2>/dev/null || echo "NO LIBS"
+
       - name: Build Tauri app
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
