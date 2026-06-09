@@ -447,42 +447,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
-            autoconf autoconf-archive automake libtool pkg-config mold
-
-      # Static linking via vcpkg — avoids runtime dependency on system ICU/harfbuzz.
-      # Without this, the binary links against the build host's libicuuc.so.70
-      # (Ubuntu 22.04) and fails on distros shipping newer ICU (e.g. Ubuntu 25.10
-      # with libicuuc.so.76). Mirrors the macOS approach (commit 9566956).
-      - name: Setup vcpkg
-        run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg $HOME/vcpkg
-          $HOME/vcpkg/bootstrap-vcpkg.sh
-          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
-
-      - name: Restore vcpkg cache
-        id: vcpkg-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/vcpkg/installed
-          key: vcpkg-linux-x64-u2404-v1
-
-      - name: Install Linux dependencies (vcpkg)
-        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        env:
-          VCPKG_BINARY_SOURCES: "clear"
-        run: |
-          $HOME/vcpkg/vcpkg install \
-            "harfbuzz[graphite2]:x64-linux" \
-            fontconfig:x64-linux \
-            freetype:x64-linux \
-            icu:x64-linux
-
-      - name: Save vcpkg cache
-        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/vcpkg/installed
-          key: vcpkg-linux-x64-u2404-v1
+            autoconf autoconf-archive automake libtool pkg-config \
+            libharfbuzz-dev libgraphite2-dev libicu-dev libfreetype-dev \
+            libfontconfig-dev libpng-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -505,12 +472,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ZOTERO_CONSUMER_KEY: ${{ secrets.ZOTERO_CONSUMER_KEY }}
           ZOTERO_CONSUMER_SECRET: ${{ secrets.ZOTERO_CONSUMER_SECRET }}
-          TECTONIC_DEP_BACKEND: vcpkg
+          TECTONIC_DEP_BACKEND: pkg-config
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
-          # mold handles both graphite2 hidden symbols (unlike lld) and
-          # Rust's anonymous version scripts (unlike ld.bfd).
-          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
         run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
 
       - name: Collect updater artifacts
