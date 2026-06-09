@@ -458,12 +458,20 @@ jobs:
           $HOME/vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
 
+          # Create custom static triplet for Linux
+          cat > $HOME/vcpkg/triplets/community/x64-linux-static.cmake <<'TRIPLET'
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_CMAKE_SYSTEM_NAME Linux)
+          TRIPLET
+
       - name: Restore vcpkg cache
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-linux-x64-overlay-v2
+          key: vcpkg-linux-static-overlay-v1
 
       - name: Install Linux dependencies (vcpkg)
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -472,17 +480,17 @@ jobs:
         run: |
           $HOME/vcpkg/vcpkg install \
             --overlay-ports=$GITHUB_WORKSPACE/.github/vcpkg-overlays \
-            "harfbuzz[graphite2]:x64-linux" \
-            fontconfig:x64-linux \
-            freetype:x64-linux \
-            icu:x64-linux
+            "harfbuzz[graphite2]:x64-linux-static" \
+            fontconfig:x64-linux-static \
+            freetype:x64-linux-static \
+            icu:x64-linux-static
 
       - name: Save vcpkg cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-linux-x64-overlay-v2
+          key: vcpkg-linux-static-overlay-v1
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -506,6 +514,7 @@ jobs:
           ZOTERO_CONSUMER_KEY: ${{ secrets.ZOTERO_CONSUMER_KEY }}
           ZOTERO_CONSUMER_SECRET: ${{ secrets.ZOTERO_CONSUMER_SECRET }}
           TECTONIC_DEP_BACKEND: vcpkg
+          VCPKGRS_TRIPLET: x64-linux-static
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
         run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
