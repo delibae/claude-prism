@@ -436,7 +436,7 @@ jobs:
   # Linux
   # ──────────────────────────────────────────────
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -464,7 +464,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-linux-x64-v1
+          key: vcpkg-linux-x64-u2404-v1
 
       - name: Install Linux dependencies (vcpkg)
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -482,19 +482,15 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-linux-x64-v1
+          key: vcpkg-linux-x64-u2404-v1
 
-      # Pin Rust to 1.94.1 on Linux — Rust 1.95+ enables rust-lld which errors
-      # on vcpkg graphite2's hidden symbols, and generates version scripts
-      # incompatible with ld.bfd.
-      - uses: dtolnay/rust-toolchain@1.94.1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
-          prefix-key: rust-1941
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
