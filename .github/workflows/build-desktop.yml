@@ -494,6 +494,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
+          prefix-key: rust-1941
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
