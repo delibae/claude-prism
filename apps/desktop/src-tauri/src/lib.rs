@@ -1,6 +1,7 @@
 mod claude;
 mod history;
 mod latex;
+mod ollama;
 mod skills;
 mod slash_commands;
 mod uv;
@@ -341,6 +342,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(claude::ClaudeProcessState::default())
         .manage(latex::LatexCompilerState::default())
+        .manage(ollama::OllamaState::default())
         .manage(zotero::ZoteroOAuthState::default())
         .setup(|app| {
             // Safety net: force-show the main window after a timeout if the
@@ -385,6 +387,9 @@ pub fn run() {
             claude::set_claude_fast_mode,
             claude::list_claude_sessions,
             claude::load_session_history,
+            ollama::check_ollama_status,
+            ollama::send_ollama_message,
+            ollama::cancel_ollama_message,
             zotero::zotero_start_oauth,
             zotero::zotero_complete_oauth,
             zotero::zotero_cancel_oauth,

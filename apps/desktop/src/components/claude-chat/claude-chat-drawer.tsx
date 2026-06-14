@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 import { useClaudeEvents } from "@/hooks/use-claude-events";
+import { useOllamaEvents } from "@/hooks/use-ollama-events";
 import { ChatMessages } from "./chat-messages";
 import { ChatComposer } from "./chat-composer";
 import { ChatTabBar } from "./chat-tab-bar";
@@ -17,8 +18,9 @@ const MIN_HEIGHT = 150;
 const DEFAULT_HEIGHT = 360;
 
 export function ClaudeChatDrawer() {
-  // Initialize event listeners for Claude streaming
+  // Initialize event listeners for Claude and Ollama streaming
   useClaudeEvents();
+  useOllamaEvents();
 
   const anyStreaming = useClaudeChatStore((s) =>
     s.tabs.some((t) => t.isStreaming),

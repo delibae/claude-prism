@@ -23,7 +23,8 @@ serde_json = "1"
 serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 dirs = "5"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
 hmac = "0.12"
 sha1 = "0.10"
 base64 = "0.22"

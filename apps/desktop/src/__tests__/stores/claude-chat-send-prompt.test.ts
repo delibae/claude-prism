@@ -23,6 +23,14 @@ vi.mock("@/stores/history-store", () => ({
   },
 }));
 
+vi.mock("@/stores/settings-store", () => ({
+  useSettingsStore: {
+    getState: vi.fn(() => ({
+      ollamaBaseUrl: "http://localhost:11434",
+    })),
+  },
+}));
+
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
 
 function resetClaudeChatStore() {
@@ -43,6 +51,8 @@ function resetClaudeChatStore() {
         error: null,
         totalInputTokens: 0,
         totalOutputTokens: 0,
+        provider: "claude",
+        ollamaModel: "",
         draft: { input: "", pinnedContexts: [] },
       },
     ],
@@ -51,6 +61,8 @@ function resetClaudeChatStore() {
     pendingAttachments: [],
     selectedModel: "opus",
     effortLevel: "medium",
+    provider: "claude",
+    ollamaModel: "",
     _cancelledByUser: false,
   });
 }
@@ -166,6 +178,43 @@ describe("useClaudeChatStore.sendPrompt context assembly", () => {
     expect(createSnapshotMock).toHaveBeenCalledWith(
       "/project",
       "[claude] Before Claude edit",
+    );
+  });
+
+  it("invokes send_ollama_message when provider is Ollama", async () => {
+    useClaudeChatStore.setState({
+      provider: "ollama",
+      ollamaModel: "llama3",
+      tabs: [
+        {
+          ...useClaudeChatStore.getState().tabs[0],
+          provider: "ollama",
+          ollamaModel: "llama3",
+        },
+      ],
+    });
+
+    await useClaudeChatStore.getState().sendPrompt("Explain this section");
+
+    expect(invoke).toHaveBeenCalledWith(
+      "send_ollama_message",
+      expect.objectContaining({
+        baseUrl: "http://localhost:11434",
+        model: "llama3",
+        tabId: "tab-default",
+        projectPath: "/project",
+      }),
+    );
+
+    const messagesArg = (vi.mocked(invoke).mock.calls[0]?.[1] as any)
+      ?.messages as { role: string; content: string }[];
+    expect(messagesArg).toHaveLength(1);
+    expect(messagesArg[0].role).toBe("user");
+    expect(messagesArg[0].content).toContain("Explain this section");
+
+    expect(createSnapshotMock).toHaveBeenCalledWith(
+      "/project",
+      "[ollama] Before Ollama response",
     );
   });
 });

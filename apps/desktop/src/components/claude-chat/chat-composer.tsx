@@ -32,7 +32,9 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   useClaudeChatStore,
   offsetToLineCol,
+  type AiProvider,
 } from "@/stores/claude-chat-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useDocumentStore, type ProjectFile } from "@/stores/document-store";
 import { getUniqueTargetName } from "@/lib/tauri/fs";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -74,9 +76,54 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
   const setSelectedModel = useClaudeChatStore((s) => s.setSelectedModel);
   const effortLevel = useClaudeChatStore((s) => s.effortLevel);
   const setEffortLevel = useClaudeChatStore((s) => s.setEffortLevel);
+  const provider = useClaudeChatStore((s) => s.provider);
+  const setProvider = useClaudeChatStore((s) => s.setProvider);
+  const ollamaModel = useClaudeChatStore((s) => s.ollamaModel);
+  const setOllamaModel = useClaudeChatStore((s) => s.setOllamaModel);
+  const ollamaBaseUrl = useSettingsStore((s) => s.ollamaBaseUrl);
+  const setOllamaBaseUrl = useSettingsStore((s) => s.setOllamaBaseUrl);
   const activeTabId = useClaudeChatStore((s) => s.activeTabId);
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Ollama model list state
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaStatus, setOllamaStatus] = useState<{
+    available: boolean;
+    error: string | null;
+    loading: boolean;
+  }>({ available: false, error: null, loading: false });
+
+  const refreshOllamaModels = useCallback(async () => {
+    setOllamaStatus((prev) => ({ ...prev, loading: true }));
+    try {
+      const result = await invoke<{
+        available: boolean;
+        models: string[];
+        error?: string;
+      }>("check_ollama_status", { baseUrl: ollamaBaseUrl });
+      setOllamaModels(result.models);
+      setOllamaStatus({
+        available: result.available,
+        error: result.error ?? null,
+        loading: false,
+      });
+      if (
+        result.available &&
+        result.models.length > 0 &&
+        !result.models.includes(ollamaModel)
+      ) {
+        setOllamaModel(result.models[0]);
+      }
+    } catch (err) {
+      setOllamaModels([]);
+      setOllamaStatus({
+        available: false,
+        error: err instanceof Error ? err.message : String(err),
+        loading: false,
+      });
+    }
+  }, [ollamaBaseUrl, ollamaModel, setOllamaModel]);
 
   // Model picker state
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -87,7 +134,7 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     bottom: 0,
   });
 
-  // Recalculate popup position when it opens
+  // Recalculate popup position and refresh Ollama models when the picker opens
   useLayoutEffect(() => {
     if (!modelPickerOpen || !modelButtonRef.current) return;
     const rect = modelButtonRef.current.getBoundingClientRect();
@@ -95,7 +142,10 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
       left: rect.left,
       bottom: window.innerHeight - rect.top + 4,
     });
-  }, [modelPickerOpen]);
+    if (provider === "ollama") {
+      refreshOllamaModels();
+    }
+  }, [modelPickerOpen, provider, refreshOllamaModels]);
 
   // Pinned contexts — supports multiple files/selections
   const [pinnedContexts, setPinnedContexts] = useState<PinnedContext[]>([]);
@@ -681,101 +731,202 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
         createPortal(
           <div
             ref={modelPickerRef}
-            className="fixed w-64 rounded-lg border border-border bg-background shadow-lg"
+            className="fixed w-72 rounded-lg border border-border bg-background shadow-lg"
             style={{
               left: pickerPos.left,
               bottom: pickerPos.bottom,
               zIndex: 9999,
             }}
           >
-            {/* Models */}
-            <div className="p-1">
-              <div className="px-2 py-1 font-medium text-muted-foreground text-xs">
-                Model
-              </div>
-              {[
-                {
-                  id: "sonnet" as const,
-                  name: "Sonnet",
-                  desc: "Fast, efficient for most tasks",
-                  icon: <ZapIcon className="size-3.5" />,
-                },
-                {
-                  id: "opus" as const,
-                  name: "Opus",
-                  desc: "Most capable, complex reasoning",
-                  icon: <SparklesIcon className="size-3.5" />,
-                },
-                {
-                  id: "haiku" as const,
-                  name: "Haiku",
-                  desc: "Fastest, simple tasks",
-                  icon: <RabbitIcon className="size-3.5" />,
-                },
-                {
-                  id: "opusplan" as const,
-                  name: "OpusPlan",
-                  desc: "Opus for planning, Sonnet for execution",
-                  icon: <LayersIcon className="size-3.5" />,
-                },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors",
-                    selectedModel === m.id
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-muted",
-                  )}
-                  onClick={() => setSelectedModel(m.id)}
-                >
-                  {m.icon}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-xs">{m.name}</div>
-                    <div className="truncate text-muted-foreground text-xs">
-                      {m.desc}
-                    </div>
-                  </div>
-                  {selectedModel === m.id && (
-                    <CheckIcon className="size-3 shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            <div className="border-border border-t" />
-
-            {/* Effort level */}
-            <div className="p-2">
-              <div className="mb-1.5 flex items-center justify-between px-1">
-                <span className="font-medium text-muted-foreground text-xs">
-                  Effort
-                </span>
-                <span className="text-muted-foreground text-xs">
-                  {effortLevel === "low"
-                    ? "Low"
-                    : effortLevel === "medium"
-                      ? "Medium"
-                      : "High"}
-                </span>
+            {/* Provider switch */}
+            <div className="border-border border-b p-2">
+              <div className="mb-1.5 px-1 font-medium text-muted-foreground text-xs">
+                Provider
               </div>
               <div className="flex gap-1">
-                {(["low", "medium", "high"] as const).map((level) => (
+                {(["claude", "ollama"] as AiProvider[]).map((p) => (
                   <button
-                    key={level}
+                    key={p}
+                    onClick={() => setProvider(p)}
                     className={cn(
                       "flex-1 rounded-md py-1 text-center font-medium text-xs transition-colors",
-                      effortLevel === level
+                      provider === p
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground hover:bg-muted/80",
                     )}
-                    onClick={() => setEffortLevel(level)}
                   >
-                    {level === "low" ? "L" : level === "medium" ? "M" : "H"}
+                    {p === "claude" ? "Claude" : "Ollama"}
                   </button>
                 ))}
               </div>
             </div>
+
+            {provider === "claude" ? (
+              <>
+                {/* Claude models */}
+                <div className="p-1">
+                  <div className="px-2 py-1 font-medium text-muted-foreground text-xs">
+                    Model
+                  </div>
+                  {[
+                    {
+                      id: "sonnet" as const,
+                      name: "Sonnet",
+                      desc: "Fast, efficient for most tasks",
+                      icon: <ZapIcon className="size-3.5" />,
+                    },
+                    {
+                      id: "opus" as const,
+                      name: "Opus",
+                      desc: "Most capable, complex reasoning",
+                      icon: <SparklesIcon className="size-3.5" />,
+                    },
+                    {
+                      id: "haiku" as const,
+                      name: "Haiku",
+                      desc: "Fastest, simple tasks",
+                      icon: <RabbitIcon className="size-3.5" />,
+                    },
+                    {
+                      id: "opusplan" as const,
+                      name: "OpusPlan",
+                      desc: "Opus for planning, Sonnet for execution",
+                      icon: <LayersIcon className="size-3.5" />,
+                    },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors",
+                        selectedModel === m.id
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-muted",
+                      )}
+                      onClick={() => setSelectedModel(m.id)}
+                    >
+                      {m.icon}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-xs">{m.name}</div>
+                        <div className="truncate text-muted-foreground text-xs">
+                          {m.desc}
+                        </div>
+                      </div>
+                      {selectedModel === m.id && (
+                        <CheckIcon className="size-3 shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="border-border border-t" />
+
+                {/* Effort level */}
+                <div className="p-2">
+                  <div className="mb-1.5 flex items-center justify-between px-1">
+                    <span className="font-medium text-muted-foreground text-xs">
+                      Effort
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {effortLevel === "low"
+                        ? "Low"
+                        : effortLevel === "medium"
+                          ? "Medium"
+                          : "High"}
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    {(["low", "medium", "high"] as const).map((level) => (
+                      <button
+                        key={level}
+                        className={cn(
+                          "flex-1 rounded-md py-1 text-center font-medium text-xs transition-colors",
+                          effortLevel === level
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80",
+                        )}
+                        onClick={() => setEffortLevel(level)}
+                      >
+                        {level === "low" ? "L" : level === "medium" ? "M" : "H"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Ollama settings */}
+                <div className="space-y-2 p-2">
+                  <div>
+                    <label
+                      htmlFor="ollama-url"
+                      className="mb-1 block px-1 font-medium text-muted-foreground text-xs"
+                    >
+                      Ollama URL
+                    </label>
+                    <div className="flex gap-1">
+                      <input
+                        id="ollama-url"
+                        type="text"
+                        value={ollamaBaseUrl}
+                        onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                        className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus:border-ring"
+                        placeholder="http://localhost:11434"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => refreshOllamaModels()}
+                        disabled={ollamaStatus.loading}
+                        className="rounded-md bg-muted px-2 py-1 font-medium text-muted-foreground text-xs transition-colors hover:bg-muted/80 disabled:opacity-50"
+                      >
+                        {ollamaStatus.loading ? "..." : "Refresh"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-1 flex items-center justify-between px-1">
+                      <span className="font-medium text-muted-foreground text-xs">
+                        Model
+                      </span>
+                      <span className="text-xs">
+                        {ollamaStatus.loading ? (
+                          <span className="text-muted-foreground">
+                            Checking…
+                          </span>
+                        ) : ollamaStatus.available ? (
+                          <span className="text-green-600">Connected</span>
+                        ) : (
+                          <span className="text-destructive">
+                            {ollamaStatus.error || "Unreachable"}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {ollamaModels.length === 0 ? (
+                      <div className="rounded-md bg-muted px-2 py-1.5 text-muted-foreground text-xs">
+                        No models found. Pull a model with{" "}
+                        <code className="rounded bg-background px-1 py-0.5">
+                          ollama pull &lt;model&gt;
+                        </code>
+                        .
+                      </div>
+                    ) : (
+                      <select
+                        value={ollamaModel}
+                        onChange={(e) => setOllamaModel(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus:border-ring"
+                      >
+                        {ollamaModels.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>,
           document.body,
         )}
@@ -904,20 +1055,24 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
               className="flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground text-xs transition-colors hover:bg-muted hover:text-foreground"
             >
               <span>
-                {selectedModel === "sonnet"
-                  ? "Sonnet"
-                  : selectedModel === "opus"
-                    ? "Opus"
-                    : selectedModel === "haiku"
-                      ? "Haiku"
-                      : "OpusPlan"}
+                {provider === "ollama"
+                  ? ollamaModel || "Ollama"
+                  : selectedModel === "sonnet"
+                    ? "Sonnet"
+                    : selectedModel === "opus"
+                      ? "Opus"
+                      : selectedModel === "haiku"
+                        ? "Haiku"
+                        : "OpusPlan"}
               </span>
               <span className="text-muted-foreground/60">
-                {effortLevel === "low"
-                  ? "L"
-                  : effortLevel === "medium"
-                    ? "M"
-                    : "H"}
+                {provider === "ollama"
+                  ? "local"
+                  : effortLevel === "low"
+                    ? "L"
+                    : effortLevel === "medium"
+                      ? "M"
+                      : "H"}
               </span>
               <ChevronDownIcon className="size-3" />
             </button>

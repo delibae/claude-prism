@@ -111,6 +111,9 @@ Chat with Claude directly in the editor. Select between Sonnet, Opus, Haiku mode
   <img src="./assets/demo/claudecommand.webp" alt="Claude AI Assistant & Slash Commands" width="600" />
 </p>
 
+### Local Models via Ollama
+Prefer to keep AI inference on your own machine? ClaudePrism also supports [Ollama](https://ollama.com/) for local chat and structured file edits. Switch between Claude and Ollama per conversation from the composer model picker. See [OLLAMA.md](./OLLAMA.md) for setup instructions.
+
 ### History & Proposed Changes
 Every save creates a snapshot in a local Git repository (`.claudeprism/history.git/`). Label important checkpoints, browse diffs between any two snapshots, and restore previous versions. When Claude suggests edits, changes appear in a dedicated panel with visual diffs — accept or reject per chunk, or apply/undo all at once (`⌘Y` / `⌘N`).
 

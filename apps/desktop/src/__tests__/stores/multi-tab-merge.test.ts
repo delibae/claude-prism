@@ -49,6 +49,8 @@ function resetStores() {
         error: null,
         totalInputTokens: 0,
         totalOutputTokens: 0,
+        provider: "claude",
+        ollamaModel: "",
         draft: { input: "", pinnedContexts: [] },
       },
     ],

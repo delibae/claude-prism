@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useDocumentStore } from "./document-store";
 import { useHistoryStore } from "./history-store";
+import { useSettingsStore } from "./settings-store";
 import { createLogger } from "@/lib/debug/logger";
 
 const log = createLogger("claude");
@@ -67,6 +68,8 @@ export interface TabDraft {
   }[];
 }
 
+export type AiProvider = "claude" | "ollama";
+
 export interface TabState {
   id: string;
   title: string;
@@ -76,6 +79,8 @@ export interface TabState {
   error: string | null;
   totalInputTokens: number;
   totalOutputTokens: number;
+  provider: AiProvider;
+  ollamaModel: string;
   draft: TabDraft;
 }
 
@@ -87,9 +92,15 @@ const TAB_FIELDS = [
   "error",
   "totalInputTokens",
   "totalOutputTokens",
+  "provider",
+  "ollamaModel",
 ] as const;
 
-function makeDefaultTab(id: string): TabState {
+function makeDefaultTab(
+  id: string,
+  provider: AiProvider = "claude",
+  ollamaModel = "",
+): TabState {
   return {
     id,
     title: "New Chat",
@@ -99,6 +110,8 @@ function makeDefaultTab(id: string): TabState {
     error: null,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    provider,
+    ollamaModel,
     draft: { input: "", pinnedContexts: [] },
   };
 }
@@ -106,6 +119,41 @@ function makeDefaultTab(id: string): TabState {
 let tabCounter = 0;
 function nextTabId(): string {
   return `tab-${++tabCounter}`;
+}
+
+// ─── Ollama helpers ───
+
+interface OllamaMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+/** Build a clean message history for Ollama from the tab's current messages. */
+function buildOllamaMessages(messages: ClaudeStreamMessage[]): OllamaMessage[] {
+  const out: OllamaMessage[] = [];
+  for (const msg of messages) {
+    if (msg.type === "system") continue;
+    if (msg.type === "result") continue;
+    if (msg.type === "user" && msg.message?.content) {
+      const text = msg.message.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+      if (text) {
+        out.push({ role: "user", content: text });
+      }
+    }
+    if (msg.type === "assistant" && msg.message?.content) {
+      const text = msg.message.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      if (text) {
+        out.push({ role: "assistant", content: text });
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -181,6 +229,14 @@ interface ClaudeChatState {
   effortLevel: "low" | "medium" | "high";
   setEffortLevel: (level: "low" | "medium" | "high") => void;
 
+  /** Active AI provider for the current tab */
+  provider: AiProvider;
+  setProvider: (provider: AiProvider) => void;
+
+  /** Selected Ollama model for the current tab */
+  ollamaModel: string;
+  setOllamaModel: (model: string) => void;
+
   // Actions
   sendPrompt: (
     userPrompt: string,
@@ -202,6 +258,7 @@ interface ClaudeChatState {
 
   // Internal actions (called by event hook, routed by tabId)
   _appendMessage: (tabId: string, msg: ClaudeStreamMessage) => void;
+  _appendStreamingText: (tabId: string, text: string) => void;
   _setSessionId: (tabId: string, id: string) => void;
   _setStreaming: (tabId: string, streaming: boolean) => void;
   _setError: (tabId: string, error: string | null) => void;
@@ -229,6 +286,30 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
   effortLevel: "medium",
   setEffortLevel: (level) => set({ effortLevel: level }),
+
+  provider: "claude",
+  setProvider: (provider) =>
+    set((state) => {
+      const updates: Partial<ClaudeChatState> = { provider };
+      return {
+        ...updates,
+        ...applyTabUpdate(state, state.activeTabId, {
+          provider,
+        }),
+      };
+    }),
+
+  ollamaModel: "",
+  setOllamaModel: (model) =>
+    set((state) => {
+      const updates: Partial<ClaudeChatState> = { ollamaModel: model };
+      return {
+        ...updates,
+        ...applyTabUpdate(state, state.activeTabId, {
+          ollamaModel: model,
+        }),
+      };
+    }),
 
   pendingInitialPrompt: null,
   setPendingInitialPrompt: (prompt) => set({ pendingInitialPrompt: prompt }),
@@ -266,10 +347,12 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
     // Guard: prevent sending from a tab that's already streaming
     if (activeTab?.isStreaming) return;
 
-    const { sessionId, selectedModel, effortLevel } = state;
+    const { sessionId, selectedModel, effortLevel, provider, ollamaModel } =
+      state;
 
     const sendStart = performance.now();
     log.info("sendPrompt start", {
+      provider,
       sessionId: !!sessionId,
       hasContext: !!contextOverride,
       tab: activeTabId,
@@ -333,72 +416,90 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
       };
     });
 
-    // Flush unsaved edits to disk so Claude reads the latest content
+    // Flush unsaved edits to disk so the AI reads the latest content
     if (docState.files.some((f) => f.isDirty)) {
       log.debug("saving dirty files...");
       await docState.saveAllFiles();
       log.debug("saveAllFiles done");
     }
 
-    // Snapshot before Claude edit
+    // Snapshot before AI edit
     if (projectPath) {
       try {
         log.debug("creating snapshot...");
+        const snapshotLabel =
+          provider === "ollama"
+            ? "[ollama] Before Ollama response"
+            : "[claude] Before Claude edit";
         await useHistoryStore
           .getState()
-          .createSnapshot(projectPath, "[claude] Before Claude edit");
+          .createSnapshot(projectPath, snapshotLabel);
         log.debug("snapshot done");
       } catch {
-        /* snapshot failure should not block Claude */
+        /* snapshot failure should not block the AI flow */
       }
     }
-
-    // Build prompt with full context for Claude
-    let prompt = userPrompt;
-    if (activeFile) {
-      const selRange = docState.selectionRange;
-      const selectedText =
-        selRange && activeFile.content
-          ? activeFile.content.slice(selRange.start, selRange.end)
-          : null;
-      let ctx = `[Currently open file: ${activeFile.relativePath}]`;
-      if (contextOverride) {
-        ctx += `\n[Selection: ${contextOverride.label}]`;
-        ctx += `\n[Selected text:\n${contextOverride.selectedText}\n]`;
-      } else if (selectedText && selRange) {
-        const content = activeFile.content ?? "";
-        const startLC = offsetToLineCol(content, selRange.start);
-        const endLC = offsetToLineCol(content, selRange.end);
-        ctx += `\n[Selection: @${activeFile.relativePath}:${startLC.line}:${startLC.col}-${endLC.line}:${endLC.col}]`;
-        ctx += `\n[Selected text:\n${selectedText}\n]`;
-      }
-      prompt = `${ctx}\n\n${userPrompt}`;
-    }
-    log.info("invoking CLI", {
-      promptLength: prompt.length,
-      mode: sessionId ? "resume" : "new",
-    });
 
     try {
-      if (sessionId) {
-        // Resume existing session
-        await invoke("resume_claude_code", {
-          projectPath,
-          sessionId,
-          prompt,
+      if (provider === "ollama") {
+        // Build full message history for Ollama
+        const currentMessages =
+          get().tabs.find((t) => t.id === activeTabId)?.messages ?? [];
+        const ollamaMessages = buildOllamaMessages(currentMessages);
+        const settings = useSettingsStore.getState();
+
+        await invoke("send_ollama_message", {
+          baseUrl: settings.ollamaBaseUrl,
+          model: ollamaModel,
+          messages: ollamaMessages,
           tabId: activeTabId,
-          model: selectedModel,
-          effortLevel,
+          projectPath,
         });
       } else {
-        // New session
-        await invoke("execute_claude_code", {
-          projectPath,
-          prompt,
-          tabId: activeTabId,
-          model: selectedModel,
-          effortLevel,
+        // Build prompt with full context for Claude
+        let prompt = userPrompt;
+        if (activeFile) {
+          const selRange = docState.selectionRange;
+          const selectedText =
+            selRange && activeFile.content
+              ? activeFile.content.slice(selRange.start, selRange.end)
+              : null;
+          let ctx = `[Currently open file: ${activeFile.relativePath}]`;
+          if (contextOverride) {
+            ctx += `\n[Selection: ${contextOverride.label}]`;
+            ctx += `\n[Selected text:\n${contextOverride.selectedText}\n]`;
+          } else if (selectedText && selRange) {
+            const content = activeFile.content ?? "";
+            const startLC = offsetToLineCol(content, selRange.start);
+            const endLC = offsetToLineCol(content, selRange.end);
+            ctx += `\n[Selection: @${activeFile.relativePath}:${startLC.line}:${startLC.col}-${endLC.line}:${endLC.col}]`;
+            ctx += `\n[Selected text:\n${selectedText}\n]`;
+          }
+          prompt = `${ctx}\n\n${userPrompt}`;
+        }
+        log.info("invoking Claude CLI", {
+          promptLength: prompt.length,
+          mode: sessionId ? "resume" : "new",
         });
+
+        if (sessionId) {
+          await invoke("resume_claude_code", {
+            projectPath,
+            sessionId,
+            prompt,
+            tabId: activeTabId,
+            model: selectedModel,
+            effortLevel,
+          });
+        } else {
+          await invoke("execute_claude_code", {
+            projectPath,
+            prompt,
+            tabId: activeTabId,
+            model: selectedModel,
+            effortLevel,
+          });
+        }
       }
       log.info(
         `sendPrompt complete in ${(performance.now() - sendStart).toFixed(0)}ms`,
@@ -418,10 +519,14 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
   },
 
   cancelExecution: async () => {
-    const { activeTabId } = get();
+    const { activeTabId, provider } = get();
     set({ _cancelledByUser: true });
     try {
-      await invoke("cancel_claude_execution", { tabId: activeTabId });
+      if (provider === "ollama") {
+        await invoke("cancel_ollama_message", { tabId: activeTabId });
+      } else {
+        await invoke("cancel_claude_execution", { tabId: activeTabId });
+      }
     } catch {
       // ignore
     }
@@ -452,6 +557,7 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
         totalInputTokens: 0,
         totalOutputTokens: 0,
         title: "New Chat",
+        // Keep provider + ollama model on new session
       }),
     );
   },
@@ -501,8 +607,9 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
 
   createTab: () => {
     log.debug("Creating new tab");
+    const state = get();
     const id = nextTabId();
-    const newTab = makeDefaultTab(id);
+    const newTab = makeDefaultTab(id, state.provider, state.ollamaModel);
     set((s) => ({
       tabs: [...s.tabs, newTab],
       activeTabId: id,
@@ -513,6 +620,8 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
       error: newTab.error,
       totalInputTokens: newTab.totalInputTokens,
       totalOutputTokens: newTab.totalOutputTokens,
+      provider: newTab.provider,
+      ollamaModel: newTab.ollamaModel,
     }));
     return id;
   },
@@ -544,6 +653,8 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
         error: newActive.error,
         totalInputTokens: newActive.totalInputTokens,
         totalOutputTokens: newActive.totalOutputTokens,
+        provider: newActive.provider,
+        ollamaModel: newActive.ollamaModel,
       });
     } else {
       set({ tabs: newTabs });
@@ -565,6 +676,8 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
       error: targetTab.error,
       totalInputTokens: targetTab.totalInputTokens,
       totalOutputTokens: targetTab.totalOutputTokens,
+      provider: targetTab.provider,
+      ollamaModel: targetTab.ollamaModel,
     });
   },
 
@@ -593,6 +706,51 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
         messages: [...tab.messages, msg],
         totalInputTokens: tab.totalInputTokens + inputDelta,
         totalOutputTokens: tab.totalOutputTokens + outputDelta,
+      });
+    });
+  },
+
+  _appendStreamingText: (tabId: string, text: string) => {
+    if (!text) return;
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === tabId);
+      if (!tab) return {};
+
+      const lastMsg = tab.messages[tab.messages.length - 1];
+      if (
+        lastMsg?.type === "assistant" &&
+        Array.isArray(lastMsg.message?.content)
+      ) {
+        const content = lastMsg.message.content;
+        const lastBlock = content[content.length - 1];
+        if (lastBlock?.type === "text") {
+          const updatedContent = [...content];
+          updatedContent[updatedContent.length - 1] = {
+            ...lastBlock,
+            text: (lastBlock.text ?? "") + text,
+          };
+          return applyTabUpdate(state, tabId, {
+            messages: [
+              ...tab.messages.slice(0, -1),
+              {
+                ...lastMsg,
+                message: { ...lastMsg.message, content: updatedContent },
+              },
+            ],
+          });
+        }
+      }
+
+      return applyTabUpdate(state, tabId, {
+        messages: [
+          ...tab.messages,
+          {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text }],
+            },
+          } as ClaudeStreamMessage,
+        ],
       });
     });
   },

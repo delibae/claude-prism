@@ -31,7 +31,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' ipc: http://ipc.localhost https://api.zotero.org https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' asset: http://asset.localhost data: blob:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:* https://api.zotero.org https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' asset: http://asset.localhost data: blob:; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'self' blob:",
       "dangerousDisableAssetCspModification": true
     }
   },

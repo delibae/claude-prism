@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { offsetToLineCol } from "@/stores/claude-chat-store";
+import {
+  offsetToLineCol,
+  useClaudeChatStore,
+} from "@/stores/claude-chat-store";
 
 describe("offsetToLineCol", () => {
   it("returns line 1, col 1 for offset 0 on empty string", () => {
@@ -36,5 +39,70 @@ describe("offsetToLineCol", () => {
   it("handles content with only newlines", () => {
     expect(offsetToLineCol("\n\n", 1)).toEqual({ line: 2, col: 1 });
     expect(offsetToLineCol("\n\n", 2)).toEqual({ line: 3, col: 1 });
+  });
+});
+
+describe("useClaudeChatStore._appendStreamingText", () => {
+  it("creates a new assistant message when the last message is not assistant", () => {
+    useClaudeChatStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          title: "Chat",
+          sessionId: null,
+          messages: [
+            {
+              type: "user",
+              message: { content: [{ type: "text", text: "Hi" }] },
+            },
+          ],
+          isStreaming: true,
+          error: null,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          provider: "ollama",
+          ollamaModel: "llama3",
+          draft: { input: "", pinnedContexts: [] },
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    useClaudeChatStore.getState()._appendStreamingText("tab-1", "Hello");
+    const messages = useClaudeChatStore.getState().tabs[0].messages;
+    expect(messages).toHaveLength(2);
+    expect(messages[1].type).toBe("assistant");
+    expect(messages[1].message?.content?.[0].text).toBe("Hello");
+  });
+
+  it("merges text into the existing assistant message", () => {
+    useClaudeChatStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          title: "Chat",
+          sessionId: null,
+          messages: [
+            {
+              type: "assistant",
+              message: { content: [{ type: "text", text: "Hello" }] },
+            },
+          ],
+          isStreaming: true,
+          error: null,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          provider: "ollama",
+          ollamaModel: "llama3",
+          draft: { input: "", pinnedContexts: [] },
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    useClaudeChatStore.getState()._appendStreamingText("tab-1", ", world!");
+    const messages = useClaudeChatStore.getState().tabs[0].messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].message?.content?.[0].text).toBe("Hello, world!");
   });
 });
