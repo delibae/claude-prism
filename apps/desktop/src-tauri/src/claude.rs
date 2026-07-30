@@ -1024,6 +1024,84 @@ pub async fn list_openai_compatible_credential_models(
     fetch_openai_compatible_models(&credential.api_key, &credential.base_url).await
 }
 
+#[tauri::command]
+pub async fn list_claude_models() -> Result<Vec<OpenAiCompatibleModelInfo>, String> {
+    let stored = stored_claude_credential();
+    let api_key = stored
+        .as_ref()
+        .map(|credential| credential.api_key.clone())
+        .or_else(|| {
+            std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            std::env::var("ANTHROPIC_AUTH_TOKEN")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .ok_or(
+            "The Models API requires an Anthropic API key. Browser sign-in does not expose one to ClaudePrism.",
+        )?;
+    let base_url = stored
+        .and_then(|credential| credential.base_url)
+        .or_else(|| {
+            std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| "https://api.anthropic.com".to_string());
+    let base_url = normalize_base_url(Some(base_url.as_str()))?
+        .ok_or("Claude provider requires a Base URL")?;
+    ensure_secure_known_provider_base_url(&base_url)?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|err| format!("Failed to create Claude models client: {}", err))?;
+    let request = client
+        .get(anthropic_models_url(&base_url))
+        .query(&[("limit", "1000")])
+        .header("anthropic-version", "2023-06-01");
+    let response = with_optional_anthropic_key(request, &api_key)
+        .send()
+        .await
+        .map_err(|err| format!("Failed to fetch Claude models: {}", err))?;
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| format!("Failed to read Claude models response: {}", err))?;
+
+    if !status.is_success() {
+        return Err(openai_compatible_verification_error(status, &response_text));
+    }
+
+    let value: Value = serde_json::from_str(&response_text)
+        .map_err(|err| format!("Claude provider returned invalid models JSON: {}", err))?;
+    let mut models = value
+        .get("data")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            item.get("id")
+                .and_then(|value| value.as_str())
+                .map(|id| OpenAiCompatibleModelInfo {
+                    id: id.to_string(),
+                    metadata: item.clone(),
+                })
+        })
+        .collect::<Vec<_>>();
+    let mut seen = HashSet::new();
+    models.retain(|model| seen.insert(model.id.clone()));
+    if models.is_empty() {
+        return Err("Claude provider did not return any models.".to_string());
+    }
+
+    Ok(models)
+}
+
 async fn fetch_openai_compatible_models(
     api_key: &str,
     base_url: &str,
@@ -2415,6 +2493,64 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub async fn update_claude_cli(window: WebviewWindow) -> Result<bool, String> {
+    let binary_path = find_claude_binary().map_err(|e| format!("Claude CLI not found: {}", e))?;
+    let cwd = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .to_string_lossy()
+        .to_string();
+    let mut cmd = create_command(&binary_path, vec!["update".to_string()], &cwd, None);
+    cmd.stdin(std::process::Stdio::null());
+    apply_proxy_env_to_command(&mut cmd, Some(&window));
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start Claude Code update: {}", e))?;
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let win_stdout = window.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stdout.emit("install-output", strip_ansi(&line).as_ref());
+        }
+    });
+    let win_stderr = window.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = win_stderr.emit("install-error", strip_ansi(&line).as_ref());
+        }
+    });
+
+    let success =
+        match tokio::time::timeout(std::time::Duration::from_secs(600), child.wait()).await {
+            Ok(Ok(status)) => status.success(),
+            Ok(Err(err)) => {
+                let _ = window.emit(
+                    "install-error",
+                    format!("Claude Code updater failed to exit cleanly: {}", err),
+                );
+                false
+            }
+            Err(_) => {
+                let _ = window.emit(
+                    "install-error",
+                    "Claude Code update timed out after 10 minutes.",
+                );
+                let _ = child.kill().await;
+                false
+            }
+        };
+
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+    let _ = window.emit("install-complete", success);
+    Ok(success)
+}
+
+#[tauri::command]
 pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
     let binary_path = find_claude_binary().map_err(|e| format!("Claude CLI not found: {}", e))?;
 
@@ -2645,6 +2781,17 @@ fn anthropic_messages_url(base_url: &str) -> String {
         format!("{}/messages", clean)
     } else {
         format!("{}/v1/messages", clean)
+    }
+}
+
+fn anthropic_models_url(base_url: &str) -> String {
+    let clean = base_url.trim_end_matches('/');
+    if clean.ends_with("/v1/models") || clean.ends_with("/models") {
+        clean.to_string()
+    } else if clean.ends_with("/v1") {
+        format!("{}/models", clean)
+    } else {
+        format!("{}/v1/models", clean)
     }
 }
 
@@ -4889,6 +5036,22 @@ mod tests {
         assert_eq!(
             openai_models_url("http://localhost:11434/v1"),
             "http://localhost:11434/v1/models"
+        );
+    }
+
+    #[test]
+    fn test_anthropic_models_url_matches_provider_roots() {
+        assert_eq!(
+            anthropic_models_url("https://api.anthropic.com"),
+            "https://api.anthropic.com/v1/models"
+        );
+        assert_eq!(
+            anthropic_models_url("https://gateway.example.com/anthropic/v1"),
+            "https://gateway.example.com/anthropic/v1/models"
+        );
+        assert_eq!(
+            anthropic_models_url("https://gateway.example.com/anthropic/v1/models"),
+            "https://gateway.example.com/anthropic/v1/models"
         );
     }
 
