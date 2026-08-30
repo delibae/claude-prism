@@ -513,6 +513,7 @@ export function ClaudeSetup({
   const [isEditingProvider, setIsEditingProvider] = useState(false);
   const status = useClaudeSetupStore((s) => s.status);
   const isInstalling = useClaudeSetupStore((s) => s.isInstalling);
+  const installMode = useClaudeSetupStore((s) => s.installMode);
   const isLoggingIn = useClaudeSetupStore((s) => s.isLoggingIn);
   const isSavingApiKey = useClaudeSetupStore((s) => s.isSavingApiKey);
   const isClearingApiKey = useClaudeSetupStore((s) => s.isClearingApiKey);
@@ -527,6 +528,7 @@ export function ClaudeSetup({
   );
   const openAiCredentials = useClaudeSetupStore((s) => s.openAiCredentials);
   const install = useClaudeSetupStore((s) => s.install);
+  const update = useClaudeSetupStore((s) => s.update);
   const login = useClaudeSetupStore((s) => s.login);
   const saveApiKey = useClaudeSetupStore((s) => s.saveApiKey);
   const clearApiKey = useClaudeSetupStore((s) => s.clearApiKey);
@@ -1180,6 +1182,17 @@ export function ClaudeSetup({
             size="sm"
             variant="ghost"
             className="h-8 shrink-0 gap-1.5 rounded-md px-2.5 text-xs"
+            onClick={update}
+            disabled={isInstalling}
+          >
+            <RefreshCwIcon className="size-3" />
+            Update CC
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 gap-1.5 rounded-md px-2.5 text-xs"
             onClick={() => beginProviderEdit(isDirectProvider)}
           >
             <RefreshCwIcon className="size-3" />
@@ -1285,7 +1298,11 @@ export function ClaudeSetup({
       <div className={setupSurfaceClass()}>
         <div className="flex items-center gap-2">
           <TerminalIcon className="size-5 shrink-0 text-muted-foreground" />
-          <p className="font-medium text-sm">Installing Claude Code</p>
+          <p className="font-medium text-sm">
+            {installMode === "update"
+              ? "Updating Claude Code"
+              : "Installing Claude Code"}
+          </p>
         </div>
 
         <div className="space-y-0 pl-1">
@@ -1455,9 +1472,22 @@ export function ClaudeSetup({
           </div>
         </div>
         {version && (
-          <p className="text-muted-foreground text-xs">
-            Claude Code {version} installed
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-muted-foreground text-xs">
+              Claude Code {version} installed
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1.5 px-2 text-xs"
+              onClick={update}
+              disabled={isInstalling}
+            >
+              <RefreshCwIcon className="size-3" />
+              Update
+            </Button>
+          </div>
         )}
 
         {renderApiKeyForm({ allowBrowserSignIn: true })}
