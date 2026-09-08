@@ -53,7 +53,7 @@ ClaudePrism は**ローカルファースト**の代替ツールです — フ�
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI モデル | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
+| AI モデル | GPT-5.2 | **Claude Fable / Opus / Sonnet / Haiku** |
 | 実行環境 | ブラウザ（クラウド） | **ネイティブデスクトップ（Tauri 2 + Rust）** |
 | LaTeX | クラウドコンパイル | **Tectonic 内蔵（オフライン対応）** |
 | Python 環境 | — | **uv + venv 内蔵 ── ワンクリックで科学計算向け Python 環境を構築** |

@@ -545,6 +545,23 @@ function mergeStreamingContent(
 
 const DEFAULT_TAB_ID = nextTabId();
 
+/**
+ * Model aliases understood by the Claude Code CLI `--model` flag.
+ * Each alias resolves to the latest model of that family.
+ */
+export const CLAUDE_MODEL_SELECTORS = [
+  "fable",
+  "opus",
+  "sonnet",
+  "haiku",
+  "opusplan",
+] as const;
+export type ClaudeModelSelector = (typeof CLAUDE_MODEL_SELECTORS)[number];
+
+/** Effort levels accepted by the Claude Code CLI (`CLAUDE_CODE_EFFORT_LEVEL`). */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
 interface ClaudeChatState {
   // ── Projected fields (from active tab — read by consumers) ──
   messages: ClaudeStreamMessage[];
@@ -589,16 +606,16 @@ interface ClaudeChatState {
   consumePendingPinnedContextRemovals: () => string[];
 
   /** Currently selected model (passed per-prompt to Claude CLI) */
-  selectedModel: "sonnet" | "opus" | "haiku" | "opusplan";
-  setSelectedModel: (model: "sonnet" | "opus" | "haiku" | "opusplan") => void;
+  selectedModel: ClaudeModelSelector;
+  setSelectedModel: (model: ClaudeModelSelector) => void;
   selectedProviderCredentialId: string | null;
   setSelectedProviderCredentialId: (credentialId: string | null) => void;
   selectedProviderModels: Record<string, string>;
   setSelectedProviderModel: (credentialId: string, model: string) => void;
 
-  /** Effort level for Opus 4.6 adaptive reasoning */
-  effortLevel: "low" | "medium" | "high";
-  setEffortLevel: (level: "low" | "medium" | "high") => void;
+  /** Effort level for adaptive reasoning (Opus 4.6+, Fable 5.x) */
+  effortLevel: EffortLevel;
+  setEffortLevel: (level: EffortLevel) => void;
 
   // Actions
   sendPrompt: (

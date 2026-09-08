@@ -53,7 +53,7 @@ ClaudePrism is a **local-first** alternative — your files are stored on your d
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI Model | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
+| AI Model | GPT-5.2 | **Claude Fable / Opus / Sonnet / Haiku** |
 | Runtime | Browser (cloud) | **Native desktop (Tauri 2 + Rust)** |
 | LaTeX | Cloud compilation | **Tectonic (embedded, offline)** |
 | Python Environment | — | **Built-in uv + venv — one-click scientific Python setup** |

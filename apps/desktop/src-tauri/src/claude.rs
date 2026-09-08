@@ -634,7 +634,10 @@ fn is_claude_model_selector(value: &str) -> bool {
         return true;
     }
 
-    matches!(model.as_str(), "sonnet" | "opus" | "haiku" | "opusplan")
+    matches!(
+        model.as_str(),
+        "fable" | "sonnet" | "opus" | "haiku" | "opusplan"
+    )
 }
 
 fn normalize_provider_model_override(value: Option<&str>) -> Result<Option<String>, String> {
@@ -4339,6 +4342,14 @@ mod tests {
         );
         assert_eq!(
             normalize_provider_model_override(Some("opusplan")).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_provider_model_override(Some("fable")).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_provider_model_override(Some("claude-fable-5-1")).unwrap(),
             None
         );
         assert_eq!(

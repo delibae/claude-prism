@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type FC,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -27,6 +28,7 @@ import {
   SparklesIcon,
   RabbitIcon,
   LayersIcon,
+  GemIcon,
   PlusIcon,
   Trash2Icon,
   Loader2Icon,
@@ -39,6 +41,9 @@ import { join, tempDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import {
   CLAUDE_CODE_PROVIDER_ID,
+  type ClaudeModelSelector,
+  EFFORT_LEVELS,
+  type EffortLevel,
   loadSelectedProviderCredentialId,
   offsetToLineCol,
   type PromptContextOverride,
@@ -187,11 +192,21 @@ function formatGuidanceText(guidance: QueuedGuidance) {
     : guidance.prompt;
 }
 
-type EffortLevel = "low" | "medium" | "high";
-const EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high"];
-
 function effortShortLabel(level: EffortLevel) {
-  return level === "low" ? "L" : level === "medium" ? "M" : "H";
+  switch (level) {
+    case "low":
+      return "L";
+    case "medium":
+      return "M";
+    case "high":
+      return "H";
+    case "xhigh":
+      return "XH";
+    case "max":
+      return "MAX";
+    default:
+      return level;
+  }
 }
 
 function effortDisplayLabel(level: EffortLevel) {
@@ -200,6 +215,8 @@ function effortDisplayLabel(level: EffortLevel) {
 
 function claudeModelDisplayName(model: string) {
   switch (model) {
+    case "fable":
+      return "Fable";
     case "sonnet":
       return "Sonnet";
     case "opus":
@@ -1246,7 +1263,18 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [modelPickerOpen]);
 
-  const claudeModelOptions = [
+  const claudeModelOptions: {
+    id: ClaudeModelSelector;
+    name: string;
+    desc: string;
+    icon: ReactNode;
+  }[] = [
+    {
+      id: "fable" as const,
+      name: "Fable",
+      desc: "Most intelligent, hardest problems (Fable 5.1)",
+      icon: <GemIcon className="size-3.5" />,
+    },
     {
       id: "sonnet" as const,
       name: "Sonnet",
@@ -1256,7 +1284,7 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     {
       id: "opus" as const,
       name: "Opus",
-      desc: "Most capable, complex reasoning",
+      desc: "Highly capable, complex reasoning",
       icon: <SparklesIcon className="size-3.5" />,
     },
     {

@@ -39,7 +39,7 @@ ClaudePrism 是**本地优先**的替代方案 — 文件存储在本地磁盘�
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI 模型 | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
+| AI 模型 | GPT-5.2 | **Claude Fable / Opus / Sonnet / Haiku** |
 | 运行环境 | 浏览器（云端） | **原生桌面应用（Tauri 2 + Rust）** |
 | LaTeX | 云端编译 | **Tectonic（内嵌，离线）** |
 | Python 环境 | — | **内置 uv + venv — 一键科学 Python 环境** |

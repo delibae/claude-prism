@@ -479,6 +479,124 @@ describe("useDocumentStore", () => {
     });
   });
 
+  describe("refreshFiles", () => {
+    function mockDisk(contents: Record<string, string>) {
+      vi.mocked(readDir).mockImplementation(async (dir: string | URL) => {
+        const dirPath = String(dir);
+        if (dirPath === "/project") {
+          return [
+            { name: "main.tex", isDirectory: false },
+            { name: "sections", isDirectory: true },
+          ] as any;
+        }
+        if (dirPath === "/project/sections") {
+          return [{ name: "intro.tex", isDirectory: false }] as any;
+        }
+        throw new Error(`Unexpected readDir path: ${dirPath}`);
+      });
+      vi.mocked(readTextFile).mockImplementation(async (path: string | URL) => {
+        const filePath = String(path);
+        if (filePath in contents) return contents[filePath];
+        throw new Error(`Unexpected readTextFile path: ${filePath}`);
+      });
+    }
+
+    const mainContent = "\\documentclass{article}\\input{sections/intro}";
+    const introContent = "\\section{Intro}";
+
+    beforeEach(() => {
+      useDocumentStore.setState({
+        files: [
+          makeFile({ content: mainContent }),
+          makeFile({
+            id: "sections/intro.tex",
+            name: "intro.tex",
+            relativePath: "sections/intro.tex",
+            absolutePath: "/project/sections/intro.tex",
+            content: introContent,
+          }),
+        ],
+        activeFileId: "main.tex",
+      });
+    });
+
+    it("keeps a file that became active while the refresh was in flight", async () => {
+      mockDisk({
+        "/project/main.tex": mainContent,
+        "/project/sections/intro.tex": introContent,
+      });
+      const store = useDocumentStore.getState();
+      const refresh = store.refreshFiles();
+      // User opens a section file while disk reads are still pending
+      store.setActiveFile("sections/intro.tex");
+      await refresh;
+
+      expect(useDocumentStore.getState().activeFileId).toBe(
+        "sections/intro.tex",
+      );
+    });
+
+    it("does not clobber edits made while the refresh was in flight", async () => {
+      mockDisk({
+        "/project/main.tex": mainContent,
+        "/project/sections/intro.tex": introContent,
+      });
+      const store = useDocumentStore.getState();
+      const refresh = store.refreshFiles();
+      store.updateFileContent("sections/intro.tex", "edited during refresh");
+      await refresh;
+
+      const intro = useDocumentStore
+        .getState()
+        .files.find((f) => f.id === "sections/intro.tex");
+      expect(intro?.content).toBe("edited during refresh");
+      expect(intro?.isDirty).toBe(true);
+    });
+
+    it("reloads clean files from disk and picks up new files", async () => {
+      vi.mocked(readDir).mockImplementation(async (dir: string | URL) => {
+        const dirPath = String(dir);
+        if (dirPath === "/project") {
+          return [
+            { name: "main.tex", isDirectory: false },
+            { name: "sections", isDirectory: true },
+          ] as any;
+        }
+        if (dirPath === "/project/sections") {
+          return [
+            { name: "intro.tex", isDirectory: false },
+            { name: "results.tex", isDirectory: false },
+          ] as any;
+        }
+        throw new Error(`Unexpected readDir path: ${dirPath}`);
+      });
+      vi.mocked(readTextFile).mockImplementation(async (path: string | URL) => {
+        const filePath = String(path);
+        if (filePath === "/project/main.tex") return mainContent;
+        if (filePath === "/project/sections/intro.tex") return "updated intro";
+        if (filePath === "/project/sections/results.tex") return "results";
+        throw new Error(`Unexpected readTextFile path: ${filePath}`);
+      });
+
+      await useDocumentStore.getState().refreshFiles();
+
+      const state = useDocumentStore.getState();
+      expect(state.files.map((f) => f.id)).toEqual([
+        "main.tex",
+        "sections/intro.tex",
+        "sections/results.tex",
+      ]);
+      expect(
+        state.files.find((f) => f.id === "sections/intro.tex")?.content,
+      ).toBe("updated intro");
+      expect(
+        state.files.find((f) => f.id === "sections/results.tex")?.content,
+      ).toBe("results");
+      expect(state.folders).toEqual(["sections"]);
+      expect(state.activeFileId).toBe("main.tex");
+    });
+  });
+
   describe("saveFile", () => {
     beforeEach(() => {
       vi.mocked(writeTextFile).mockClear();

@@ -361,6 +361,7 @@ pub(crate) fn compile_with_tectonic(work_dir: &Path, main_file: &str) -> Result<
     use tectonic::config::PersistentConfig;
     use tectonic::driver::{OutputFormat, PassSetting, ProcessingSessionBuilder};
     use tectonic::status::NoopStatusBackend;
+    use tectonic::unstable_opts::UnstableOptions;
 
     let mut status = NoopStatusBackend {};
 
@@ -378,11 +379,19 @@ pub(crate) fn compile_with_tectonic(work_dir: &Path, main_file: &str) -> Result<
         .format_cache_path()
         .map_err(|e| format!("Failed to get format cache path: {}", e))?;
 
+    // Use just the filename (not subdirectory-relative path) for tex_input_name
+    // so that xdvipdfmx looks for "main.xdv" rather than "subdir/main.xdv".
+    let tex_name = Path::new(main_file)
+        .file_name()
+        .unwrap_or(std::ffi::OsStr::new(main_file))
+        .to_string_lossy()
+        .into_owned();
+
     let mut builder = ProcessingSessionBuilder::default();
     builder
         .bundle(bundle)
         .primary_input_path(work_dir.join(main_file))
-        .tex_input_name(main_file)
+        .tex_input_name(&tex_name)
         .filesystem_root(work_dir)
         .output_dir(work_dir)
         .format_name("latex")
@@ -391,13 +400,63 @@ pub(crate) fn compile_with_tectonic(work_dir: &Path, main_file: &str) -> Result<
         .pass(PassSetting::Default)
         .synctex(true)
         .keep_intermediates(true)
-        .keep_logs(true);
+        .keep_logs(true)
+        .unstables(UnstableOptions {
+            continue_on_errors: true,
+            ..Default::default()
+        });
 
     let mut session = builder
         .create(&mut status)
         .map_err(|e| format!("Failed to create tectonic session: {}", e))?;
 
-    session.run(&mut status).map_err(|e| format!("{}", e))?;
+    let run_result = session.run(&mut status);
+
+    let main_stem = Path::new(main_file)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let pdf_path = work_dir.join(format!("{}.pdf", main_stem));
+    let xdv_path = work_dir.join(format!("{}.xdv", main_stem));
+
+    // Tectonic returns errors for mere warnings (font substitutions, class
+    // info messages, etc.), which aborts the pipeline before the XDV→PDF
+    // conversion step.  If the PDF was produced despite the error, succeed.
+    if pdf_path.exists() {
+        return Ok(());
+    }
+
+    // If no PDF but the XDV exists, the TeX passes succeeded but the
+    // XDV→PDF step was skipped due to warnings.  Attempt manual conversion
+    // via xdvipdfmx (same fallback the TeXLive backend uses).
+    if xdv_path.exists() {
+        eprintln!("[tectonic] .xdv exists but no .pdf — running xdvipdfmx manually");
+        if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx") {
+            let mut cmd = std::process::Command::new(&xdvipdfmx);
+            cmd.args(["-o", &pdf_path.to_string_lossy()])
+                .arg(&xdv_path)
+                .current_dir(work_dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    eprintln!("[tectonic] xdvipdfmx fallback succeeded");
+                    return Ok(());
+                }
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.trim().is_empty() {
+                    eprintln!("[tectonic] xdvipdfmx stderr: {}", stderr.trim());
+                }
+            }
+        } else {
+            eprintln!("[tectonic] xdvipdfmx not found on PATH — cannot convert .xdv to .pdf");
+        }
+    }
+
+    // No PDF and no successful fallback — propagate the original error.
+    run_result.map_err(|e| format!("{}", e))?;
 
     Ok(())
 }
@@ -419,16 +478,20 @@ fn compile_with_tectonic_subprocess(work_dir: &Path, main_file: &str) -> Result<
     cmd.args(["--tectonic-compile", &work_dir.to_string_lossy(), main_file])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let output = cmd
         .output()
         .map_err(|e| format!("Failed to spawn tectonic subprocess: {}", e))?;
 
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        eprintln!("[tectonic-subprocess] stderr: {}", stderr.trim());
+    }
     if output.status.success() {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         Err(stderr.trim().to_string())
     }
 }
@@ -827,6 +890,23 @@ pub async fn compile_latex(
 
     let t0 = std::time::Instant::now();
     let use_texlive = use_texlive.unwrap_or(false);
+
+    // On Windows, ensure fontconfig can find its config so that xdvipdfmx
+    // (used by both Tectonic and TeXLive/xelatex) can locate and embed fonts.
+    #[cfg(target_os = "windows")]
+    {
+        if std::env::var("FONTCONFIG_PATH").is_err() {
+            let vcpkg_root = std::env::var("VCPKG_ROOT").unwrap_or_else(|_| "C:\\vcpkg".into());
+            let fc_path = PathBuf::from(&vcpkg_root)
+                .join("installed")
+                .join("x64-windows")
+                .join("etc")
+                .join("fonts");
+            if fc_path.exists() {
+                std::env::set_var("FONTCONFIG_PATH", &fc_path);
+            }
+        }
+    }
 
     let main_file_name = Path::new(&main_file)
         .file_stem()

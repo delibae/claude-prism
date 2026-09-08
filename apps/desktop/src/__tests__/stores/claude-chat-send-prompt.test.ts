@@ -197,6 +197,26 @@ describe("useClaudeChatStore.sendPrompt context assembly", () => {
     );
   });
 
+  it("passes the Fable model alias and extended effort levels to Claude Code", async () => {
+    useClaudeChatStore.setState({
+      selectedProviderCredentialId: CLAUDE_CODE_PROVIDER_ID,
+      selectedModel: "fable",
+      effortLevel: "xhigh",
+    });
+
+    await useClaudeChatStore.getState().sendPrompt("Use Fable");
+
+    expect(invoke).toHaveBeenCalledWith(
+      "execute_claude_code",
+      expect.objectContaining({
+        model: "fable",
+        effortLevel: "xhigh",
+        providerCredentialId: null,
+        providerModelOverride: null,
+      }),
+    );
+  });
+
   it("starts Claude Code with prior context when switching from a direct provider", async () => {
     useClaudeChatStore.setState((state) => ({
       sessionId: "qwen-session",

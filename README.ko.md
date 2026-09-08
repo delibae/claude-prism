@@ -53,7 +53,7 @@ ClaudePrism은 **로컬 우선** 대안입니다 — 파일은 로컬 디스크�
 
 | | OpenAI Prism | ClaudePrism |
 |---|:---:|:---:|
-| AI 모델 | GPT-5.2 | **Claude Opus / Sonnet / Haiku** |
+| AI 모델 | GPT-5.2 | **Claude Fable / Opus / Sonnet / Haiku** |
 | 실행 환경 | 브라우저 (클라우드) | **네이티브 데스크톱 (Tauri 2 + Rust)** |
 | LaTeX | 클라우드 컴파일 | **Tectonic (내장, 오프라인)** |
 | Python 환경 | — | **내장 uv + venv — 원클릭 과학 Python 환경** |
