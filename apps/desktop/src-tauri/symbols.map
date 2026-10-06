@@ -47,4 +47,9 @@
 
     /* libpng (often pulled in by FreeType) */
     png_*;
+
+    /* Expat (statically linked). Mesa's libEGL parses its
+     * driconf XML with the system libexpat; exporting ours makes
+     * those calls bind here and segfault at startup.  Fixes #213. */
+    XML_*;
 };
