@@ -25,7 +25,7 @@ import {
 } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { useClaudeChatStore } from "@/stores/claude-chat-store";
-import { useSettingsStore } from "@/stores/settings-store";
+import { getCompileOptions } from "@/stores/settings-store";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -41,6 +41,7 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { HistoryPanel } from "@/components/workspace/history-panel";
+import { CompilerSelect } from "@/components/workspace/preview/compiler-select";
 import {
   compileLatex,
   synctexEdit,
@@ -88,8 +89,6 @@ const ZOOM_OPTIONS = [
 ];
 
 export function PdfPreview() {
-  const compilerBackend = useSettingsStore((s) => s.compilerBackend);
-  const setCompilerBackend = useSettingsStore((s) => s.setCompilerBackend);
   const pdfRevision = useDocumentStore((s) => s.pdfRevision);
   const compileError = useDocumentStore((s) => s.compileError);
   const isCompiling = useDocumentStore((s) => s.isCompiling);
@@ -423,9 +422,11 @@ export function PdfPreview() {
           return;
         }
         const { rootId, targetPath } = resolved;
-        const texlive =
-          useSettingsStore.getState().compilerBackend === "texlive";
-        const data = await compileLatex(projectRoot, targetPath, texlive);
+        const data = await compileLatex(
+          projectRoot,
+          targetPath,
+          getCompileOptions(),
+        );
         setPdfData(data, rootId);
       } catch (error) {
         setCompileError(formatCompileError(error));
@@ -562,8 +563,11 @@ export function PdfPreview() {
     const compileStart = Date.now();
     try {
       await saveAllFiles();
-      const texlive = useSettingsStore.getState().compilerBackend === "texlive";
-      const data = await compileLatex(state.projectRoot, targetFile, texlive);
+      const data = await compileLatex(
+        state.projectRoot,
+        targetFile,
+        getCompileOptions(),
+      );
       setPdfData(data, rootId);
     } catch (error) {
       setCompileError(formatCompileError(error), rootId);
@@ -806,23 +810,7 @@ export function PdfPreview() {
     >
       <div className="flex h-[calc(var(--workspace-topbar-height)+var(--titlebar-height))] shrink-0 flex-nowrap items-center border-border border-b bg-background px-2">
         <div className="flex min-w-0 shrink-0 items-center gap-1">
-          <Select
-            value={compilerBackend}
-            onValueChange={(v) =>
-              setCompilerBackend(v as "tectonic" | "texlive")
-            }
-          >
-            <SelectTrigger
-              size="sm"
-              className="h-7! @[44rem]/pv:w-[8.5rem] w-[6.75rem] text-xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="tectonic">Tectonic</SelectItem>
-              <SelectItem value="texlive">TeXLive</SelectItem>
-            </SelectContent>
-          </Select>
+          <CompilerSelect />
           {isSaving && (
             <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1">
               <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />

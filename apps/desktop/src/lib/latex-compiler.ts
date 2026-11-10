@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { resolveTexRoot, type ProjectFile } from "@/stores/document-store";
 import { createLogger } from "@/lib/debug/logger";
+import type { CompileOptions } from "@/stores/settings-store";
 
 const log = createLogger("latex");
 
@@ -34,20 +35,30 @@ export function formatCompileError(error: unknown): string {
       : "Compilation failed";
 }
 
+const TECTONIC_OPTIONS: CompileOptions = {
+  useTexlive: false,
+  texEngine: "pdflatex",
+  texliveYear: null,
+};
+
 export async function compileLatex(
   projectDir: string,
   mainFile: string = "main.tex",
-  useTexlive: boolean = false,
+  options: CompileOptions = TECTONIC_OPTIONS,
 ): Promise<Uint8Array> {
-  log.info(
-    `Compiling ${mainFile} (backend: ${useTexlive ? "texlive" : "tectonic"})`,
-  );
+  const { useTexlive, texEngine, texliveYear } = options;
+  const backend = useTexlive
+    ? `texlive/${texEngine}${texliveYear ? ` ${texliveYear}` : ""}`
+    : "tectonic";
+  log.info(`Compiling ${mainFile} (backend: ${backend})`);
   const start = performance.now();
   // compile_latex returns raw PDF bytes via Tauri IPC Response
   const buffer = await invoke<ArrayBuffer>("compile_latex", {
     projectDir,
     mainFile,
     useTexlive,
+    texEngine,
+    texliveYear,
   });
 
   const result = new Uint8Array(buffer);
@@ -57,10 +68,22 @@ export async function compileLatex(
   return result;
 }
 
+export interface TexliveInstall {
+  year: number;
+  binDir: string;
+  engines: string[];
+}
+
 export interface TexliveStatus {
+  /** Whether the system-default TeX Live has any engine. */
   available: boolean;
   engines: string[];
+  /** `--version` banner of the system-default engine. */
   version: string | null;
+  /** TeX Live year of the system-default engine. */
+  year: number | null;
+  /** Year-versioned installs found on disk, newest first. */
+  installs: TexliveInstall[];
 }
 
 export async function detectTexlive(): Promise<TexliveStatus> {

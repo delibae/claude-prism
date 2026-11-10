@@ -10,7 +10,7 @@ import {
 import { useDocumentStore } from "@/stores/document-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { useProposedChangesStore } from "@/stores/proposed-changes-store";
-import { useSettingsStore } from "@/stores/settings-store";
+import { getCompileOptions } from "@/stores/settings-store";
 import { readTexFileContent } from "@/lib/tauri/fs";
 import {
   compileLatex,
@@ -489,12 +489,10 @@ export function useClaudeEvents() {
           useDocumentStore.getState().setPendingRecompile(false);
           try {
             await useDocumentStore.getState().saveAllFiles();
-            const texlive =
-              useSettingsStore.getState().compilerBackend === "texlive";
             const pdfData = await compileLatex(
               projectRoot,
               targetPath,
-              texlive,
+              getCompileOptions(),
             );
             useDocumentStore.getState().setPdfData(pdfData, rootId);
           } catch (err) {
