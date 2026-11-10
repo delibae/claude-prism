@@ -93,11 +93,32 @@ fn has_real_errors(log: &str) -> bool {
         .any(|l| l.starts_with('!') || l.contains("Error:"))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum TexEngine {
     Latex,
     XeLaTeX,
     LuaLaTeX,
+}
+
+impl TexEngine {
+    /// Parse an engine name as used in magic comments and the frontend setting.
+    fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_lowercase().as_str() {
+            "xelatex" => Some(Self::XeLaTeX),
+            "lualatex" => Some(Self::LuaLaTeX),
+            "pdflatex" | "latex" => Some(Self::Latex),
+            _ => None,
+        }
+    }
+
+    /// TeX Live binary that runs this engine.
+    fn binary_name(self) -> &'static str {
+        match self {
+            Self::Latex => "pdflatex",
+            Self::XeLaTeX => "xelatex",
+            Self::LuaLaTeX => "lualatex",
+        }
+    }
 }
 
 /// Detect TeX engine from `% !TEX program = <engine>` magic comment in the first 20 lines.
@@ -111,13 +132,7 @@ fn detect_tex_engine(content: &str) -> Option<TexEngine> {
                 if let Some(rest) = rest.strip_prefix("program") {
                     let rest = rest.trim();
                     if let Some(rest) = rest.strip_prefix('=') {
-                        let engine = rest.trim().to_lowercase();
-                        return match engine.as_str() {
-                            "xelatex" => Some(TexEngine::XeLaTeX),
-                            "lualatex" => Some(TexEngine::LuaLaTeX),
-                            "pdflatex" | "latex" => Some(TexEngine::Latex),
-                            _ => None,
-                        };
+                        return TexEngine::from_name(rest);
                     }
                 }
             }
@@ -156,50 +171,187 @@ fn detect_bib_tool(content: &str) -> BibTool {
     BibTool::None
 }
 
-/// Resolve a TeXLive engine binary to its full path.
-/// GUI apps on macOS lack the user's shell PATH, so we check standard
-/// TeXLive installation locations and fall back to a login-shell query.
-fn find_texlive_binary(name: &str) -> Result<PathBuf, String> {
+const TEX_ENGINE_NAMES: [&str; 3] = ["pdflatex", "xelatex", "lualatex"];
+
+/// A year-versioned TeX Live installation (`<root>/<year>/bin/<arch>/`).
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TexliveInstall {
+    pub year: u32,
+    pub bin_dir: String,
+    pub engines: Vec<String>,
+}
+
+/// Platform file name for a TeX Live binary (`pdflatex` / `pdflatex.exe`).
+fn exe_name(name: &str) -> String {
+    format!("{}{}", name, std::env::consts::EXE_SUFFIX)
+}
+
+/// Directories the TeX Live installer uses for its `<year>/` subdirectories.
+fn texlive_roots() -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        vec![PathBuf::from("C:\\texlive")]
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![
+            PathBuf::from("/usr/local/texlive"),
+            PathBuf::from("/opt/texlive"),
+        ]
+    }
+}
+
+/// Whether a TeX Live `bin/<arch>` directory name targets the running machine.
+fn is_host_arch_dir(dir_name: &str) -> bool {
+    dir_name.starts_with(std::env::consts::ARCH)
+        || dir_name == "universal-darwin"
+        || dir_name == "windows"
+        || dir_name == "win64"
+}
+
+/// Scan a TeX Live root for `<year>/bin/<arch>/` directories that contain a
+/// TeX engine. Returns one install per year, newest first.
+fn scan_texlive_root(root: &Path) -> Vec<TexliveInstall> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut installs = Vec::new();
+    for entry in entries.flatten() {
+        let Some(year) = entry
+            .file_name()
+            .to_str()
+            .filter(|s| s.len() == 4)
+            .and_then(|s| s.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(arch_entries) = std::fs::read_dir(entry.path().join("bin")) else {
+            continue;
+        };
+        let mut arch_dirs: Vec<PathBuf> = arch_entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        // Host architecture first, then alphabetical for determinism.
+        arch_dirs.sort_by_key(|p| {
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            (!is_host_arch_dir(&name), name)
+        });
+        for bin_dir in arch_dirs {
+            let engines: Vec<String> = TEX_ENGINE_NAMES
+                .iter()
+                .filter(|n| bin_dir.join(exe_name(n)).exists())
+                .map(|n| n.to_string())
+                .collect();
+            if !engines.is_empty() {
+                installs.push(TexliveInstall {
+                    year,
+                    bin_dir: bin_dir.to_string_lossy().into_owned(),
+                    engines,
+                });
+                break;
+            }
+        }
+    }
+    installs.sort_by_key(|i| std::cmp::Reverse(i.year));
+    installs
+}
+
+/// All TeX Live installs in the standard locations, newest year first.
+fn find_texlive_installs() -> Vec<TexliveInstall> {
+    let mut installs: Vec<TexliveInstall> = texlive_roots()
+        .iter()
+        .flat_map(|root| scan_texlive_root(root))
+        .collect();
+    installs.sort_by_key(|i| std::cmp::Reverse(i.year));
+    installs.dedup_by_key(|i| i.year);
+    installs
+}
+
+/// Extract the TeX Live year from an engine's `--version` banner, e.g.
+/// `pdfTeX 3.141592653-2.6-1.40.27 (TeX Live 2025)` → 2025.
+fn parse_texlive_year(version_line: &str) -> Option<u32> {
+    const MARKER: &str = "TeX Live ";
+    let start = version_line.find(MARKER)? + MARKER.len();
+    let digits: String = version_line[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.len() == 4 {
+        digits.parse().ok()
+    } else {
+        None
+    }
+}
+
+/// Resolve a TeXLive binary to its full path.
+///
+/// With `year`, only that TeX Live installation is used, so the user can pin
+/// the same release a remote service (e.g. Overleaf) compiles with.
+/// Without it, the system default wins: PATH, MacTeX's `texbin` symlinks,
+/// then the newest year-versioned install. GUI apps on macOS lack the user's
+/// shell PATH, so we finally fall back to a login-shell query.
+fn find_texlive_binary(name: &str, year: Option<u32>) -> Result<PathBuf, String> {
+    if let Some(year) = year {
+        let install = find_texlive_installs()
+            .into_iter()
+            .find(|i| i.year == year)
+            .ok_or_else(|| {
+                format!(
+                    "TeX Live {} not found. Install it or choose another TeX Live version.",
+                    year
+                )
+            })?;
+        let p = Path::new(&install.bin_dir).join(exe_name(name));
+        return if p.exists() {
+            Ok(p)
+        } else {
+            Err(format!(
+                "{} not found in TeX Live {} ({}).",
+                name, year, install.bin_dir
+            ))
+        };
+    }
+
     // 1. Try PATH (works when launched from terminal)
     if let Ok(path) = which::which(name) {
         return Ok(path);
     }
 
-    // 2. Check standard TeXLive locations
+    // 2. MacTeX's symlink dir points at the active distribution.
     #[cfg(not(target_os = "windows"))]
     {
-        let standard_paths = [
-            format!("/Library/TeX/texbin/{}", name),
-            format!("/usr/local/texlive/2025/bin/universal-darwin/{}", name),
-            format!("/usr/local/texlive/2024/bin/universal-darwin/{}", name),
-            format!("/usr/local/texlive/2025/bin/x86_64-linux/{}", name),
-            format!("/usr/local/texlive/2024/bin/x86_64-linux/{}", name),
-            format!("/opt/homebrew/bin/{}", name),
-            format!("/usr/bin/{}", name),
-        ];
-        for path_str in &standard_paths {
-            let p = PathBuf::from(path_str);
-            if p.exists() {
-                return Ok(p);
-            }
+        let p = Path::new("/Library/TeX/texbin").join(name);
+        if p.exists() {
+            return Ok(p);
         }
     }
 
-    #[cfg(target_os = "windows")]
+    // 3. Year-versioned TeX Live installs, newest first.
+    for install in find_texlive_installs() {
+        let p = Path::new(&install.bin_dir).join(exe_name(name));
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+
+    // 4. Package-manager installs.
+    #[cfg(not(target_os = "windows"))]
     {
-        let standard_paths = [
-            format!("C:\\texlive\\2025\\bin\\windows\\{}.exe", name),
-            format!("C:\\texlive\\2024\\bin\\windows\\{}.exe", name),
-        ];
-        for path_str in &standard_paths {
-            let p = PathBuf::from(path_str);
+        for dir in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
+            let p = Path::new(dir).join(name);
             if p.exists() {
                 return Ok(p);
             }
         }
     }
 
-    // 3. macOS: ask login shell for PATH
+    // 5. macOS: ask login shell for PATH
     #[cfg(target_os = "macos")]
     {
         if let Ok(output) = std::process::Command::new("/bin/zsh")
@@ -495,16 +647,13 @@ fn run_texlive_pass(
 fn compile_with_texlive(
     work_dir: &Path,
     main_file: &str,
-    engine: Option<TexEngine>,
+    engine: TexEngine,
+    year: Option<u32>,
     tex_content: &str,
 ) -> Result<(), String> {
-    let engine_name = match engine {
-        Some(TexEngine::XeLaTeX) | None => "xelatex",
-        Some(TexEngine::Latex) => "pdflatex",
-        Some(TexEngine::LuaLaTeX) => "lualatex",
-    };
+    let engine_name = engine.binary_name();
 
-    let engine_path = find_texlive_binary(engine_name)?;
+    let engine_path = find_texlive_binary(engine_name, year)?;
     let env_path = texlive_env_path(&engine_path);
     eprintln!(
         "[texlive] backend: {} ({})",
@@ -536,7 +685,7 @@ fn compile_with_texlive(
 
     match bib_tool {
         BibTool::Biber => {
-            let biber_path = find_texlive_binary("biber")?;
+            let biber_path = find_texlive_binary("biber", year)?;
             let mut cmd = std::process::Command::new(&biber_path);
             cmd.arg(main_stem)
                 .current_dir(work_dir)
@@ -556,7 +705,7 @@ fn compile_with_texlive(
             }
         }
         BibTool::BibTeX => {
-            let bibtex_path = find_texlive_binary("bibtex")?;
+            let bibtex_path = find_texlive_binary("bibtex", year)?;
             let aux_file = work_dir.join(format!("{}.aux", main_stem));
             let mut cmd = std::process::Command::new(&bibtex_path);
             cmd.arg(&aux_file)
@@ -594,7 +743,7 @@ fn compile_with_texlive(
     // warnings), manually run xdvipdfmx to convert .xdv → .pdf.
     if !pdf_path.exists() && xdv_path.exists() {
         eprintln!("[texlive] .xdv exists but no .pdf — running xdvipdfmx manually");
-        if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx") {
+        if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx", year) {
             let mut cmd = std::process::Command::new(&xdvipdfmx);
             cmd.args(["-o", &pdf_path.to_string_lossy()])
                 .arg(&xdv_path)
@@ -763,42 +912,60 @@ fn parse_synctex_node(s: &str, factor: f64, x_offset: f64, y_offset: f64) -> Opt
 
 // --- Tauri Commands ---
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Default)]
 pub struct TexliveStatus {
+    /// Whether the system-default TeX Live (no year pinned) has any engine.
     pub available: bool,
+    /// Engines available in the system-default TeX Live.
     pub engines: Vec<String>,
+    /// First line of the system-default engine's `--version` banner.
     pub version: Option<String>,
+    /// TeX Live year of the system-default engine, parsed from `version`.
+    pub year: Option<u32>,
+    /// Year-versioned installs found on disk, newest first.
+    pub installs: Vec<TexliveInstall>,
 }
 
-#[tauri::command]
-pub fn detect_texlive() -> TexliveStatus {
-    let engines_to_check = ["pdflatex", "xelatex", "lualatex"];
-    let mut found_engines = Vec::new();
+fn engine_version_line(path: &Path) -> Option<String> {
+    let mut cmd = std::process::Command::new(path);
+    cmd.arg("--version")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.output().ok().and_then(|o| {
+        let stdout = String::from_utf8_lossy(&o.stdout);
+        stdout.lines().next().map(|l| l.to_string())
+    })
+}
 
-    for name in &engines_to_check {
-        if find_texlive_binary(name).is_ok() {
-            found_engines.push(name.to_string());
-        }
-    }
+fn detect_texlive_blocking() -> TexliveStatus {
+    let found: Vec<(&str, PathBuf)> = TEX_ENGINE_NAMES
+        .iter()
+        .filter_map(|name| find_texlive_binary(name, None).ok().map(|p| (*name, p)))
+        .collect();
 
-    let version = find_texlive_binary("pdflatex").ok().and_then(|path| {
-        let mut cmd = std::process::Command::new(&path);
-        cmd.arg("--version")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.output().ok().and_then(|o| {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.lines().next().map(|l| l.to_string())
-        })
-    });
+    let version = found
+        .first()
+        .and_then(|(_, path)| engine_version_line(path));
+    let year = version.as_deref().and_then(parse_texlive_year);
 
     TexliveStatus {
-        available: !found_engines.is_empty(),
-        engines: found_engines,
+        available: !found.is_empty(),
+        engines: found.iter().map(|(name, _)| name.to_string()).collect(),
         version,
+        year,
+        installs: find_texlive_installs(),
     }
+}
+
+/// Probe TeX Live off the main thread: `--version` and the macOS login-shell
+/// fallback can each take a noticeable amount of time.
+#[tauri::command]
+pub async fn detect_texlive() -> TexliveStatus {
+    tokio::task::spawn_blocking(detect_texlive_blocking)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -807,6 +974,10 @@ pub async fn compile_latex(
     project_dir: String,
     main_file: String,
     use_texlive: Option<bool>,
+    // TeX Live engine to use when the document has no `% !TEX program` comment.
+    tex_engine: Option<String>,
+    // Pin a specific TeX Live year; `None` uses the system default.
+    texlive_year: Option<u32>,
 ) -> Result<tauri::ipc::Response, String> {
     // Acquire semaphore permit (non-blocking)
     let _permit = state
@@ -881,24 +1052,22 @@ pub async fn compile_latex(
         ));
     }
 
-    // Detect TeX engine from magic comment
     let main_tex_content = std::fs::read_to_string(&main_tex_path).unwrap_or_default();
-    let engine = detect_tex_engine(&main_tex_content);
+    // Pick the TeX engine: the `% !TEX program` magic comment if present
+    // (it overrides the engine setting, like Overleaf), else the engine setting.
+    let magic_engine = detect_tex_engine(&main_tex_content);
+    let engine = magic_engine
+        .or_else(|| tex_engine.as_deref().and_then(TexEngine::from_name))
+        .unwrap_or(TexEngine::XeLaTeX);
 
-    // Save engine name before `engine` is moved into the spawn_blocking closure
-    let engine_name_for_label = match &engine {
-        Some(TexEngine::XeLaTeX) | None => "xelatex",
-        Some(TexEngine::Latex) => "pdflatex",
-        Some(TexEngine::LuaLaTeX) => "lualatex",
-    };
-    let backend_label = if use_texlive {
-        format!("TeXLive/{}", engine_name_for_label)
-    } else {
-        "Tectonic".to_string()
+    let backend_label = match (use_texlive, texlive_year) {
+        (true, Some(year)) => format!("TeX Live {}/{}", year, engine.binary_name()),
+        (true, None) => format!("TeXLive/{}", engine.binary_name()),
+        (false, _) => "Tectonic".to_string(),
     };
 
     if !use_texlive {
-        if let Some(TexEngine::LuaLaTeX) = engine {
+        if let Some(TexEngine::LuaLaTeX) = magic_engine {
             return Err(
                 "Compilation failed\n\nThis document requires LuaLaTeX (% !TEX program = lualatex), \
                  which is not supported. Prism uses a XeTeX-based engine (Tectonic). \
@@ -913,7 +1082,13 @@ pub async fn compile_latex(
         let main_file_clone = main_file.clone();
         let result = tokio::task::spawn_blocking(move || {
             lower_thread_priority();
-            compile_with_texlive(&work_dir_clone, &main_file_clone, engine, &main_tex_content)
+            compile_with_texlive(
+                &work_dir_clone,
+                &main_file_clone,
+                engine,
+                texlive_year,
+                &main_tex_content,
+            )
         })
         .await
         .map_err(|e| format!("Compilation task panicked: {}", e))?;
@@ -1478,6 +1653,87 @@ Postamble:
     fn test_detect_tex_engine_no_spaces() {
         let content = "%!TEX program=xelatex\n";
         assert_eq!(detect_tex_engine(content), Some(TexEngine::XeLaTeX));
+    }
+
+    // --- TexEngine names ---
+
+    #[test]
+    fn test_tex_engine_from_name() {
+        assert_eq!(TexEngine::from_name("pdflatex"), Some(TexEngine::Latex));
+        assert_eq!(TexEngine::from_name(" PDFLaTeX "), Some(TexEngine::Latex));
+        assert_eq!(TexEngine::from_name("xelatex"), Some(TexEngine::XeLaTeX));
+        assert_eq!(TexEngine::from_name("lualatex"), Some(TexEngine::LuaLaTeX));
+        assert_eq!(TexEngine::from_name("context"), None);
+    }
+
+    #[test]
+    fn test_tex_engine_binary_name_round_trips() {
+        for engine in [TexEngine::Latex, TexEngine::XeLaTeX, TexEngine::LuaLaTeX] {
+            assert_eq!(TexEngine::from_name(engine.binary_name()), Some(engine));
+        }
+    }
+
+    // --- parse_texlive_year ---
+
+    #[test]
+    fn test_parse_texlive_year_upstream() {
+        let line = "pdfTeX 3.141592653-2.6-1.40.27 (TeX Live 2025)";
+        assert_eq!(parse_texlive_year(line), Some(2025));
+    }
+
+    #[test]
+    fn test_parse_texlive_year_distro_suffix() {
+        let line = "pdfTeX 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian)";
+        assert_eq!(parse_texlive_year(line), Some(2023));
+    }
+
+    #[test]
+    fn test_parse_texlive_year_absent() {
+        assert_eq!(parse_texlive_year("XeTeX 3.141592653-2.6-0.999996"), None);
+        assert_eq!(parse_texlive_year("(TeX Live 20)"), None);
+    }
+
+    // --- scan_texlive_root ---
+
+    fn fake_engine(bin_dir: &Path, name: &str) {
+        std::fs::create_dir_all(bin_dir).unwrap();
+        std::fs::write(bin_dir.join(exe_name(name)), "").unwrap();
+    }
+
+    #[test]
+    fn test_scan_texlive_root_finds_years_newest_first() {
+        let root = tempfile::tempdir().unwrap();
+        fake_engine(&root.path().join("2024/bin/x-arch"), "pdflatex");
+        fake_engine(&root.path().join("2025/bin/x-arch"), "pdflatex");
+        fake_engine(&root.path().join("2025/bin/x-arch"), "xelatex");
+        // Non-year directories (texmf-local) and years without engines are ignored.
+        std::fs::create_dir_all(root.path().join("texmf-local/bin/x-arch")).unwrap();
+        std::fs::create_dir_all(root.path().join("2023/bin/x-arch")).unwrap();
+
+        let installs = scan_texlive_root(root.path());
+        let years: Vec<u32> = installs.iter().map(|i| i.year).collect();
+        assert_eq!(years, vec![2025, 2024]);
+        assert_eq!(installs[0].engines, vec!["pdflatex", "xelatex"]);
+        assert!(installs[0].bin_dir.ends_with("x-arch"));
+    }
+
+    #[test]
+    fn test_scan_texlive_root_missing_dir() {
+        let installs = scan_texlive_root(Path::new("/definitely/not/a/texlive/root"));
+        assert!(installs.is_empty());
+    }
+
+    #[test]
+    fn test_scan_texlive_root_prefers_host_arch() {
+        let root = tempfile::tempdir().unwrap();
+        // Alphabetically first, but not the host's architecture.
+        fake_engine(&root.path().join("2025/bin/aaa-other"), "pdflatex");
+        let host_dir = format!("{}-host", std::env::consts::ARCH);
+        fake_engine(&root.path().join("2025/bin").join(&host_dir), "pdflatex");
+
+        let installs = scan_texlive_root(root.path());
+        assert_eq!(installs.len(), 1);
+        assert!(installs[0].bin_dir.ends_with(&host_dir));
     }
 
     // --- persistent_build_dir edge case ---
