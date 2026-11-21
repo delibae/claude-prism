@@ -52,4 +52,11 @@
      * driconf XML with the system libexpat; exporting ours makes
      * those calls bind here and segfault at startup.  Fixes #213. */
     XML_*;
+
+    /* GLib (statically linked via HarfBuzz in the semi-static
+     * pkg-config build).  GTK/GIO must use the system GLib; mixing
+     * the two corrupts the heap in gtk_init.  Fixes #204. */
+    g_*;
+    glib_*;
+    _g_*;
 };

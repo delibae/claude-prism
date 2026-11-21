@@ -480,6 +480,20 @@ jobs:
           CFLAGS: ""
         run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
 
+      # Guard against #204 / #213: statically linked GLib/expat/ICU/etc. must
+      # not be exported, or GTK/Mesa bind to our copies and crash at startup.
+      - name: Verify no statically linked library symbols are exported
+        run: |
+          BIN=apps/desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/claude-prism-desktop
+          LEAKED=$(nm -D --defined-only "$BIN" | awk '{print $3}' \
+            | grep -E '^(g_|glib_|XML_|u_|ucnv_|hb_|FT_|Fc|png_)' || true)
+          if [ -n "$LEAKED" ]; then
+            echo "::error::Exported static-library symbols found:"
+            echo "$LEAKED" | head -50
+            exit 1
+          fi
+          echo "OK: $(nm -D --defined-only "$BIN" | wc -l) defined dynamic symbols, none from static libs"
+
       - name: Collect updater artifacts
         id: collect
         run: |

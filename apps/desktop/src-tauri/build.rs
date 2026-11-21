@@ -18,6 +18,14 @@ fn main() {
             "cargo:rustc-link-arg=-Wl,--version-script={}/symbols.map",
             manifest_dir
         );
+        // Tectonic's semi-static pkg-config build also links GLib, expat, etc.
+        // statically.  ld auto-exports any definition referenced by a shared
+        // library at link time, so libgtk/libgio/Mesa end up binding to *our*
+        // static copies instead of the system ones -> heap corruption in
+        // gtk_init (#204) and a segfault in Mesa's driconf parser (#213).
+        // Never export symbols that come from static archives; the executable
+        // has no legitimate reason to provide symbols to shared libraries.
+        println!("cargo:rustc-link-arg-bins=-Wl,--exclude-libs,ALL");
         println!("cargo:rerun-if-changed=symbols.map");
     }
 
