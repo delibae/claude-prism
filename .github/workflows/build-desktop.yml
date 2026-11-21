@@ -522,10 +522,55 @@ jobs:
       url: ${{ steps.collect.outputs.url }}
 
   # ──────────────────────────────────────────────
+  # Linux smoke test: the .deb must start without crashing (#204, #213)
+  # ──────────────────────────────────────────────
+  smoke-linux:
+    needs: [build-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux
+          path: artifacts
+
+      - name: Install Xvfb and Mesa
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb dbus-x11 libegl-mesa0 libgl1-mesa-dri
+
+      - name: Smoke test this build
+        run: |
+          DEB=$(find artifacts -name '*.deb' | head -1)
+          echo "Testing $DEB"
+          scripts/linux-smoke-test.sh "$DEB" 20
+
+      # Control: the previous release crashed on startup. If the test can't
+      # reproduce that, it isn't actually exercising the crashing code paths.
+      # Informational only; runs for artifact-only manual builds.
+      - name: Baseline (v1.3.0, expected to crash)
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag == ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.3.0 --pattern 'ClaudePrism-Linux.deb' --dir baseline
+          if scripts/linux-smoke-test.sh baseline/ClaudePrism-Linux.deb 20; then
+            echo "::warning::v1.3.0 did NOT crash here; smoke test may not reproduce #204/#213"
+          else
+            echo "::notice::v1.3.0 crashed as expected; smoke test reproduces the bug"
+          fi
+
+  # ──────────────────────────────────────────────
   # Publish: generate latest.json & upload to release
   # ──────────────────────────────────────────────
   publish:
-    needs: [build-windows, build-macos, build-macos-intel, build-linux]
+    needs: [build-windows, build-macos, build-macos-intel, build-linux, smoke-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
 
