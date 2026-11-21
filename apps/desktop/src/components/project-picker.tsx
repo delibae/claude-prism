@@ -678,6 +678,11 @@ async function loadProjectPreview(
   if (pending) return pending;
 
   const promise = (async () => {
+    // Runtime fs scope grants don't persist across restarts; re-grant so
+    // recent projects outside the static scope (e.g. D:\, #138) can preview.
+    await invoke("allow_project_directory", { rootPath: project.path }).catch(
+      () => {},
+    );
     const createdAt = await getProjectCreatedAt(project.path);
     const pdfPath = await firstExistingPath(project.path, [
       [".prism", "build", "main.pdf"],

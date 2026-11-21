@@ -693,7 +693,8 @@ export function PdfPreview() {
             PDF Preview
           </h2>
           <p className="mb-4 text-center text-muted-foreground text-sm">
-            Press Cmd+Enter to compile your document
+            Press {navigator.userAgent.includes("Mac") ? "Cmd" : "Ctrl"}+Enter
+            to compile your document
           </p>
           {isTexActive && (
             <Button

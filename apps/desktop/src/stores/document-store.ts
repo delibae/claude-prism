@@ -14,6 +14,7 @@ import {
   createDirectory,
   join,
   LARGE_FILE_THRESHOLD,
+  type FsProjectFile,
   type ProjectFileType,
 } from "@/lib/tauri/fs";
 import { useHistoryStore } from "@/stores/history-store";
@@ -24,6 +25,9 @@ import { clearZoomCache } from "@/components/workspace/preview/pdf-preview";
 import { clearEditorStateCache } from "@/components/workspace/editor/latex-editor";
 import { useProjectStore } from "@/stores/project-store";
 import { createLogger } from "@/lib/debug/logger";
+import { resolveTexRoot } from "@/lib/tex-project";
+
+export { resolveTexRoot };
 
 const log = createLogger("document");
 const PROJECT_RENAME_LOCK_RETRY_DELAYS_MS = [150, 300, 600, 1000];
@@ -153,62 +157,6 @@ interface DocumentState {
 
 function getActiveFile(state: { files: ProjectFile[]; activeFileId: string }) {
   return state.files.find((f) => f.id === state.activeFileId);
-}
-
-/**
- * Resolve the root .tex file for compilation.
- *
- * Priority order:
- * 1. `% !TEX root = <file>` magic comment in the first 20 lines of the active file
- * 2. The file itself, if it contains `\documentclass`
- * 3. `main.tex` or `document.tex` that contains `\documentclass`
- * 4. Any other .tex file in the project that contains `\documentclass`
- * 5. Fallback: the active file itself
- */
-export function resolveTexRoot(fileId: string, files: ProjectFile[]): string {
-  const file = files.find((f) => f.id === fileId);
-  if (!file || file.type !== "tex" || !file.content) return fileId;
-
-  // 1. Check for % !TEX root magic comment
-  const lines = file.content.split("\n").slice(0, 20);
-  for (const line of lines) {
-    const match = line.match(/^%\s*!TEX\s+root\s*=\s*(.+)/i);
-    if (match) {
-      const rootPath = match[1].trim();
-      const target =
-        files.find((f) => f.relativePath === rootPath) ??
-        files.find((f) => f.name === rootPath);
-      if (target) return target.id;
-    }
-  }
-
-  // 2. If the current file contains \documentclass, it is a root file
-  if (/\\documentclass[\s{[]/.test(file.content)) {
-    return fileId;
-  }
-
-  // 3. Look for main.tex or document.tex with \documentclass
-  const wellKnown = files.find(
-    (f) =>
-      (f.name === "main.tex" || f.name === "document.tex") &&
-      f.type === "tex" &&
-      f.content &&
-      /\\documentclass[\s{[]/.test(f.content),
-  );
-  if (wellKnown) return wellKnown.id;
-
-  // 4. Any .tex file with \documentclass
-  const anyRoot = files.find(
-    (f) =>
-      f.type === "tex" &&
-      f.id !== fileId &&
-      f.content &&
-      /\\documentclass[\s{[]/.test(f.content),
-  );
-  if (anyRoot) return anyRoot.id;
-
-  // 5. Fallback: the active file itself
-  return fileId;
 }
 
 /** Re-key the external PDF bytes cache when a file is renamed/moved. */
@@ -1085,103 +1033,129 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   },
 
   refreshFiles: async () => {
-    const { projectRoot, files, activeFileId } = get();
+    const { projectRoot, files: filesAtStart } = get();
     if (!projectRoot) return;
 
     const { files: fsFiles, folders: fsFolders } =
       await scanProjectFolder(projectRoot);
-    const existingMap = new Map(files.map((f) => [f.relativePath, f]));
+    const startMap = new Map(filesAtStart.map((f) => [f.relativePath, f]));
     const diskPaths = new Set(fsFiles.map((f) => f.relativePath));
 
-    const merged: ProjectFile[] = [];
+    // Phase 1 (async): read disk contents. Nothing is committed to the store
+    // here, because the user may edit or switch files while this runs.
+    type DiskEntry = {
+      fsFile: FsProjectFile;
+      content?: string;
+      dataUrl?: string;
+      contentLoaded: boolean;
+    };
+    const diskEntries: DiskEntry[] = [];
 
     for (const fsFile of fsFiles) {
-      const existing = existingMap.get(fsFile.relativePath);
+      const existing = startMap.get(fsFile.relativePath);
+      const entry: DiskEntry = { fsFile, contentLoaded: false };
+      const isText =
+        fsFile.type === "tex" ||
+        fsFile.type === "bib" ||
+        fsFile.type === "style" ||
+        fsFile.type === "other";
+      const isLargeNonEssential =
+        fsFile.type === "other" && fsFile.fileSize > LARGE_FILE_THRESHOLD;
 
       if (existing) {
-        // Existing file — reload content from disk unless the user has unsaved edits
-        if (existing.isDirty) {
-          merged.push(existing);
-        } else {
-          const updated = { ...existing, fileSize: fsFile.fileSize };
-          if (
-            updated.type === "tex" ||
-            updated.type === "bib" ||
-            updated.type === "style" ||
-            updated.type === "other"
-          ) {
-            const isLargeNonEssential =
-              updated.type === "other" &&
-              fsFile.fileSize > LARGE_FILE_THRESHOLD;
-            // Only reload if it was previously loaded (not a skipped large file)
-            if (!isLargeNonEssential || updated.content !== undefined) {
-              try {
-                updated.content = await readTexFileContent(
-                  updated.absolutePath,
-                );
-              } catch {
-                /* keep previous content */
-              }
-            }
-          }
-          merged.push(updated);
-        }
-      } else {
-        // New file on disk
-        const pf: ProjectFile = {
-          id: fsFile.relativePath,
-          name: fsFile.relativePath.split(/[/\\]/).pop() || fsFile.relativePath,
-          relativePath: fsFile.relativePath,
-          absolutePath: fsFile.absolutePath,
-          type: fsFile.type,
-          isDirty: false,
-          fileSize: fsFile.fileSize,
-        };
-        const isLargeNonEssential =
-          pf.type === "other" && fsFile.fileSize > LARGE_FILE_THRESHOLD;
+        // Existing file — reload content from disk unless the user has unsaved
+        // edits. Skipped large files stay unloaded unless previously loaded.
         if (
-          pf.type === "tex" ||
-          pf.type === "bib" ||
-          pf.type === "style" ||
-          (pf.type === "other" && !isLargeNonEssential)
+          !existing.isDirty &&
+          isText &&
+          (!isLargeNonEssential || existing.content !== undefined)
         ) {
           try {
-            pf.content = await readTexFileContent(pf.absolutePath);
+            entry.content = await readTexFileContent(existing.absolutePath);
+            entry.contentLoaded = true;
           } catch {
-            /* skip unreadable */
-          }
-        } else if (
-          pf.type === "image" &&
-          fsFile.fileSize <= LARGE_FILE_THRESHOLD
-        ) {
-          try {
-            pf.dataUrl = await readImageAsDataUrl(pf.absolutePath);
-          } catch {
-            /* skip unreadable */
+            /* keep previous content */
           }
         }
-        // PDF files and large files are loaded on-demand
-        merged.push(pf);
+      } else if (isText && !isLargeNonEssential) {
+        try {
+          entry.content = await readTexFileContent(fsFile.absolutePath);
+          entry.contentLoaded = true;
+        } catch {
+          /* skip unreadable */
+        }
+      } else if (
+        fsFile.type === "image" &&
+        fsFile.fileSize <= LARGE_FILE_THRESHOLD
+      ) {
+        try {
+          entry.dataUrl = await readImageAsDataUrl(fsFile.absolutePath);
+        } catch {
+          /* skip unreadable */
+        }
       }
+      // PDF files and large files are loaded on-demand
+      diskEntries.push(entry);
     }
 
-    // Keep dirty files that were deleted from disk (user hasn't saved yet)
-    for (const f of files) {
-      if (!diskPaths.has(f.relativePath) && f.isDirty) {
-        merged.push(f);
+    // Phase 2 (sync): merge against the *latest* store state so that edits,
+    // saves, and active-file switches made during phase 1 are not clobbered.
+    set((s) => {
+      const currentMap = new Map(s.files.map((f) => [f.relativePath, f]));
+      const merged: ProjectFile[] = [];
+
+      for (const { fsFile, content, dataUrl, contentLoaded } of diskEntries) {
+        const current = currentMap.get(fsFile.relativePath);
+        if (current) {
+          const unchangedSinceScan =
+            current === startMap.get(fsFile.relativePath);
+          const updated =
+            current.fileSize === fsFile.fileSize
+              ? current
+              : { ...current, fileSize: fsFile.fileSize };
+          // If the in-memory file changed while we were reading (edit, save,
+          // rename), the disk snapshot may be stale — keep the live version.
+          if (contentLoaded && unchangedSinceScan && !current.isDirty) {
+            merged.push({ ...updated, content });
+          } else {
+            merged.push(updated);
+          }
+        } else {
+          // New file on disk
+          const pf: ProjectFile = {
+            id: fsFile.relativePath,
+            name:
+              fsFile.relativePath.split(/[/\\]/).pop() || fsFile.relativePath,
+            relativePath: fsFile.relativePath,
+            absolutePath: fsFile.absolutePath,
+            type: fsFile.type,
+            isDirty: false,
+            fileSize: fsFile.fileSize,
+          };
+          if (contentLoaded) pf.content = content;
+          if (dataUrl !== undefined) pf.dataUrl = dataUrl;
+          merged.push(pf);
+        }
       }
-    }
 
-    const newActiveId = merged.some((f) => f.id === activeFileId)
-      ? activeFileId
-      : (merged[0]?.id ?? "");
+      // Keep dirty files that were deleted from disk (user hasn't saved yet)
+      for (const f of s.files) {
+        if (!diskPaths.has(f.relativePath) && f.isDirty) {
+          merged.push(f);
+        }
+      }
 
-    set((s) => ({
-      files: merged,
-      folders: fsFolders,
-      activeFileId: newActiveId,
-      contentGeneration: s.contentGeneration + 1,
-    }));
+      const newActiveId = merged.some((f) => f.id === s.activeFileId)
+        ? s.activeFileId
+        : (merged[0]?.id ?? "");
+
+      return {
+        files: merged,
+        folders: fsFolders,
+        activeFileId: newActiveId,
+        contentGeneration: s.contentGeneration + 1,
+      };
+    });
   },
 
   loadFileContent: async (id) => {

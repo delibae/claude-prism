@@ -58,6 +58,7 @@ import {
   resolveCompileTarget,
   formatCompileError,
 } from "@/lib/latex-compiler";
+import { filterProjectDiagnostics } from "@/lib/latex-diagnostics";
 import { useSettingsStore } from "@/stores/settings-store";
 import { EditorToolbar } from "./editor-toolbar";
 import { SelectionToolbar, type ToolbarAction } from "./selection-toolbar";
@@ -343,6 +344,15 @@ export function LatexEditor() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Global Cmd/Ctrl+Enter, dispatched by useKeyboardShortcuts when focus is
+  // outside the editor (#115).
+  useEffect(() => {
+    const handleRequestCompile = () => compileRef.current();
+    window.addEventListener("request-compile", handleRequestCompile);
+    return () =>
+      window.removeEventListener("request-compile", handleRequestCompile);
   }, []);
 
   useEffect(() => {
@@ -649,7 +659,12 @@ export function LatexEditor() {
                   return [];
                 }
                 const baseLinter = latexLinter();
-                const diagnostics = baseLinter(view);
+                const lintState = useDocumentStore.getState();
+                const diagnostics = filterProjectDiagnostics(
+                  baseLinter(view),
+                  lintState.activeFileId,
+                  lintState.files,
+                );
                 return diagnostics.map((d: Diagnostic) => ({
                   ...d,
                   actions: [

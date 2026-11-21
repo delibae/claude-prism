@@ -1718,7 +1718,7 @@ const LINUX_DESKTOP_ENV_VARS: &[&str] = &[
 /// 2. Restores original environment variables when running inside an AppImage
 /// 3. Passes through Linux desktop environment variables (DISPLAY, XDG_*, etc.)
 #[cfg(target_os = "linux")]
-fn sanitize_appimage_env(cmd: &mut tokio::process::Command) {
+fn sanitize_appimage_env(cmd: &mut std::process::Command) {
     cmd.stdin(std::process::Stdio::null());
 
     if std::env::var("APPIMAGE").is_ok() {
@@ -1795,6 +1795,11 @@ fn resolve_cmd_to_node(program: &str) -> (String, Vec<String>) {
 
 /// Create a std::process::Command that handles .cmd/.bat files on Windows.
 fn new_sync_command(program: &str) -> std::process::Command {
+    // Mirror the parts of the chat-session environment (create_command) that
+    // decide whether the CLI can start at all (PATH, git-bash, AppImage env);
+    // otherwise `claude --version` / `claude auth status` can fail here while
+    // chat would work, and the app wrongly reports "not installed" / "not
+    // logged in".
     #[cfg(target_os = "windows")]
     {
         let (resolved, prefix) = resolve_cmd_to_node(program);
@@ -1803,88 +1808,29 @@ fn new_sync_command(program: &str) -> std::process::Command {
         if !prefix.is_empty() {
             c.args(&prefix);
         }
+        // Claude Code needs git-bash on Windows, also for `auth status` (#202).
+        if let Some(bash_path) = find_git_bash() {
+            c.env("CLAUDE_CODE_GIT_BASH_PATH", bash_path);
+        }
+        c.env("PATH", tool_augmented_path(program));
         return c;
     }
     #[cfg(not(target_os = "windows"))]
-    std::process::Command::new(program)
+    {
+        let mut c = std::process::Command::new(program);
+        // Inside an AppImage, don't leak its LD_LIBRARY_PATH etc. into the CLI.
+        #[cfg(target_os = "linux")]
+        sanitize_appimage_env(&mut c);
+        c.env("PATH", tool_augmented_path(program));
+        c
+    }
 }
 
-/// Create a tokio Command with appropriate environment variables.
-fn create_command(
-    program: &str,
-    args: Vec<String>,
-    cwd: &str,
-    effort_level: Option<&str>,
-) -> Command {
-    let clean_program = strip_nul(program);
-    let clean_args: Vec<Cow<str>> = args.iter().map(|a| strip_nul(a)).collect();
-    let clean_cwd = strip_nul(cwd);
-
-    #[cfg(target_os = "windows")]
-    let mut cmd = {
-        let (resolved, prefix) = resolve_cmd_to_node(clean_program.as_ref());
-        let mut c = Command::new(&resolved);
-        c.creation_flags(CREATE_NO_WINDOW);
-        if !prefix.is_empty() {
-            c.args(&prefix);
-        }
-        c.args(clean_args.iter().map(|a| a.as_ref()));
-        c
-    };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut c = Command::new(clean_program.as_ref());
-        c.args(clean_args.iter().map(|a| a.as_ref()));
-        c
-    };
-    cmd.current_dir(clean_cwd.as_ref());
-
-    // Pipe stdout and stderr for streaming
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-
-    // On Linux AppImage, restore original environment so child processes work correctly
-    #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
-
-    // Remove all Claude Code internal env vars to prevent nested session detection
-    // and other interference. Tauri inherits these when launched from a Claude Code session.
-    cmd.env_remove("CLAUDECODE");
-    cmd.env_remove("CLAUDE_AGENT_SDK_VERSION");
-    for (key, _) in std::env::vars() {
-        // Keep CLAUDE_CODE_GIT_BASH_PATH 鈥?Claude Code needs it on Windows to locate git-bash
-        if key == "CLAUDE_CODE_GIT_BASH_PATH" {
-            continue;
-        }
-        if key.starts_with("CLAUDE_CODE_") || key.starts_with("CLAUDE_AGENT_") {
-            cmd.env_remove(&key);
-        }
-    }
-    // Set effort level (default: low for fast responses)
-    cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
-
-    if let Some(credential) = stored_claude_credential() {
-        for (key, value) in claude_credential_env_values(&credential) {
-            if std::env::var(key)
-                .map(|value| value.trim().is_empty())
-                .unwrap_or(true)
-            {
-                cmd.env(key, value);
-            }
-        }
-    }
-
-    // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set.
-    // Claude Code requires git-bash to run on Windows.
-    // Uses find_git_bash() which also validates user-specified paths.
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(bash_path) = find_git_bash() {
-            cmd.env("CLAUDE_CODE_GIT_BASH_PATH", bash_path);
-        }
-    }
-
-    // Build PATH: start with current PATH, prepend program dir and venv bin
+/// PATH for spawned CLI processes: the inherited PATH plus the program's own
+/// directory and common user tool dirs (Homebrew, ~/.local/bin, nvm, ...).
+/// GUI launches get a minimal PATH, so without this an npm-installed `claude`
+/// (`#!/usr/bin/env node`) can't find `node` (#87, #90, #118).
+fn tool_augmented_path(program: &str) -> String {
     // Strip nul bytes from inherited PATH to prevent spawn failures
     let mut current_path = strip_nul(&std::env::var("PATH").unwrap_or_default()).into_owned();
     #[cfg(target_os = "windows")]
@@ -1893,7 +1839,10 @@ fn create_command(
     let sep = ":";
 
     // Add the program's parent directory to PATH if not already present
-    if let Some(program_dir) = std::path::Path::new(program).parent() {
+    if let Some(program_dir) = std::path::Path::new(program)
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+    {
         let program_dir_str = program_dir.to_string_lossy();
         if !current_path.contains(program_dir_str.as_ref()) {
             current_path = format!("{}{}{}", program_dir_str, sep, current_path);
@@ -1943,6 +1892,162 @@ fn create_command(
             }
         }
     }
+
+    current_path
+}
+
+/// Run a command to completion, killing it if it exceeds `timeout`, so a
+/// wedged CLI can't hang the setup/status check forever.
+pub(crate) fn output_with_timeout(
+    mut cmd: std::process::Command,
+    timeout: std::time::Duration,
+) -> std::io::Result<std::process::Output> {
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = cmd.spawn()?;
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(_) => {
+            kill_pid(pid);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("timed out after {}s", timeout.as_secs()),
+            ))
+        }
+    }
+}
+
+fn kill_pid(pid: u32) {
+    #[cfg(target_os = "windows")]
+    {
+        let mut c = std::process::Command::new("taskkill");
+        c.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        c.creation_flags(CREATE_NO_WINDOW);
+        let _ = c.output();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output();
+    }
+}
+
+/// Whether Claude Code has stored OAuth credentials on disk
+/// (`<config dir>/.credentials.json`; used on Windows and Linux — macOS keeps
+/// them in the Keychain).
+fn claude_oauth_credentials_present() -> bool {
+    let dir = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".claude")));
+    dir.map(|d| d.join(".credentials.json"))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .is_some_and(|s| oauth_credentials_have_token(&s))
+}
+
+/// True if a `.credentials.json` body holds a non-empty OAuth access or
+/// refresh token (a logged-out file may keep the key with a null value).
+fn oauth_credentials_have_token(json: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(json) else {
+        return false;
+    };
+    ["accessToken", "refreshToken"].iter().any(|key| {
+        value
+            .get("claudeAiOauth")
+            .and_then(|oauth| oauth.get(*key))
+            .and_then(Value::as_str)
+            .is_some_and(|token| !token.trim().is_empty())
+    })
+}
+
+/// Create a tokio Command with appropriate environment variables.
+fn create_command(
+    program: &str,
+    args: Vec<String>,
+    cwd: &str,
+    effort_level: Option<&str>,
+) -> Command {
+    let clean_program = strip_nul(program);
+    let clean_args: Vec<Cow<str>> = args.iter().map(|a| strip_nul(a)).collect();
+    let clean_cwd = strip_nul(cwd);
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let (resolved, prefix) = resolve_cmd_to_node(clean_program.as_ref());
+        let mut c = Command::new(&resolved);
+        c.creation_flags(CREATE_NO_WINDOW);
+        if !prefix.is_empty() {
+            c.args(&prefix);
+        }
+        c.args(clean_args.iter().map(|a| a.as_ref()));
+        c
+    };
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = Command::new(clean_program.as_ref());
+        c.args(clean_args.iter().map(|a| a.as_ref()));
+        c
+    };
+    cmd.current_dir(clean_cwd.as_ref());
+
+    // Pipe stdout and stderr for streaming
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    // On Linux AppImage, restore original environment so child processes work correctly
+    #[cfg(target_os = "linux")]
+    sanitize_appimage_env(cmd.as_std_mut());
+
+    // Remove all Claude Code internal env vars to prevent nested session detection
+    // and other interference. Tauri inherits these when launched from a Claude Code session.
+    cmd.env_remove("CLAUDECODE");
+    cmd.env_remove("CLAUDE_AGENT_SDK_VERSION");
+    for (key, _) in std::env::vars() {
+        // Keep CLAUDE_CODE_GIT_BASH_PATH 鈥?Claude Code needs it on Windows to locate git-bash
+        if key == "CLAUDE_CODE_GIT_BASH_PATH" {
+            continue;
+        }
+        if key.starts_with("CLAUDE_CODE_") || key.starts_with("CLAUDE_AGENT_") {
+            cmd.env_remove(&key);
+        }
+    }
+    // Set effort level (default: low for fast responses)
+    cmd.env("CLAUDE_CODE_EFFORT_LEVEL", effort_level.unwrap_or("low"));
+
+    if let Some(credential) = stored_claude_credential() {
+        for (key, value) in claude_credential_env_values(&credential) {
+            if std::env::var(key)
+                .map(|value| value.trim().is_empty())
+                .unwrap_or(true)
+            {
+                cmd.env(key, value);
+            }
+        }
+    }
+
+    // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set.
+    // Claude Code requires git-bash to run on Windows.
+    // Uses find_git_bash() which also validates user-specified paths.
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(bash_path) = find_git_bash() {
+            cmd.env("CLAUDE_CODE_GIT_BASH_PATH", bash_path);
+        }
+    }
+
+    // Build PATH: start with current PATH, prepend program dir and tool dirs,
+    // then the project venv bin (below).
+    let mut current_path = tool_augmented_path(clean_program.as_ref());
+    #[cfg(target_os = "windows")]
+    let sep = ";";
+    #[cfg(not(target_os = "windows"))]
+    let sep = ":";
 
     // Auto-detect project venv and inject VIRTUAL_ENV + PATH
     let venv_dir = std::path::Path::new(cwd).join(".venv");
@@ -2110,7 +2215,11 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
     };
 
     // Verify binary actually works by running --version
-    let version_output = new_sync_command(&binary_path).arg("--version").output();
+    let version_output = {
+        let mut cmd = new_sync_command(&binary_path);
+        cmd.arg("--version");
+        output_with_timeout(cmd, std::time::Duration::from_secs(30))
+    };
 
     let version = match version_output {
         Ok(output) if output.status.success() => {
@@ -2150,9 +2259,11 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
     }
 
     // Check auth status
-    let auth_output = new_sync_command(&binary_path)
-        .args(["auth", "status"])
-        .output();
+    let auth_output = {
+        let mut cmd = new_sync_command(&binary_path);
+        cmd.args(["auth", "status"]);
+        output_with_timeout(cmd, std::time::Duration::from_secs(30))
+    };
 
     let (authenticated, account_email) = match auth_output {
         Ok(output) if output.status.success() => {
@@ -2167,10 +2278,24 @@ pub async fn check_claude_status() -> Result<ClaudeStatus, String> {
             });
             (true, email)
         }
-        _ => match claude_credential_label() {
-            Some(label) => (true, Some(label.to_string())),
-            None => (false, None),
-        },
+        other => {
+            match &other {
+                Ok(o) => eprintln!(
+                    "[auth] `claude auth status` failed ({}): {}",
+                    o.status,
+                    String::from_utf8_lossy(&o.stderr).trim()
+                ),
+                Err(e) => eprintln!("[auth] `claude auth status` could not run: {}", e),
+            }
+            match claude_credential_label() {
+                Some(label) => (true, Some(label.to_string())),
+                // The CLI is logged in via OAuth but the status probe failed
+                // (e.g. older CLI, git-bash hiccup): don't block the app (#202).
+                // An actually expired token is still reported at chat time.
+                None if claude_oauth_credentials_present() => (true, None),
+                None => (false, None),
+            }
+        }
     };
 
     Ok(ClaudeStatus {
@@ -2330,7 +2455,7 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<bool, String> {
 
     // On Linux AppImage, restore original environment so curl/bash work correctly
     #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
+    sanitize_appimage_env(cmd.as_std_mut());
 
     // Inherit essential environment variables, ensuring ~/.local/bin is in PATH
     #[cfg(target_os = "windows")]
@@ -2419,7 +2544,11 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
     let binary_path = find_claude_binary().map_err(|e| format!("Claude CLI not found: {}", e))?;
 
     // Verify it actually exists
-    let version_check = new_sync_command(&binary_path).arg("--version").output();
+    let version_check = {
+        let mut cmd = new_sync_command(&binary_path);
+        cmd.arg("--version");
+        output_with_timeout(cmd, std::time::Duration::from_secs(30))
+    };
 
     if !version_check.as_ref().is_ok_and(|o| o.status.success()) {
         return Err("Claude CLI is not properly installed".to_string());
@@ -2434,6 +2563,9 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
             c.args(&prefix);
         }
         c.args(["auth", "login"]);
+        if let Some(bash_path) = find_git_bash() {
+            c.env("CLAUDE_CODE_GIT_BASH_PATH", bash_path);
+        }
         c
     };
     #[cfg(not(target_os = "windows"))]
@@ -2448,7 +2580,7 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
 
     // On Linux AppImage, restore original environment so xdg-open works
     #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
+    sanitize_appimage_env(cmd.as_std_mut());
 
     // Inherit essential environment variables
     for (key, value) in std::env::vars() {
@@ -2456,6 +2588,8 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
             cmd.env(&key, &value);
         }
     }
+    // Same PATH as chat sessions so an npm-installed CLI can find node (#118).
+    cmd.env("PATH", tool_augmented_path(&binary_path));
 
     let mut child = cmd
         .spawn()
@@ -4212,6 +4346,38 @@ pub async fn set_claude_fast_mode(enabled: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_credentials_require_a_token() {
+        assert!(oauth_credentials_have_token(
+            r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-x","refreshToken":"r"}}"#
+        ));
+        assert!(oauth_credentials_have_token(
+            r#"{"claudeAiOauth":{"accessToken":"","refreshToken":"r"}}"#
+        ));
+        assert!(!oauth_credentials_have_token(r#"{"claudeAiOauth":null}"#));
+        assert!(!oauth_credentials_have_token(
+            r#"{"claudeAiOauth":{"accessToken":" ","refreshToken":null}}"#
+        ));
+        assert!(!oauth_credentials_have_token("not json"));
+        assert!(!oauth_credentials_have_token("{}"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_with_timeout_kills_hung_process() {
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("30");
+        let started = std::time::Instant::now();
+        let err = output_with_timeout(cmd, std::time::Duration::from_millis(300)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+
+        let mut ok = std::process::Command::new("echo");
+        ok.arg("hi");
+        let out = output_with_timeout(ok, std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
+    }
 
     fn test_openai_compatible_auth_config() -> ClaudePrismAuthConfig {
         ClaudePrismAuthConfig {

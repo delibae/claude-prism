@@ -156,6 +156,110 @@ fn detect_bib_tool(content: &str) -> BibTool {
     BibTool::None
 }
 
+/// Detect the bibliography tool from what the first LaTeX pass actually wrote,
+/// which is far more reliable than scanning source text (#116): biblatex with
+/// the biber backend writes `<stem>.bcf`; BibTeX (incl. biblatex with
+/// `backend=bibtex`) puts `\bibdata{...}` into the `.aux` (or into a child
+/// `.aux` pulled in via `\@input`, as `\include` does).
+/// Returns `None` when no `.aux` exists, so the caller can fall back.
+fn detect_bib_tool_from_outputs(work_dir: &Path, main_stem: &str) -> Option<BibTool> {
+    if work_dir.join(format!("{}.bcf", main_stem)).exists() {
+        return Some(BibTool::Biber);
+    }
+    let aux = std::fs::read_to_string(work_dir.join(format!("{}.aux", main_stem))).ok()?;
+    if aux.contains("\\bibdata{") {
+        return Some(BibTool::BibTeX);
+    }
+    for line in aux.lines() {
+        if let Some(rest) = line.trim().strip_prefix("\\@input{") {
+            if let Some(child) = rest.strip_suffix('}') {
+                if let Ok(content) = std::fs::read_to_string(work_dir.join(child)) {
+                    if content.contains("\\bibdata{") {
+                        return Some(BibTool::BibTeX);
+                    }
+                }
+            }
+        }
+    }
+    Some(BibTool::None)
+}
+
+/// Candidate TeX `bin` directories, newest TeX Live year first.
+///
+/// Covers system and per-user TeX Live installs for any year and platform
+/// (e.g. `~/.local/texlive/2025/bin/x86_64-linux`, #136), MacTeX, distro
+/// packages, and MiKTeX on Windows.
+fn texlive_bin_dirs() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(dir) = std::env::var("TEXLIVE_INSTALL_PREFIX") {
+        roots.push(PathBuf::from(dir));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        roots.push(PathBuf::from("/usr/local/texlive"));
+        roots.push(PathBuf::from("/opt/texlive"));
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join(".local/texlive"));
+            roots.push(home.join("texlive"));
+            roots.push(home.join(".texlive"));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        roots.push(PathBuf::from("C:\\texlive"));
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join("texlive"));
+        }
+    }
+
+    let mut out: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        // Year directories (2023, 2024, ...) plus a possible un-versioned layout.
+        let mut years: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.len() == 4 && n.chars().all(|c| c.is_ascii_digit()))
+            })
+            .collect();
+        years.sort();
+        years.reverse();
+        years.push(root.clone());
+        for year in years {
+            let Ok(platforms) = std::fs::read_dir(year.join("bin")) else {
+                continue;
+            };
+            let mut plats: Vec<PathBuf> = platforms
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.is_dir())
+                .collect();
+            plats.sort();
+            out.extend(plats);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        out.push(PathBuf::from("/Library/TeX/texbin"));
+        out.push(PathBuf::from("/opt/homebrew/bin"));
+        out.push(PathBuf::from("/usr/local/bin"));
+    }
+    #[cfg(not(target_os = "windows"))]
+    out.push(PathBuf::from("/usr/bin"));
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local) = dirs::data_local_dir() {
+            out.push(local.join("Programs\\MiKTeX\\miktex\\bin\\x64"));
+        }
+        out.push(PathBuf::from("C:\\Program Files\\MiKTeX\\miktex\\bin\\x64"));
+    }
+    out
+}
+
 /// Resolve a TeXLive engine binary to its full path.
 /// GUI apps on macOS lack the user's shell PATH, so we check standard
 /// TeXLive installation locations and fall back to a login-shell query.
@@ -165,51 +269,47 @@ fn find_texlive_binary(name: &str) -> Result<PathBuf, String> {
         return Ok(path);
     }
 
-    // 2. Check standard TeXLive locations
+    // 2. Check standard TeXLive / MacTeX / MiKTeX locations
+    for dir in texlive_bin_dirs() {
+        #[cfg(target_os = "windows")]
+        let candidates = [dir.join(format!("{}.exe", name)), dir.join(name)];
+        #[cfg(not(target_os = "windows"))]
+        let candidates = [dir.join(name)];
+        for p in candidates {
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+    }
+
+    // 3. macOS/Linux: ask the user's login shell (GUI launches lack its PATH)
     #[cfg(not(target_os = "windows"))]
     {
-        let standard_paths = [
-            format!("/Library/TeX/texbin/{}", name),
-            format!("/usr/local/texlive/2025/bin/universal-darwin/{}", name),
-            format!("/usr/local/texlive/2024/bin/universal-darwin/{}", name),
-            format!("/usr/local/texlive/2025/bin/x86_64-linux/{}", name),
-            format!("/usr/local/texlive/2024/bin/x86_64-linux/{}", name),
-            format!("/opt/homebrew/bin/{}", name),
-            format!("/usr/bin/{}", name),
-        ];
-        for path_str in &standard_paths {
-            let p = PathBuf::from(path_str);
-            if p.exists() {
-                return Ok(p);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let standard_paths = [
-            format!("C:\\texlive\\2025\\bin\\windows\\{}.exe", name),
-            format!("C:\\texlive\\2024\\bin\\windows\\{}.exe", name),
-        ];
-        for path_str in &standard_paths {
-            let p = PathBuf::from(path_str);
-            if p.exists() {
-                return Ok(p);
-            }
-        }
-    }
-
-    // 3. macOS: ask login shell for PATH
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(output) = std::process::Command::new("/bin/zsh")
-            .args(["-l", "-c", &format!("which {}", name)])
-            .output()
+        let shell = std::env::var("SHELL")
+            .ok()
+            .filter(|s| Path::new(s).is_file())
+            .unwrap_or_else(|| {
+                if cfg!(target_os = "macos") {
+                    "/bin/zsh".into()
+                } else {
+                    "/bin/sh".into()
+                }
+            });
+        let mut cmd = std::process::Command::new(&shell);
+        cmd.args(["-l", "-c", &format!("command -v {}", name)]);
+        // A blocking profile script must not stall compilation.
+        if let Ok(output) =
+            crate::claude::output_with_timeout(cmd, std::time::Duration::from_secs(10))
         {
             if output.status.success() {
-                let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let p = PathBuf::from(&resolved);
-                if p.exists() {
+                // Profiles may print banners; take the last absolute path line.
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let resolved = stdout
+                    .lines()
+                    .rev()
+                    .map(str::trim)
+                    .find(|line| line.starts_with('/'));
+                if let Some(p) = resolved.map(PathBuf::from).filter(|p| p.is_file()) {
                     return Ok(p);
                 }
             }
@@ -361,6 +461,7 @@ pub(crate) fn compile_with_tectonic(work_dir: &Path, main_file: &str) -> Result<
     use tectonic::config::PersistentConfig;
     use tectonic::driver::{OutputFormat, PassSetting, ProcessingSessionBuilder};
     use tectonic::status::NoopStatusBackend;
+    use tectonic::unstable_opts::UnstableOptions;
 
     let mut status = NoopStatusBackend {};
 
@@ -378,11 +479,19 @@ pub(crate) fn compile_with_tectonic(work_dir: &Path, main_file: &str) -> Result<
         .format_cache_path()
         .map_err(|e| format!("Failed to get format cache path: {}", e))?;
 
+    // Use just the filename (not subdirectory-relative path) for tex_input_name
+    // so that xdvipdfmx looks for "main.xdv" rather than "subdir/main.xdv".
+    let tex_name = Path::new(main_file)
+        .file_name()
+        .unwrap_or(std::ffi::OsStr::new(main_file))
+        .to_string_lossy()
+        .into_owned();
+
     let mut builder = ProcessingSessionBuilder::default();
     builder
         .bundle(bundle)
         .primary_input_path(work_dir.join(main_file))
-        .tex_input_name(main_file)
+        .tex_input_name(&tex_name)
         .filesystem_root(work_dir)
         .output_dir(work_dir)
         .format_name("latex")
@@ -391,13 +500,63 @@ pub(crate) fn compile_with_tectonic(work_dir: &Path, main_file: &str) -> Result<
         .pass(PassSetting::Default)
         .synctex(true)
         .keep_intermediates(true)
-        .keep_logs(true);
+        .keep_logs(true)
+        .unstables(UnstableOptions {
+            continue_on_errors: true,
+            ..Default::default()
+        });
 
     let mut session = builder
         .create(&mut status)
         .map_err(|e| format!("Failed to create tectonic session: {}", e))?;
 
-    session.run(&mut status).map_err(|e| format!("{}", e))?;
+    let run_result = session.run(&mut status);
+
+    let main_stem = Path::new(main_file)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let pdf_path = work_dir.join(format!("{}.pdf", main_stem));
+    let xdv_path = work_dir.join(format!("{}.xdv", main_stem));
+
+    // Tectonic returns errors for mere warnings (font substitutions, class
+    // info messages, etc.), which aborts the pipeline before the XDV→PDF
+    // conversion step.  If the PDF was produced despite the error, succeed.
+    if pdf_path.exists() {
+        return Ok(());
+    }
+
+    // If no PDF but the XDV exists, the TeX passes succeeded but the
+    // XDV→PDF step was skipped due to warnings.  Attempt manual conversion
+    // via xdvipdfmx (same fallback the TeXLive backend uses).
+    if xdv_path.exists() {
+        eprintln!("[tectonic] .xdv exists but no .pdf — running xdvipdfmx manually");
+        if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx") {
+            let mut cmd = std::process::Command::new(&xdvipdfmx);
+            cmd.args(["-o", &pdf_path.to_string_lossy()])
+                .arg(&xdv_path)
+                .current_dir(work_dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    eprintln!("[tectonic] xdvipdfmx fallback succeeded");
+                    return Ok(());
+                }
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.trim().is_empty() {
+                    eprintln!("[tectonic] xdvipdfmx stderr: {}", stderr.trim());
+                }
+            }
+        } else {
+            eprintln!("[tectonic] xdvipdfmx not found on PATH — cannot convert .xdv to .pdf");
+        }
+    }
+
+    // No PDF and no successful fallback — propagate the original error.
+    run_result.map_err(|e| format!("{}", e))?;
 
     Ok(())
 }
@@ -419,16 +578,20 @@ fn compile_with_tectonic_subprocess(work_dir: &Path, main_file: &str) -> Result<
     cmd.args(["--tectonic-compile", &work_dir.to_string_lossy(), main_file])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let output = cmd
         .output()
         .map_err(|e| format!("Failed to spawn tectonic subprocess: {}", e))?;
 
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        eprintln!("[tectonic-subprocess] stderr: {}", stderr.trim());
+    }
     if output.status.success() {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         Err(stderr.trim().to_string())
     }
 }
@@ -438,6 +601,21 @@ fn compile_with_tectonic_subprocess(work_dir: &Path, main_file: &str) -> Result<
 /// Build a PATH that includes the TeXLive bin directory so that xelatex
 /// can find xdvipdfmx, kpsewhich, and other tools it invokes internally.
 /// GUI apps on macOS have a minimal PATH that doesn't include TeXLive.
+/// Prefer a helper binary (bibtex, biber, xdvipdfmx) from the same TeX
+/// distribution as the engine, so a second TeX install on PATH can't mix in.
+fn find_texlive_sibling(engine: &Path, name: &str) -> Result<PathBuf, String> {
+    if let Some(dir) = engine.parent() {
+        #[cfg(target_os = "windows")]
+        let candidate = dir.join(format!("{}.exe", name));
+        #[cfg(not(target_os = "windows"))]
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    find_texlive_binary(name)
+}
+
 fn texlive_env_path(engine: &Path) -> String {
     let texbin = engine
         .parent()
@@ -525,18 +703,25 @@ fn compile_with_texlive(
 
     let main_file_path = Path::new(main_file);
 
-    // Pass 1
-    run_texlive_pass(&engine_path, &common_args, main_file_path, work_dir)?;
-
-    // Bib pass (if needed)
     let main_stem = Path::new(main_file)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("document");
 
+    // The build dir is reused between compiles; a stale .bcf would make us
+    // run biber for a document that no longer uses biblatex.
+    let _ = std::fs::remove_file(work_dir.join(format!("{}.bcf", main_stem)));
+
+    // Pass 1
+    run_texlive_pass(&engine_path, &common_args, main_file_path, work_dir)?;
+
+    // Bib pass (if needed)
+    let bib_tool = detect_bib_tool_from_outputs(work_dir, main_stem).unwrap_or(bib_tool);
+    eprintln!("[texlive] bibliography tool: {:?}", bib_tool);
+
     match bib_tool {
         BibTool::Biber => {
-            let biber_path = find_texlive_binary("biber")?;
+            let biber_path = find_texlive_sibling(&engine_path, "biber")?;
             let mut cmd = std::process::Command::new(&biber_path);
             cmd.arg(main_stem)
                 .current_dir(work_dir)
@@ -556,7 +741,7 @@ fn compile_with_texlive(
             }
         }
         BibTool::BibTeX => {
-            let bibtex_path = find_texlive_binary("bibtex")?;
+            let bibtex_path = find_texlive_sibling(&engine_path, "bibtex")?;
             let aux_file = work_dir.join(format!("{}.aux", main_stem));
             let mut cmd = std::process::Command::new(&bibtex_path);
             cmd.arg(&aux_file)
@@ -594,7 +779,7 @@ fn compile_with_texlive(
     // warnings), manually run xdvipdfmx to convert .xdv → .pdf.
     if !pdf_path.exists() && xdv_path.exists() {
         eprintln!("[texlive] .xdv exists but no .pdf — running xdvipdfmx manually");
-        if let Ok(xdvipdfmx) = find_texlive_binary("xdvipdfmx") {
+        if let Ok(xdvipdfmx) = find_texlive_sibling(&engine_path, "xdvipdfmx") {
             let mut cmd = std::process::Command::new(&xdvipdfmx);
             cmd.args(["-o", &pdf_path.to_string_lossy()])
                 .arg(&xdv_path)
@@ -828,6 +1013,23 @@ pub async fn compile_latex(
     let t0 = std::time::Instant::now();
     let use_texlive = use_texlive.unwrap_or(false);
 
+    // On Windows, ensure fontconfig can find its config so that xdvipdfmx
+    // (used by both Tectonic and TeXLive/xelatex) can locate and embed fonts.
+    #[cfg(target_os = "windows")]
+    {
+        if std::env::var("FONTCONFIG_PATH").is_err() {
+            let vcpkg_root = std::env::var("VCPKG_ROOT").unwrap_or_else(|_| "C:\\vcpkg".into());
+            let fc_path = PathBuf::from(&vcpkg_root)
+                .join("installed")
+                .join("x64-windows")
+                .join("etc")
+                .join("fonts");
+            if fc_path.exists() {
+                std::env::set_var("FONTCONFIG_PATH", &fc_path);
+            }
+        }
+    }
+
     let main_file_name = Path::new(&main_file)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -871,6 +1073,10 @@ pub async fn compile_latex(
     // Remove stale PDF so a failed compile doesn't return the previous result.
     let pdf_path = work_dir.join(format!("{}.pdf", main_file_name));
     let _ = std::fs::remove_file(&pdf_path);
+    // Also drop a stale .xdv: both backends fall back to converting an
+    // existing .xdv when no PDF was produced, which would otherwise resurrect
+    // the previous compile's output after a fatal error.
+    let _ = std::fs::remove_file(work_dir.join(format!("{}.xdv", main_file_name)));
 
     // Verify the main TeX file exists before attempting compilation
     let main_tex_path = work_dir.join(&main_file);
@@ -1102,6 +1308,114 @@ pub async fn cleanup_all_builds(state: &LatexCompilerState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- detect_bib_tool_from_outputs (#116) ---
+
+    #[test]
+    fn test_bib_from_outputs_no_aux_falls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(detect_bib_tool_from_outputs(dir.path(), "main"), None);
+    }
+
+    #[test]
+    fn test_bib_from_outputs_bcf_means_biber() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.aux"), "\\relax\n").unwrap();
+        std::fs::write(dir.path().join("main.bcf"), "<bcf/>").unwrap();
+        assert_eq!(
+            detect_bib_tool_from_outputs(dir.path(), "main"),
+            Some(BibTool::Biber)
+        );
+    }
+
+    #[test]
+    fn test_bib_from_outputs_bibdata_means_bibtex() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("main.aux"),
+            "\\relax\n\\citation{knuth}\n\\bibstyle{plain}\n\\bibdata{refs}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            detect_bib_tool_from_outputs(dir.path(), "main"),
+            Some(BibTool::BibTeX)
+        );
+    }
+
+    #[test]
+    fn test_bib_from_outputs_bibdata_in_included_aux() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("main.aux"),
+            "\\relax\n\\@input{chapters/ch1.aux}\n",
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("chapters")).unwrap();
+        std::fs::write(
+            dir.path().join("chapters/ch1.aux"),
+            "\\relax\n\\bibdata{refs}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            detect_bib_tool_from_outputs(dir.path(), "main"),
+            Some(BibTool::BibTeX)
+        );
+    }
+
+    #[test]
+    fn test_bib_from_outputs_aux_without_bib() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("main.aux"),
+            "\\relax\n\\newlabel{x}{{1}{1}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            detect_bib_tool_from_outputs(dir.path(), "main"),
+            Some(BibTool::None)
+        );
+    }
+
+    /// End-to-end check of the TeX Live bibliography pipeline (#116).
+    /// Needs a local TeX Live with biber; run with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn e2e_texlive_bibliography_resolves_citations() {
+        let bib =
+            "@book{knuth,author={Donald Knuth},title={The TeXbook},year={1984},publisher={AW}}\n";
+        let cases = [
+            (
+                "biblatex-biber",
+                "\\documentclass{article}\n\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n\\begin{document}\nSee \\cite{knuth}.\n\\printbibliography\n\\end{document}\n",
+            ),
+            (
+                "biblatex-bibtex-backend",
+                "\\documentclass{article}\n\\usepackage[backend=bibtex]{biblatex}\n\\addbibresource{refs.bib}\n\\begin{document}\nSee \\cite{knuth}.\n\\printbibliography\n\\end{document}\n",
+            ),
+            (
+                "bibtex-in-input",
+                "\\documentclass{article}\n\\begin{document}\nSee \\cite{knuth}.\n\\input{back}\n\\end{document}\n",
+            ),
+        ];
+        for (name, main) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join("main.tex"), main).unwrap();
+            std::fs::write(dir.path().join("refs.bib"), bib).unwrap();
+            std::fs::write(
+                dir.path().join("back.tex"),
+                "\\bibliographystyle{plain}\n\\bibliography{refs}\n",
+            )
+            .unwrap();
+            compile_with_texlive(dir.path(), "main.tex", None, main).unwrap();
+            assert!(dir.path().join("main.pdf").exists(), "{name}: no PDF");
+            let log = std::fs::read_to_string(dir.path().join("main.log")).unwrap();
+            assert!(
+                !log.contains("Citation `knuth' undefined")
+                    && !log.contains("Citation 'knuth' undefined"),
+                "{name}: citation unresolved"
+            );
+        }
+    }
 
     // --- detect_bib_tool ---
 

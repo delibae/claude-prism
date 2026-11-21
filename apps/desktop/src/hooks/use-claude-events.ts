@@ -18,6 +18,7 @@ import {
   formatCompileError,
 } from "@/lib/latex-compiler";
 import { createLogger } from "@/lib/debug/logger";
+import { withAuthHint } from "@/lib/claude-errors";
 
 const log = createLogger("claude-event");
 
@@ -103,7 +104,8 @@ export function useClaudeEvents() {
 
   // ── One-time listener setup (mount only) ──
   useEffect(() => {
-    function setUserVisibleError(tabId: string, message: string) {
+    function setUserVisibleError(tabId: string, rawMessage: string) {
+      const message = withAuthHint(rawMessage);
       lastErrorRef.current.set(tabId, message);
       useClaudeChatStore.getState()._setError(tabId, message);
     }

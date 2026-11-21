@@ -124,7 +124,7 @@ jobs:
   # macOS (Apple Silicon)
   # ──────────────────────────────────────────────
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,7 +149,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-macos-arm64-v1
+          key: vcpkg-macos-arm64-v2
 
       - name: Install macOS dependencies (vcpkg)
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -167,7 +167,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-macos-arm64-v1
+          key: vcpkg-macos-arm64-v2
 
       - name: Set macOS build environment
         run: |
@@ -458,6 +458,9 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
+          # Bump when changing how C deps are linked: rlibs bundle static
+          # archives, so a cached build keeps e.g. an embedded GLib (#204).
+          prefix-key: v1-dynamic-glib
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -466,6 +469,20 @@ jobs:
           cache: pnpm
 
       - run: pnpm install
+
+      # Tectonic's semi-static mode links *any* dependency statically if a
+      # lib<name>.a is found. Ubuntu ships libglib-2.0.a/libexpat.a, so GLib
+      # (via HarfBuzz) and expat (via Fontconfig) got embedded. Even with the
+      # symbols hidden, the app then runs two GLibs (static 2.72 + the
+      # system's), which corrupts the heap in gtk_init on newer distros
+      # (#204). GLib/expat are ABI-stable and always present where GTK/Mesa
+      # are, so force them to link dynamically by hiding the static archives.
+      - name: Link GLib and expat dynamically
+        run: |
+          cd /usr/lib/x86_64-linux-gnu
+          for lib in glib-2.0 gobject-2.0 gio-2.0 gmodule-2.0 gthread-2.0 expat; do
+            if [ -f "lib$lib.a" ]; then sudo mv "lib$lib.a" "lib$lib.a.disabled"; fi
+          done
 
       - name: Build Tauri app
         env:
@@ -479,6 +496,29 @@ jobs:
           CXXFLAGS: "-std=c++17"
           CFLAGS: ""
         run: pnpm --filter @claude-prism/desktop tauri build --target x86_64-unknown-linux-gnu
+
+      # Guard against #204 / #213: statically linked GLib/expat/ICU/etc. must
+      # not be exported, or GTK/Mesa bind to our copies and crash at startup.
+      - name: Verify no statically linked library symbols are exported
+        run: |
+          BIN=apps/desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/claude-prism-desktop
+          LEAKED=$(nm -D --defined-only "$BIN" | awk '{print $3}' \
+            | grep -E '^(g_|glib_|XML_|u_|ucnv_|hb_|FT_|Fc|png_)' || true)
+          if [ -n "$LEAKED" ]; then
+            echo "::error::Exported static-library symbols found:"
+            echo "$LEAKED" | head -50
+            exit 1
+          fi
+          echo "OK: $(nm -D --defined-only "$BIN" | wc -l) defined dynamic symbols, none from static libs"
+          # GLib and expat must come from the system, not be embedded (#204).
+          for so in libglib-2.0.so.0 libexpat.so.1; do
+            if ! readelf -d "$BIN" | grep -q "NEEDED.*\[$so\]"; then
+              echo "::error::$so is not a dynamic dependency (statically linked?)"
+              readelf -d "$BIN" | grep NEEDED
+              exit 1
+            fi
+          done
+          echo "OK: GLib and expat are linked dynamically"
 
       - name: Collect updater artifacts
         id: collect
@@ -508,10 +548,55 @@ jobs:
       url: ${{ steps.collect.outputs.url }}
 
   # ──────────────────────────────────────────────
+  # Linux smoke test: the .deb must start without crashing (#204, #213)
+  # ──────────────────────────────────────────────
+  smoke-linux:
+    needs: [build-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux
+          path: artifacts
+
+      - name: Install Xvfb and Mesa
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb dbus-x11 libegl-mesa0 libgl1-mesa-dri
+
+      - name: Smoke test this build
+        run: |
+          DEB=$(find artifacts -name '*.deb' | head -1)
+          echo "Testing $DEB"
+          scripts/linux-smoke-test.sh "$DEB" 20
+
+      # Control: the previous release crashed on startup. If the test can't
+      # reproduce that, it isn't actually exercising the crashing code paths.
+      # Informational only; runs for artifact-only manual builds.
+      - name: Baseline (v1.3.0, expected to crash)
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag == ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.3.0 --pattern 'ClaudePrism-Linux.deb' --dir baseline
+          if scripts/linux-smoke-test.sh baseline/ClaudePrism-Linux.deb 20; then
+            echo "::warning::v1.3.0 did NOT crash here; smoke test may not reproduce #204/#213"
+          else
+            echo "::notice::v1.3.0 crashed as expected; smoke test reproduces the bug"
+          fi
+
+  # ──────────────────────────────────────────────
   # Publish: generate latest.json & upload to release
   # ──────────────────────────────────────────────
   publish:
-    needs: [build-windows, build-macos, build-macos-intel, build-linux]
+    needs: [build-windows, build-macos, build-macos-intel, build-linux, smoke-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
 

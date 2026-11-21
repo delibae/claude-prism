@@ -2,6 +2,11 @@ import { type FC, useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { type ProposedChange } from "@/stores/proposed-changes-store";
 
+const MOD_LABEL =
+  typeof navigator !== "undefined" && navigator.userAgent.includes("Mac")
+    ? "⌘"
+    : "Ctrl+";
+
 interface ProposedChangesPanelProps {
   change: ProposedChange;
   changeIndex: number;
@@ -78,7 +83,7 @@ export const ProposedChangesPanel: FC<ProposedChangesPanelProps> = ({
           <Check className="size-3.5" />
           <span className="whitespace-nowrap">Keep All</span>
           <kbd className="ml-1 rounded bg-green-600/20 px-1 py-0.5 font-mono text-[10px]">
-            ⌘Y
+            {MOD_LABEL}Y
           </kbd>
         </button>
         <button
@@ -91,7 +96,7 @@ export const ProposedChangesPanel: FC<ProposedChangesPanelProps> = ({
           <X className="size-3.5" />
           <span className="whitespace-nowrap">Undo All</span>
           <kbd className="ml-1 rounded bg-red-600/20 px-1 py-0.5 font-mono text-[10px]">
-            ⌘N
+            {MOD_LABEL}N
           </kbd>
         </button>
       </div>
