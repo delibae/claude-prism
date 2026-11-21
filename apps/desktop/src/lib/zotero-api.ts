@@ -57,18 +57,48 @@ export async function cancelOAuth(): Promise<void> {
 
 // ─── Zotero Web API v3 ───
 
+const ZOTERO_MAX_RETRIES = 3;
+const ZOTERO_MAX_RETRY_DELAY_MS = 30_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function retryDelayMs(response: Response, attempt: number): number {
+  const header =
+    response.headers.get("Retry-After") ?? response.headers.get("Backoff");
+  const seconds = header === null ? Number.NaN : Number(header);
+  const ms =
+    Number.isFinite(seconds) && seconds > 0
+      ? seconds * 1000
+      : 1000 * 2 ** attempt;
+  return Math.min(ms, ZOTERO_MAX_RETRY_DELAY_MS);
+}
+
 async function zoteroFetch(
   apiKey: string,
   path: string,
   headers?: Record<string, string>,
 ): Promise<Response> {
-  const response = await fetch(`${ZOTERO_BASE}${path}`, {
-    headers: {
-      "Zotero-API-Key": apiKey,
-      "Zotero-API-Version": "3",
-      ...headers,
-    },
-  });
+  let response: Response;
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch(`${ZOTERO_BASE}${path}`, {
+      headers: {
+        "Zotero-API-Key": apiKey,
+        "Zotero-API-Version": "3",
+        ...headers,
+      },
+    });
+    // Large imports issue many requests back to back; Zotero answers 429/503
+    // with Retry-After/Backoff. Wait and retry instead of failing the import.
+    if (
+      (response.status !== 429 && response.status !== 503) ||
+      attempt >= ZOTERO_MAX_RETRIES
+    ) {
+      break;
+    }
+    await sleep(retryDelayMs(response, attempt));
+  }
   if (!response.ok) {
     if (response.status === 304) return response;
     if (response.status === 403) throw new Error("Invalid or expired API key");
@@ -100,15 +130,25 @@ export async function fetchCollections(
   apiKey: string,
   userID: string,
 ): Promise<ZoteroCollection[]> {
-  const response = await zoteroFetch(
-    apiKey,
-    `/users/${userID}/collections?format=json`,
-  );
-  const data = (await response.json()) as {
+  type RawCollection = {
     key: string;
     data: { key: string; name: string; parentCollection: string | false };
     meta: { numItems: number };
-  }[];
+  };
+  // The API returns 25 collections per page by default; page through all.
+  const data: RawCollection[] = [];
+  const limit = 100;
+  for (let start = 0; ; ) {
+    const response = await zoteroFetch(
+      apiKey,
+      `/users/${userID}/collections?format=json&limit=${limit}&start=${start}`,
+    );
+    const page = (await response.json()) as RawCollection[];
+    data.push(...page);
+    start += page.length;
+    const total = Number(response.headers.get("Total-Results") ?? 0);
+    if (page.length < limit || (total > 0 && start >= total)) break;
+  }
   return data.map((c) => ({
     key: c.key,
     name: c.data.name,
@@ -167,9 +207,11 @@ export async function importCollection(
       allBibtex += (allBibtex ? "\n\n" : "") + bibtex;
     }
 
-    start += limit;
-    onProgress?.(Math.min(start, total), total);
-    if (start >= total) break;
+    start += items.length;
+    onProgress?.(total ? Math.min(start, total) : start, total);
+    // Don't rely solely on Total-Results: if the header is missing (e.g. not
+    // exposed to the webview), a short page is the reliable end marker.
+    if (items.length < limit || (total > 0 && start >= total)) break;
   }
 
   return { bibtex: allBibtex, libraryVersion, keyMap, totalItems: total };
@@ -260,9 +302,11 @@ async function syncFullLibrary(
       updatedEntries.push({ key: item.key, citekey, bibtex });
     }
 
-    start += limit;
-    onProgress?.(Math.min(start, total), total);
-    if (start >= total) break;
+    start += items.length;
+    onProgress?.(total ? Math.min(start, total) : start, total);
+    // Don't rely solely on Total-Results: if the header is missing (e.g. not
+    // exposed to the webview), a short page is the reliable end marker.
+    if (items.length < limit || (total > 0 && start >= total)) break;
   }
 
   // Fetch deleted items
