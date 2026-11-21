@@ -124,7 +124,7 @@ jobs:
   # macOS (Apple Silicon)
   # ──────────────────────────────────────────────
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,7 +149,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-macos-arm64-v1
+          key: vcpkg-macos-arm64-v2
 
       - name: Install macOS dependencies (vcpkg)
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -167,7 +167,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-macos-arm64-v1
+          key: vcpkg-macos-arm64-v2
 
       - name: Set macOS build environment
         run: |
