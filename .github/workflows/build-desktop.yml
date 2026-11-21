@@ -467,6 +467,20 @@ jobs:
 
       - run: pnpm install
 
+      # Tectonic's semi-static mode links *any* dependency statically if a
+      # lib<name>.a is found. Ubuntu ships libglib-2.0.a/libexpat.a, so GLib
+      # (via HarfBuzz) and expat (via Fontconfig) got embedded. Even with the
+      # symbols hidden, the app then runs two GLibs (static 2.72 + the
+      # system's), which corrupts the heap in gtk_init on newer distros
+      # (#204). GLib/expat are ABI-stable and always present where GTK/Mesa
+      # are, so force them to link dynamically by hiding the static archives.
+      - name: Link GLib and expat dynamically
+        run: |
+          cd /usr/lib/x86_64-linux-gnu
+          for lib in glib-2.0 gobject-2.0 gio-2.0 gmodule-2.0 gthread-2.0 expat; do
+            if [ -f "lib$lib.a" ]; then sudo mv "lib$lib.a" "lib$lib.a.disabled"; fi
+          done
+
       - name: Build Tauri app
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -493,6 +507,15 @@ jobs:
             exit 1
           fi
           echo "OK: $(nm -D --defined-only "$BIN" | wc -l) defined dynamic symbols, none from static libs"
+          # GLib and expat must come from the system, not be embedded (#204).
+          for so in libglib-2.0.so.0 libexpat.so.1; do
+            if ! readelf -d "$BIN" | grep -q "NEEDED.*\[$so\]"; then
+              echo "::error::$so is not a dynamic dependency (statically linked?)"
+              readelf -d "$BIN" | grep NEEDED
+              exit 1
+            fi
+          done
+          echo "OK: GLib and expat are linked dynamically"
 
       - name: Collect updater artifacts
         id: collect
