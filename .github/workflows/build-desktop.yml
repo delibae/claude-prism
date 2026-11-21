@@ -458,6 +458,9 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
+          # Bump when changing how C deps are linked: rlibs bundle static
+          # archives, so a cached build keeps e.g. an embedded GLib (#204).
+          prefix-key: v1-dynamic-glib
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
