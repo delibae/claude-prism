@@ -346,6 +346,15 @@ export function LatexEditor() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Global Cmd/Ctrl+Enter (dispatched by useKeyboardShortcuts when focus is
+  // outside the editor) and the PDF pane's compile actions.
+  useEffect(() => {
+    const handleRequestCompile = () => compileRef.current();
+    window.addEventListener("request-compile", handleRequestCompile);
+    return () =>
+      window.removeEventListener("request-compile", handleRequestCompile);
+  }, []);
+
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;

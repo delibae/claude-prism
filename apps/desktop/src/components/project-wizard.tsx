@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { mkdir, writeTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -198,6 +199,10 @@ function ScratchForm({ onBack }: { onBack: () => void }) {
 
     try {
       const projectPath = await join(projectFolder, name);
+      // The fs plugin's static scope only covers $HOME/$DOCUMENT/$DESKTOP/$TEMP.
+      // Grant the chosen parent folder explicitly so projects can be created
+      // on other drives (e.g. D:\ on Windows) or outside the home dir (#138).
+      await invoke("allow_project_directory", { rootPath: projectFolder });
       if (await exists(projectPath)) {
         setProjectNameError("A folder with this name already exists here");
         return;
