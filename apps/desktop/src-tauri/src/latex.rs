@@ -295,15 +295,21 @@ fn find_texlive_binary(name: &str) -> Result<PathBuf, String> {
                     "/bin/sh".into()
                 }
             });
-        if let Ok(output) = std::process::Command::new(&shell)
-            .args(["-l", "-c", &format!("command -v {}", name)])
-            .stdin(std::process::Stdio::null())
-            .output()
+        let mut cmd = std::process::Command::new(&shell);
+        cmd.args(["-l", "-c", &format!("command -v {}", name)]);
+        // A blocking profile script must not stall compilation.
+        if let Ok(output) =
+            crate::claude::output_with_timeout(cmd, std::time::Duration::from_secs(10))
         {
             if output.status.success() {
-                let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let p = PathBuf::from(&resolved);
-                if p.exists() {
+                // Profiles may print banners; take the last absolute path line.
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let resolved = stdout
+                    .lines()
+                    .rev()
+                    .map(str::trim)
+                    .find(|line| line.starts_with('/'));
+                if let Some(p) = resolved.map(PathBuf::from).filter(|p| p.is_file()) {
                     return Ok(p);
                 }
             }

@@ -17,6 +17,8 @@ describe("claude auth error hint (#121)", () => {
 
   it("ignores unrelated errors", () => {
     expect(isClaudeAuthError("API Error: 529 overloaded_error")).toBe(false);
+    // Third-party provider key errors shouldn't point users at Claude sign-in.
+    expect(isClaudeAuthError("OpenAI error: invalid api key")).toBe(false);
     expect(withAuthHint("rate limited")).toBe("rate limited");
   });
 

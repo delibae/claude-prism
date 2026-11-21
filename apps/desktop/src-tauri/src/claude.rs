@@ -1718,7 +1718,7 @@ const LINUX_DESKTOP_ENV_VARS: &[&str] = &[
 /// 2. Restores original environment variables when running inside an AppImage
 /// 3. Passes through Linux desktop environment variables (DISPLAY, XDG_*, etc.)
 #[cfg(target_os = "linux")]
-fn sanitize_appimage_env(cmd: &mut tokio::process::Command) {
+fn sanitize_appimage_env(cmd: &mut std::process::Command) {
     cmd.stdin(std::process::Stdio::null());
 
     if std::env::var("APPIMAGE").is_ok() {
@@ -1795,9 +1795,11 @@ fn resolve_cmd_to_node(program: &str) -> (String, Vec<String>) {
 
 /// Create a std::process::Command that handles .cmd/.bat files on Windows.
 fn new_sync_command(program: &str) -> std::process::Command {
-    // Use the same environment as chat sessions (create_command); otherwise
-    // `claude --version` / `claude auth status` can fail here while chat would
-    // work, and the app wrongly reports "not installed" / "not logged in".
+    // Mirror the parts of the chat-session environment (create_command) that
+    // decide whether the CLI can start at all (PATH, git-bash, AppImage env);
+    // otherwise `claude --version` / `claude auth status` can fail here while
+    // chat would work, and the app wrongly reports "not installed" / "not
+    // logged in".
     #[cfg(target_os = "windows")]
     {
         let (resolved, prefix) = resolve_cmd_to_node(program);
@@ -1816,6 +1818,9 @@ fn new_sync_command(program: &str) -> std::process::Command {
     #[cfg(not(target_os = "windows"))]
     {
         let mut c = std::process::Command::new(program);
+        // Inside an AppImage, don't leak its LD_LIBRARY_PATH etc. into the CLI.
+        #[cfg(target_os = "linux")]
+        sanitize_appimage_env(&mut c);
         c.env("PATH", tool_augmented_path(program));
         c
     }
@@ -1893,7 +1898,7 @@ fn tool_augmented_path(program: &str) -> String {
 
 /// Run a command to completion, killing it if it exceeds `timeout`, so a
 /// wedged CLI can't hang the setup/status check forever.
-fn output_with_timeout(
+pub(crate) fn output_with_timeout(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,
 ) -> std::io::Result<std::process::Output> {
@@ -1943,7 +1948,22 @@ fn claude_oauth_credentials_present() -> bool {
         .or_else(|| dirs::home_dir().map(|h| h.join(".claude")));
     dir.map(|d| d.join(".credentials.json"))
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .is_some_and(|s| s.contains("claudeAiOauth"))
+        .is_some_and(|s| oauth_credentials_have_token(&s))
+}
+
+/// True if a `.credentials.json` body holds a non-empty OAuth access or
+/// refresh token (a logged-out file may keep the key with a null value).
+fn oauth_credentials_have_token(json: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(json) else {
+        return false;
+    };
+    ["accessToken", "refreshToken"].iter().any(|key| {
+        value
+            .get("claudeAiOauth")
+            .and_then(|oauth| oauth.get(*key))
+            .and_then(Value::as_str)
+            .is_some_and(|token| !token.trim().is_empty())
+    })
 }
 
 /// Create a tokio Command with appropriate environment variables.
@@ -1982,7 +2002,7 @@ fn create_command(
 
     // On Linux AppImage, restore original environment so child processes work correctly
     #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
+    sanitize_appimage_env(cmd.as_std_mut());
 
     // Remove all Claude Code internal env vars to prevent nested session detection
     // and other interference. Tauri inherits these when launched from a Claude Code session.
@@ -2435,7 +2455,7 @@ pub async fn install_claude_cli(window: WebviewWindow) -> Result<bool, String> {
 
     // On Linux AppImage, restore original environment so curl/bash work correctly
     #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
+    sanitize_appimage_env(cmd.as_std_mut());
 
     // Inherit essential environment variables, ensuring ~/.local/bin is in PATH
     #[cfg(target_os = "windows")]
@@ -2560,7 +2580,7 @@ pub async fn login_claude(window: WebviewWindow) -> Result<(), String> {
 
     // On Linux AppImage, restore original environment so xdg-open works
     #[cfg(target_os = "linux")]
-    sanitize_appimage_env(&mut cmd);
+    sanitize_appimage_env(cmd.as_std_mut());
 
     // Inherit essential environment variables
     for (key, value) in std::env::vars() {
@@ -4326,6 +4346,38 @@ pub async fn set_claude_fast_mode(enabled: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_credentials_require_a_token() {
+        assert!(oauth_credentials_have_token(
+            r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-x","refreshToken":"r"}}"#
+        ));
+        assert!(oauth_credentials_have_token(
+            r#"{"claudeAiOauth":{"accessToken":"","refreshToken":"r"}}"#
+        ));
+        assert!(!oauth_credentials_have_token(r#"{"claudeAiOauth":null}"#));
+        assert!(!oauth_credentials_have_token(
+            r#"{"claudeAiOauth":{"accessToken":" ","refreshToken":null}}"#
+        ));
+        assert!(!oauth_credentials_have_token("not json"));
+        assert!(!oauth_credentials_have_token("{}"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_with_timeout_kills_hung_process() {
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("30");
+        let started = std::time::Instant::now();
+        let err = output_with_timeout(cmd, std::time::Duration::from_millis(300)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+
+        let mut ok = std::process::Command::new("echo");
+        ok.arg("hi");
+        let out = output_with_timeout(ok, std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
+    }
 
     fn test_openai_compatible_auth_config() -> ClaudePrismAuthConfig {
         ClaudePrismAuthConfig {

@@ -2,8 +2,6 @@ const AUTH_ERROR_PATTERNS = [
   "oauth token has expired",
   "authentication_error",
   "failed to authenticate",
-  "invalid api key",
-  "invalid x-api-key",
   "please run /login",
 ];
 
