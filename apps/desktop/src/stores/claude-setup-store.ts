@@ -50,6 +50,7 @@ export interface StepInfo {
 interface ClaudeSetupState {
   status: SetupStatus;
   isInstalling: boolean;
+  installMode: "install" | "update";
   isLoggingIn: boolean;
   isSavingApiKey: boolean;
   isClearingApiKey: boolean;
@@ -74,6 +75,7 @@ interface ClaudeSetupState {
   // Actions
   checkStatus: () => Promise<void>;
   install: () => Promise<void>;
+  update: () => Promise<void>;
   login: () => Promise<void>;
   saveApiKey: (
     apiKey: string,
@@ -198,6 +200,7 @@ function advanceSteps(
 export const useClaudeSetupStore = create<ClaudeSetupState>((set, get) => ({
   status: "checking",
   isInstalling: false,
+  installMode: "install",
   isLoggingIn: false,
   isSavingApiKey: false,
   isClearingApiKey: false,
@@ -311,6 +314,7 @@ export const useClaudeSetupStore = create<ClaudeSetupState>((set, get) => ({
 
     set({
       isInstalling: true,
+      installMode: "install",
       error: null,
       installSteps: initialSteps,
       installLogs: [],
@@ -320,6 +324,37 @@ export const useClaudeSetupStore = create<ClaudeSetupState>((set, get) => ({
     try {
       // Fire-and-forget — events drive the rest
       const success = await invoke<boolean>("install_claude_cli");
+      if (get().isInstalling) {
+        get()._finishInstall(success);
+      }
+    } catch (err: any) {
+      set({
+        isInstalling: false,
+        status: "error",
+        error: err?.message || String(err),
+      });
+    }
+  },
+
+  update: async () => {
+    const initialSteps = [
+      { id: "downloading", label: "Checking for updates", status: "active" },
+      { id: "installing", label: "Updating Claude Code", status: "pending" },
+      { id: "verifying", label: "Verifying update", status: "pending" },
+      { id: "complete", label: "Up to date", status: "pending" },
+    ] satisfies StepInfo[];
+
+    set({
+      isInstalling: true,
+      installMode: "update",
+      error: null,
+      installSteps: initialSteps,
+      installLogs: [],
+      installLogsVisible: false,
+    });
+
+    try {
+      const success = await invoke<boolean>("update_claude_cli");
       if (get().isInstalling) {
         get()._finishInstall(success);
       }

@@ -589,8 +589,8 @@ interface ClaudeChatState {
   consumePendingPinnedContextRemovals: () => string[];
 
   /** Currently selected model (passed per-prompt to Claude CLI) */
-  selectedModel: "sonnet" | "opus" | "haiku" | "opusplan";
-  setSelectedModel: (model: "sonnet" | "opus" | "haiku" | "opusplan") => void;
+  selectedModel: string;
+  setSelectedModel: (model: string) => void;
   selectedProviderCredentialId: string | null;
   setSelectedProviderCredentialId: (credentialId: string | null) => void;
   selectedProviderModels: Record<string, string>;
@@ -665,7 +665,7 @@ export const useClaudeChatStore = create<ClaudeChatState>()((set, get) => ({
   activeTabId: DEFAULT_TAB_ID,
   activeProjectPath: null,
 
-  selectedModel: "opus",
+  selectedModel: "default",
   setSelectedModel: (model) => set({ selectedModel: model }),
   selectedProviderCredentialId:
     loadSelectedProviderCredentialId() ?? CLAUDE_CODE_PROVIDER_ID,

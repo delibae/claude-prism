@@ -21,12 +21,9 @@ import {
   ImageIcon,
   FileSpreadsheetIcon,
   PaperclipIcon,
-  ZapIcon,
   CheckIcon,
   ChevronDownIcon,
   SparklesIcon,
-  RabbitIcon,
-  LayersIcon,
   PlusIcon,
   Trash2Icon,
   Loader2Icon,
@@ -198,21 +195,6 @@ function effortDisplayLabel(level: EffortLevel) {
   return effortShortLabel(level);
 }
 
-function claudeModelDisplayName(model: string) {
-  switch (model) {
-    case "sonnet":
-      return "Sonnet";
-    case "opus":
-      return "Opus";
-    case "haiku":
-      return "Haiku";
-    case "opusplan":
-      return "OpusPlan";
-    default:
-      return model;
-  }
-}
-
 function EffortControls({
   effortLevel,
   setEffortLevel,
@@ -354,6 +336,13 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     string | null
   >(null);
   const [providerModelError, setProviderModelError] = useState<string | null>(
+    null,
+  );
+  const [claudeModelOptions, setClaudeModelOptions] = useState<string[] | null>(
+    null,
+  );
+  const [claudeModelsLoading, setClaudeModelsLoading] = useState(false);
+  const [claudeModelsError, setClaudeModelsError] = useState<string | null>(
     null,
   );
   const [providerSetupOpen, setProviderSetupOpen] = useState(false);
@@ -1099,6 +1088,65 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     slashCommands,
   ]);
 
+  useEffect(() => {
+    if (
+      !modelPickerOpen ||
+      !claudeProviderActive ||
+      claudeModelOptions !== null
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timedOut = false;
+    setClaudeModelsLoading(true);
+    setClaudeModelsError(null);
+
+    const timeout = window.setTimeout(() => {
+      if (cancelled) return;
+      timedOut = true;
+      setClaudeModelOptions([]);
+      setClaudeModelsLoading(false);
+      setClaudeModelsError(
+        "Model request timed out. Check the API key, Base URL, and network connection.",
+      );
+    }, 15_000);
+
+    invoke<Array<string | OpenAiCompatibleModelInfo>>("list_claude_models")
+      .then((models) => {
+        if (cancelled || timedOut) return;
+        const options = Array.from(
+          new Set(models.map(modelInfoId).filter(Boolean)),
+        );
+        setClaudeModelOptions(options);
+        if (options.length > 0 && !options.includes(selectedModel)) {
+          setSelectedModel(options[0]);
+        }
+      })
+      .catch((error) => {
+        if (cancelled || timedOut) return;
+        setClaudeModelOptions([]);
+        setClaudeModelsError(
+          error instanceof Error ? error.message : String(error),
+        );
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (!cancelled && !timedOut) setClaudeModelsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      setClaudeModelsLoading(false);
+    };
+  }, [
+    claudeModelOptions,
+    claudeProviderActive,
+    modelPickerOpen,
+    setSelectedModel,
+  ]);
+
   const handleGuideQueuedGuidance = useCallback(
     (guidance: QueuedGuidance) => {
       if (isStreaming) {
@@ -1246,32 +1294,6 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [modelPickerOpen]);
 
-  const claudeModelOptions = [
-    {
-      id: "sonnet" as const,
-      name: "Sonnet",
-      desc: "Fast, efficient for most tasks",
-      icon: <ZapIcon className="size-3.5" />,
-    },
-    {
-      id: "opus" as const,
-      name: "Opus",
-      desc: "Most capable, complex reasoning",
-      icon: <SparklesIcon className="size-3.5" />,
-    },
-    {
-      id: "haiku" as const,
-      name: "Haiku",
-      desc: "Fastest, simple tasks",
-      icon: <RabbitIcon className="size-3.5" />,
-    },
-    {
-      id: "opusplan" as const,
-      name: "OpusPlan",
-      desc: "Opus for planning, Sonnet for execution",
-      icon: <LayersIcon className="size-3.5" />,
-    },
-  ];
   const activeProviderModelOptions = selectedProviderCredential
     ? Array.from(
         new Set(
@@ -1391,7 +1413,7 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
                         Claude Code
                       </div>
                       <div className="truncate text-muted-foreground text-xs">
-                        {claudeModelDisplayName(selectedModel)}
+                        {selectedModel}
                       </div>
                     </div>
                     {claudeProviderActive && (
@@ -1510,29 +1532,37 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
                     Model
                   </div>
                   {claudeProviderActive ? (
-                    claudeModelOptions.map((m) => (
-                      <button
-                        key={m.id}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                          selectedModel === m.id
-                            ? "bg-accent text-accent-foreground"
-                            : "hover:bg-muted",
-                        )}
-                        onClick={() => setSelectedModel(m.id)}
-                      >
-                        {m.icon}
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium text-xs">{m.name}</div>
-                          <div className="truncate text-muted-foreground text-xs">
-                            {m.desc}
-                          </div>
+                    <>
+                      {claudeModelsLoading && (
+                        <div className="px-3 py-1.5 text-muted-foreground text-xs">
+                          Fetching models...
                         </div>
-                        {selectedModel === m.id && (
-                          <CheckIcon className="size-3 shrink-0" />
-                        )}
-                      </button>
-                    ))
+                      )}
+                      {(claudeModelOptions ?? []).map((modelId) => (
+                        <button
+                          key={modelId}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                            selectedModel === modelId
+                              ? "bg-accent text-accent-foreground"
+                              : "hover:bg-muted",
+                          )}
+                          onClick={() => setSelectedModel(modelId)}
+                        >
+                          <span className="min-w-0 flex-1 truncate font-medium text-xs">
+                            {modelId}
+                          </span>
+                          {selectedModel === modelId && (
+                            <CheckIcon className="size-3 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                      {claudeModelsError && (
+                        <div className="px-3 py-1 text-amber-600 text-xs">
+                          {claudeModelsError}
+                        </div>
+                      )}
+                    </>
                   ) : selectedProviderCredential ? (
                     <>
                       {activeProviderModelsLoading && (
@@ -1921,9 +1951,7 @@ export const ChatComposer: FC<{ isOpen?: boolean }> = ({ isOpen }) => {
                     <SparklesIcon className="size-3" />
                   )}
                   <span>Claude Code</span>
-                  <span className="max-w-32 truncate">
-                    {claudeModelDisplayName(selectedModel)}
-                  </span>
+                  <span className="max-w-32 truncate">{selectedModel}</span>
                   <span className="text-muted-foreground/60">
                     {effortShortLabel(effortLevel)}
                   </span>
